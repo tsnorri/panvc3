@@ -1,0 +1,3 @@
+[submodule "lib/libbio"]
+	path = lib/libbio
+	url = https://github.com/tsnorri/libbio.git
