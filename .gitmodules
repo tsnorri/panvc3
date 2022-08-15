@@ -1,3 +1,6 @@
 [submodule "lib/libbio"]
 	path = lib/libbio
 	url = https://github.com/tsnorri/libbio.git
+[submodule "lib/cereal"]
+	path = lib/cereal
+	url = https://github.com/USCiLab/cereal.git
