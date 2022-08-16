@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Generated files
+make-indexable-fasta/cmdline.c
+make-indexable-fasta/cmdline.h
+make-indexable-fasta/config.h
+make-indexable-fasta/make_indexable_fasta
