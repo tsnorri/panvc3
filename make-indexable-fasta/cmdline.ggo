@@ -1,0 +1,13 @@
+# Copyright (c) 2022 Tuukka Norri
+# This code is licensed under MIT license (see LICENSE for details).
+
+package		"make-indexable-fasta"
+version		"0.1"
+purpose		"Make an indexable FASTA file from a set of sequences (possibly generated with vcf2multialign)."
+usage		"make_indexable_fasta --inputs=inputs.txt [--msa-index-output=msa-index.dat] > combined.fa"
+description	"The input file should contain the chromosome identifiers and input paths separated by a tabulator, one entry per line."
+
+option		"inputs"			i	"Input as tabulated text"					string	typestr = "filename"	required
+option		"msa-index-output"	m	"MSA index output"							string	typestr = "filename"	required
+option		"pipe-input"		p	"Read input from the given command"			string	typestr = "command"		optional
+option		"fasta-line-width"	w	"Wrap the FASTA output to the given length"	long	default = "0"			optional
