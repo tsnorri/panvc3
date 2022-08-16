@@ -4,3 +4,6 @@
 [submodule "lib/cereal"]
 	path = lib/cereal
 	url = https://github.com/USCiLab/cereal.git
+[submodule "lib/sdsl-lite"]
+	path = lib/sdsl-lite
+	url = https://github.com/xxsds/sdsl-lite.git
