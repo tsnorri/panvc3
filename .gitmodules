@@ -7,3 +7,6 @@
 [submodule "lib/sdsl-lite"]
 	path = lib/sdsl-lite
 	url = https://github.com/xxsds/sdsl-lite.git
+[submodule "lib/seqan3"]
+	path = lib/seqan3
+	url = https://github.com/seqan/seqan3.git
