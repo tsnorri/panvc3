@@ -32,6 +32,10 @@
 *.app
 
 # Generated files
+count-supporting-reads/cmdline.c
+count-supporting-reads/cmdline.h
+count-supporting-reads/config.h
+count-supporting-reads/count_supporting_reads
 make-indexable-fasta/cmdline.c
 make-indexable-fasta/cmdline.h
 make-indexable-fasta/config.h
