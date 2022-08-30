@@ -2,8 +2,10 @@
 unexport SDKROOT
 
 # Default values.
-WARNING_FLAGS	?= -Wall -Werror -Wno-deprecated-declarations -Wno-unused
-OPT_FLAGS		?= -O2 -g
+# SeqAn3 uses std::hardware_destructive_interference_size
+WARNING_FLAGS		?= -Wall -Werror -Wno-deprecated-declarations -Wno-unused
+WARNING_CXXFLAGS	?= -Wno-interference-size
+OPT_FLAGS			?= -O2 -g
 
 CMAKE			?= cmake
 CP				?= cp
@@ -31,7 +33,7 @@ BOOST_ROOT		?= /usr
 BOOST_INCLUDE	?= -I$(BOOST_ROOT)/include
 
 CFLAGS			+= -std=c99   $(OPT_FLAGS) $(WARNING_FLAGS) $(SYSTEM_CFLAGS)
-CXXFLAGS		+= -std=c++2b $(OPT_FLAGS) $(WARNING_FLAGS) $(SYSTEM_CXXFLAGS)
+CXXFLAGS		+= -std=c++2b $(OPT_FLAGS) $(WARNING_FLAGS) $(WARNING_CXXFLAGS) $(SYSTEM_CXXFLAGS)
 CPPFLAGS		+= -DHAVE_CONFIG_H -I../include -I../lib/cereal/include -I../lib/libbio/include -I../lib/libbio/lib/GSL/include -I../lib/libbio/lib/range-v3/include -I../lib/sdsl-lite/include $(BOOST_INCLUDE) $(SYSTEM_CPPFLAGS)
 LDFLAGS			+= $(SYSTEM_LDFLAGS) ../lib/libbio/src/libbio.a $(BOOST_LIBS)
 LIBBSD_LIB		?= /usr/lib/x86_64-linux-gnu/libbsd.a
