@@ -13,7 +13,7 @@ clean:
 	$(RM) $(OBJECTS) count_supporting_reads cmdline.h cmdline.c
 
 count_supporting_reads: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) $(LDFLAGS) ../lib/libbio/src/libbio.a
+	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/src/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h

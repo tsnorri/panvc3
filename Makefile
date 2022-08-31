@@ -2,7 +2,7 @@ include local.mk
 include common.mk
 
 DEPENDENCIES = lib/libbio/src/libbio.a
-ifeq ($(shell uname -s),Linux)
+ifdef USE_LIBDISPATCH
 	DEPENDENCIES += lib/swift-corelibs-libdispatch/build/src/libdispatch.a
 endif
 

@@ -1,4 +1,4 @@
-GCC_ROOT			= /opt/homebrew/opt/gcc
+GCC_ROOT			= /home/tnorri/.linuxbrew
 
 CC					= $(GCC_ROOT)/bin/gcc-12
 CXX					= $(GCC_ROOT)/bin/g++-12
@@ -8,14 +8,15 @@ OPT_FLAGS			= -O0 -g
 DOT					= /opt/homebrew/bin/dot
 WGET				= /usr/local/homebrew/bin/wget
 
-ISYSROOT			= -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+ISYSROOT			=
 
 CPPFLAGS			= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_STACKTRACE_USE_NOOP -DLIBBIO_NO_DISPATCH -I/usr/local/homebrew/include
-LDFLAGS				= -L/usr/local/homebrew/lib
-SYSTEM_CFLAGS		= -mmacosx-version-min=10.11 $(ISYSROOT)
-SYSTEM_CXXFLAGS		= -mmacosx-version-min=10.11 -nostdinc++ -I$(GCC_ROOT)/include/c++/12 -I$(GCC_ROOT)/include/c++/12/aarch64-apple-darwin21 $(ISYSROOT)
-SYSTEM_LDFLAGS		= -mmacosx-version-min=10.11 -L$(GCC_ROOT)/lib -Wl,-rpath,$(GCC_ROOT)/lib
+LDFLAGS				= -L/home/tnorri/.linuxbrew/lib -static -static-libgcc -lpthread -lz -ldl
+
+SYSTEM_CFLAGS		= $(ISYSROOT)
+SYSTEM_CXXFLAGS		= -nostdinc++ -I$(GCC_ROOT)/include/c++/12 -I$(GCC_ROOT)/include/c++/12/x86_64-pc-linux-gnu $(ISYSROOT)
+SYSTEM_LDFLAGS		= -L$(GCC_ROOT)/lib -Wl,-rpath,$(GCC_ROOT)/lib
 
 #BOOST_ROOT			= /opt/homebrew/opt/boost
-BOOST_ROOT			= /Users/tsnorri/boost-1.80.0-gcc-12
+BOOST_ROOT			= /home/tnorri/local/boost-1.80.0-gcc-12
 BOOST_LIBS			= -L$(BOOST_ROOT)/lib -lboost_iostreams
