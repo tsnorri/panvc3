@@ -1,4 +1,4 @@
--include ../local-gcc.mk
+-include ../local.gcc.mk
 include ../common.mk
 include ../seqan3.mk
 

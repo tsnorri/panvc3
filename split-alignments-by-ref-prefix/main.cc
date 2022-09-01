@@ -21,9 +21,52 @@ namespace rsv	= ranges::views;
 
 namespace {
 	
-	std::vector <std::string> read_prefixes(char const *path)
+	struct reference_name_record
 	{
-		std::vector <std::string> retval;
+		std::string	reference_name;
+		std::size_t	matches{};
+		
+		reference_name_record(std::string	const &reference_name_):
+			reference_name(reference_name_)
+		{
+		}
+		
+		bool operator<(reference_name_record const &other) const
+		{
+			return reference_name < other.reference_name;
+		}
+	};
+	
+	
+	// Transparent comparator for reference_name_records and strings.
+	struct reference_name_record_cmp
+	{
+		using is_transparent = std::true_type;
+		
+		bool operator()(reference_name_record const lhs, reference_name_record const &rhs) const
+		{
+			return lhs < rhs;
+		}
+		
+		template <typename t_string>
+		bool operator()(reference_name_record const &lhs, t_string const &rhs) const
+		{
+			lb::compare_strings_transparent cmp;
+			return cmp(lhs.reference_name, rhs);
+		}
+		
+		template <typename t_string>
+		bool operator()(t_string const &lhs, reference_name_record const &rhs) const
+		{
+			lb::compare_strings_transparent cmp;
+			return cmp(lhs, rhs.reference_name);
+		}
+	};
+	
+	
+	std::vector <reference_name_record> read_reference_names(char const *path, bool const should_treat_reference_names_as_prefixes)
+	{
+		std::vector <reference_name_record> retval;
 		std::string buffer;
 		
 		lb::file_istream stream;
@@ -34,23 +77,34 @@ namespace {
 		
 		if (retval.empty())
 		{
-			std::cerr << "ERROR: The prefix list was empty.\n";
+			std::cerr << "ERROR: The reference name list was empty.\n";
 			std::exit(EXIT_FAILURE);
 		}
 		
-		// There is at least one prefix.
+		// There is at least one reference name.
 		std::sort(retval.begin(), retval.end());
 		
 		auto it(retval.begin());
 		auto const end(retval.end() - 1);
 		while (it != end)
 		{
-			if ((it + 1)->starts_with(*it))
+			if (should_treat_reference_names_as_prefixes)
 			{
-				std::cerr << "ERROR: The contig prefixes must be prefix-free but “" << *it << "” is a prefix of “" << *(it + 1) << "”.\n";
-				std::exit(EXIT_FAILURE);
+				if ((it + 1)->reference_name.starts_with(it->reference_name))
+				{
+					std::cerr << "ERROR: The contig prefixes must be prefix-free but “" << it->reference_name << "” is a prefix of “" << (it + 1)->reference_name << "”.\n";
+					std::exit(EXIT_FAILURE);
+				}
 			}
-			
+			else
+			{
+				if ((it + 1)->reference_name == it->reference_name)
+				{
+					std::cerr << "ERROR: Found duplicate contig name: " << it->reference_name << ".\n";
+					std::exit(EXIT_FAILURE);
+				}
+			}
+		
 			++it;
 		}
 		
@@ -60,23 +114,29 @@ namespace {
 	
 	inline void report_unmatched(std::string const &ref_id)
 	{
-		std::cerr << "WARNING: No prefix found for reference “" << ref_id << "”.\n";
+		std::cerr << "WARNING: No reference name found that would match “" << ref_id << "”.\n";
 	}
 	
 	
-	void process(char const *aln_path, char const *prefixes_path, bool const should_report_unmatched)
+	void process(
+		char const *aln_path,
+		char const *reference_names_path,
+		bool const should_treat_reference_names_as_prefixes,
+		bool const should_report_unmatched
+	)
 	{
-		auto const prefixes(read_prefixes(prefixes_path));
+		// Non-const needed for statistics.
+		auto reference_names(read_reference_names(reference_names_path, should_treat_reference_names_as_prefixes));
 		
 		fs::path const alignments_path(aln_path);
 		seqan3::sam_file_input <> aln_input(alignments_path); // Reads everything by default.
 		
 		// Prepare the output.
 		std::vector <seqan3::sam_file_output <>> aln_outputs;
-		aln_outputs.reserve(prefixes.size());
-		for (auto const &prefix : prefixes)
+		aln_outputs.reserve(reference_names.size());
+		for (auto const &rec : reference_names)
 		{
-			std::string path_str(prefix);
+			std::string path_str(rec.reference_name);
 			path_str += ".bam";
 			fs::path const path(path_str);
 			aln_outputs.emplace_back(path);
@@ -86,7 +146,7 @@ namespace {
 		lb::log_time(std::cerr) << "Processing the alignment records…\n";
 		auto const &ref_ids(aln_input.header().ref_ids());
 		std::size_t ref_id_missing{};
-		std::size_t no_prefix_found{};
+		std::size_t no_match{};
 		for (auto const &[rec_idx, aln_rec] : rsv::enumerate(aln_input))
 		{
 			if (0 == (1 + rec_idx) % 100000)
@@ -99,24 +159,29 @@ namespace {
 				continue;
 			}
 			
-			// If we have a prefix, it is bound to be lexicographically smaller than the reference contig name.
+			// If we have a prefix or a match, it is bound to be lexicographically smaller
+			// than the reference contig name.
 			auto const &ref_id(ref_ids[*ref_id_]);
-			auto const it(std::upper_bound(prefixes.begin(), prefixes.end(), ref_id));
+			reference_name_record_cmp cmp;
+			auto const it(std::upper_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
 			
-			if (prefixes.begin() == it)
+			if (reference_names.begin() == it)
 			{
-				++no_prefix_found;
+				++no_match;
 				if (should_report_unmatched)
 					report_unmatched(ref_id);
-					
+				
 				continue;
 			}
 			
-			auto const pit(it - 1);
-			auto const &prefix(*pit);
-			if (!ref_id.starts_with(prefix))
+			auto const rit(it - 1);
+			auto const &reference_name(rit->reference_name);
+			if (
+				(should_treat_reference_names_as_prefixes  && !ref_id.starts_with(reference_name)) ||
+				(!should_treat_reference_names_as_prefixes && ref_id != reference_name)
+			)
 			{
-				++no_prefix_found;
+				++no_match;
 				if (should_report_unmatched)
 					report_unmatched(ref_id);
 				
@@ -124,13 +189,18 @@ namespace {
 			}
 			
 			// Found a matchig prefix.
-			auto const idx(std::distance(prefixes.begin(), pit));
+			++rit->matches;
+			auto const idx(std::distance(reference_names.begin(), rit));
 			auto &output_file(aln_outputs[idx]);
 			output_file.push_back(aln_rec);
 		}
 		
+		// Report matches.
+		for (auto const &rec : reference_names)
+			std::cout << rec.reference_name << '\t' << rec.matches << '\n';
+		
 		std::cout << "Reference ID missing\t" << ref_id_missing << '\n';
-		std::cout << "No matching prefix\t" << no_prefix_found << '\n';
+		std::cout << "No matching reference ID\t" << no_match << '\n';
 		
 		lb::log_time(std::cerr) << "Done.\n";
 	}
@@ -147,7 +217,8 @@ int main(int argc, char **argv)
 	
 	process(
 		args_info.alignments_arg,
-		args_info.prefixes_arg,
+		args_info.reference_names_arg,
+		args_info.prefixes_flag,
 		args_info.report_unmatched_flag
 	);
 	

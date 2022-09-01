@@ -8,5 +8,6 @@ usage		"split_alignments_by_ref_prefix --alignments=alignments.bam --prefixes=pr
 description	"The resulting alignments will be written to separate files in the current working directory. The output files may then be e.g. sorted by position and finally concatenated in order to match the order of a VCF file with multiple contigs."
 
 option		"alignments"		a	"Alignment file path"								string	typestr = "filename"	required
-option		"prefixes"			p	"Reference name prefixes, one per line"				string	typestr = "filename"	required
+option		"reference-names"	n	"Reference names, one per line"						string	typestr = "filename"	required
+option		"prefixes"			p	"Treat reference names are prefixes"				flag	off
 option		"report-unmatched"	r	"Report reference names without matching prefix"	flag	off
