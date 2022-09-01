@@ -7,12 +7,12 @@ include ../seqan3.mk
 OBJECTS		=	cmdline.o \
 				main.o
 
-all: split_alignments_by_ref_prefix
+all: split_alignments_by_reference
 
 clean:
-	$(RM) $(OBJECTS) split_alignments_by_ref_prefix cmdline.h cmdline.c
+	$(RM) $(OBJECTS) split_alignments_by_reference cmdline.h cmdline.c
 
-split_alignments_by_ref_prefix: $(OBJECTS)
+split_alignments_by_reference: $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/src/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c
