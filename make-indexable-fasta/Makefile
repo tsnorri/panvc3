@@ -1,4 +1,4 @@
--include ../local.mk
+-include ../local.llvm.mk
 include ../common.mk
 
 .PRECIOUS: 
