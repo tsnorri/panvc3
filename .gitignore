@@ -40,7 +40,7 @@ make-indexable-fasta/cmdline.c
 make-indexable-fasta/cmdline.h
 make-indexable-fasta/config.h
 make-indexable-fasta/make_indexable_fasta
-split-alignments-by-ref-prefix/cmdline.c
-split-alignments-by-ref-prefix/cmdline.h
-split-alignments-by-ref-prefix/config.h
-split-alignments-by-ref-prefix/split_alignments_by_ref_prefix
+split-alignments-by-reference/cmdline.c
+split-alignments-by-reference/cmdline.h
+split-alignments-by-reference/config.h
+split-alignments-by-reference/split_alignments_by_reference
