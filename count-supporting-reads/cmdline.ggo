@@ -5,10 +5,10 @@ package		"count-supporting-reads"
 version		"0.1"
 purpose		"Count the reads that support the reference or the alternative alleles, given a list of variants and a set of alignments"
 usage		"count_supporting_reads --vcf=variants.vcf --alignments=alignments.bam [ ... ] > counts.txt"
-description	"The alignments should be in either SAM or BAM format. Only heterozygous diploid variants are considered."
+description	"The alignments should be in either SAM or BAM format. Alignments in SAM format can also be read from stdin. Only heterozygous diploid variants are considered."
 
 option		"vcf"				i	"Variant Call File path"							string	typestr = "filename"	required
-option		"alignments"		a	"Alignment file path"								string	typestr = "filename"	required
+option		"alignments"		a	"Alignment file path"								string	typestr = "filename"	optional
 option		"chr"				c	"Chromosome identifier in the VCF file"				string							optional
 option		"regions"			r	"Consider only the regions int the given BED file"	string	typestr = "filename"	optional
 option		"contig-prefix"		p	"Contig prefix in the alignment file"				string							optional
