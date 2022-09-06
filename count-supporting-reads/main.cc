@@ -343,7 +343,7 @@ namespace {
 			for (; m_it != m_end; ++m_it)
 			{
 				++m_reads_processed;
-				if (0 == m_reads_processed % 100000)
+				if (0 == m_reads_processed % 10000000)
 					lb::log_time(std::cerr) << "Processed " << m_reads_processed << " reads…\n";
 				
 				// If POS is zero, skip the record.
@@ -457,9 +457,10 @@ namespace {
 	}
 	
 	
-	void process(
+	template <typename t_aln_input>
+	void process_(
+		t_aln_input &aln_input,
 		char const *vcf_path,
-		char const *aln_path,
 		char const *chr_id,
 		char const *regions_path,
 		char const *contig_prefix,
@@ -494,18 +495,6 @@ namespace {
 			bed_reader.read_regions(regions_path, delegate);
 		}
 		
-		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
-		fs::path const alignments_path(aln_path);
-		seqan3::sam_file_input aln_input(
-			alignments_path,
-			seqan3::fields <
-				seqan3::field::ref_id,
-				seqan3::field::ref_offset,
-				seqan3::field::seq,
-				seqan3::field::flag,
-				seqan3::field::cigar
-			>{}
-		);
 		alignment_reader aln_reader(aln_input, contig_prefix, should_consider_primary_alignments_only);
 		std::map <panvc3::dna10_vector, std::size_t> supported_sequences;
 		panvc3::dna10_vector buffer;
@@ -545,7 +534,7 @@ namespace {
 				// Get the sample genotype.
 				auto const &sample(samples.front());
 				auto const &gt(gt_field(sample)); // vector of sample_genotype
-				libbio_always_assert_eq(2, gt.size()); // FIXME: error message, or handle other zygosities.
+				libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT."); // FIXME: error message, or handle other zygosities.
 				
 				// Check the zygosity. (Generalized for polyploid.)
 				static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
@@ -621,6 +610,39 @@ namespace {
 		}
 		
 		lb::log_time(std::cerr) << "Done.\n";
+	}
+
+
+	void process(
+		char const *vcf_path,
+		char const *aln_path,
+		char const *chr_id,
+		char const *regions_path,
+		char const *contig_prefix,
+		bool const should_consider_primary_alignments_only,
+		bool const should_include_clipping
+	)
+	{
+		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
+		seqan3::fields <
+			seqan3::field::ref_id,
+			seqan3::field::ref_offset,
+			seqan3::field::seq,
+			seqan3::field::flag,
+			seqan3::field::cigar
+		> fields{};
+
+		if (aln_path)
+		{
+			fs::path const alignments_path(aln_path);
+			seqan3::sam_file_input aln_input(alignments_path, fields);
+			process_(aln_input, vcf_path, chr_id, regions_path, contig_prefix, should_consider_primary_alignments_only, should_include_clipping);
+		}
+		else
+		{
+			seqan3::sam_file_input aln_input(std::cin, seqan3::format_sam{}, fields);
+			process_(aln_input, vcf_path, chr_id, regions_path, contig_prefix, should_consider_primary_alignments_only, should_include_clipping);
+		}
 	}
 }
 
