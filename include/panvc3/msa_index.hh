@@ -6,6 +6,7 @@
 #ifndef PANVC3_MSA_INDEX_HH
 #define PANVC3_MSA_INDEX_HH
 
+#include <libbio/utility/compare_strings_transparent.hh>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/rrr_vector.hpp>
 #include <vector>
@@ -42,8 +43,8 @@ namespace panvc3 {
 		
 		struct sequence_entry_cmp
 		{
-			bool operator()(sequence_entry const &lhs, std::string const &rhs) const { return lhs.seq_id < rhs; }
-			bool operator()(std::string const &lhs, sequence_entry const &rhs) const { return lhs < rhs.seq_id; }
+			template <typename t_string> inline bool operator()(sequence_entry const &lhs, t_string const &rhs) const;
+			template <typename t_string> inline bool operator()(t_string const &lhs, sequence_entry const &rhs) const;
 		};
 		
 		typedef std::vector <sequence_entry>	sequence_entry_vector;
@@ -52,6 +53,8 @@ namespace panvc3 {
 		{
 			std::string				chr_id;
 			sequence_entry_vector	sequence_entries;
+			
+			chr_entry() = default;
 			
 			explicit chr_entry(std::string const &chr_id_):
 				chr_id(chr_id_)
@@ -64,8 +67,8 @@ namespace panvc3 {
 		
 		struct chr_entry_cmp
 		{
-			bool operator()(chr_entry const &lhs, std::string const &rhs) const { return lhs.chr_id < rhs; }
-			bool operator()(std::string const &lhs, chr_entry const &rhs) const { return lhs < rhs.chr_id; }
+			template <typename t_string> inline bool operator()(chr_entry const &lhs, t_string const &rhs) const;
+			template <typename t_string> inline bool operator()(t_string const &lhs, chr_entry const &rhs) const;
 		};
 		
 		typedef std::vector <chr_entry>			chr_entry_vector;
@@ -73,8 +76,39 @@ namespace panvc3 {
 		chr_entry_vector	chr_entries;
 		
 		msa_index() = default;
+		
 		template <typename t_archive> void serialize(t_archive &ar, std::uint32_t const version);
 	};
+	
+	
+	template <typename t_string>
+	bool msa_index::sequence_entry_cmp::operator()(sequence_entry const &lhs, t_string const &rhs) const
+	{
+		libbio::compare_strings_transparent cmp;
+		return cmp(lhs.seq_id, rhs);
+	}
+	
+	template <typename t_string>
+	bool msa_index::sequence_entry_cmp::operator()(t_string const &lhs, sequence_entry const &rhs) const
+	{
+		libbio::compare_strings_transparent cmp;
+		return cmp(lhs, rhs.seq_id);
+	}
+	
+	
+	template <typename t_string>
+	bool msa_index::chr_entry_cmp::operator()(chr_entry const &lhs, t_string const &rhs) const
+	{
+		libbio::compare_strings_transparent cmp;
+		return cmp(lhs.chr_id, rhs);
+	}
+	
+	template <typename t_string>
+	bool msa_index::chr_entry_cmp::operator()(t_string const &lhs, chr_entry const &rhs) const
+	{
+		libbio::compare_strings_transparent cmp;
+		return cmp(lhs, rhs.chr_id);
+	}
 	
 	
 	template <typename t_archive>
