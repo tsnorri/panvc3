@@ -6,12 +6,12 @@ include ../common.mk
 OBJECTS		=	cmdline.o \
 				main.o
 
-all: make_indexable_fasta
+all: index_msa
 
 clean:
-	$(RM) $(OBJECTS) make_indexable_fasta cmdline.h cmdline.c
+	$(RM) $(OBJECTS) index_msa cmdline.h cmdline.c
 
-make_indexable_fasta: $(OBJECTS)
+index_msa: $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-llvm/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c

@@ -22,14 +22,14 @@ DIST_TAR_GZ = panvc3-$(VERSION)-$(OS_NAME)$(DIST_NAME_SUFFIX).tar.gz
 
 .PHONY: all clean-all clean clean-dependencies dependencies
 
-all:	make-indexable-fasta/make_indexable_fasta \
+all:	index-msa/index_msa \
 		count-supporting-reads/count_supporting_reads \
 		split-alignments-by-reference/split_alignments_by_reference
 
 clean-all: clean clean-dependencies clean-dist
 
 clean:
-	$(MAKE) -C make-indexable-fasta clean
+	$(MAKE) -C index-msa clean
 	$(MAKE) -C count-supporting-reads clean
 	$(MAKE) -C split-alignments-by-reference clean
 
@@ -47,8 +47,8 @@ dist: $(DIST_TAR_GZ)
 test:
 	$(MAKE) -C tests
 
-make-indexable-fasta/make_indexable_fasta: lib/libbio/build-llvm/libbio.a
-	$(MAKE) -C make-indexable-fasta
+index-msa/index_msa: lib/libbio/build-llvm/libbio.a
+	$(MAKE) -C index-msa
 
 count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C count-supporting-reads
@@ -56,9 +56,9 @@ count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
 split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C split-alignments-by-reference
 
-$(DIST_TAR_GZ):	make-indexable-fasta/make_indexable_fasta
+$(DIST_TAR_GZ):	index-msa/index_msa
 	$(MKDIR) -p $(DIST_TARGET_DIR)
-	$(CP) make-indexable-fasta/make_indexable_fasta $(DIST_TARGET_DIR)
+	$(CP) index-msa/index_msa $(DIST_TARGET_DIR)
 	$(CP) README.md $(DIST_TARGET_DIR)
 	$(CP) LICENSE $(DIST_TARGET_DIR)
 	$(CP) lib/swift-corelibs-libdispatch/LICENSE $(DIST_TARGET_DIR)/swift-corelibs-libdispatch-license.txt
