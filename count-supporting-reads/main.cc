@@ -534,7 +534,7 @@ namespace {
 				// Get the sample genotype.
 				auto const &sample(samples.front());
 				auto const &gt(gt_field(sample)); // vector of sample_genotype
-				libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT."); // FIXME: error message, or handle other zygosities.
+				libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT (", gt.size(), ")"); // FIXME: error message, or handle other zygosities.
 				
 				// Check the zygosity. (Generalized for polyploid.)
 				static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
