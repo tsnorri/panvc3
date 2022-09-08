@@ -32,6 +32,10 @@
 *.app
 
 # Generated files
+convert-bed-positions/cmdline.c
+convert-bed-positions/cmdline.h
+convert-bed-positions/config.h
+convert-bed-positions/convert_bed_positions
 count-supporting-reads/cmdline.c
 count-supporting-reads/cmdline.h
 count-supporting-reads/config.h
