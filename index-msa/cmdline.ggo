@@ -10,4 +10,5 @@ description	"The input file should contain the chromosome identifiers and input 
 option		"inputs"			i	"Input as tabulated text"					string	typestr = "filename"								required
 option		"msa-index-output"	m	"MSA index output"							string	typestr = "filename"								required
 option		"pipe-input"		p	"Read input from the given command"			string	typestr = "command"									optional
-option		"fasta-line-width"	w	"Wrap the FASTA output to the given length"	long	default = "0"										optional
+option		"output-fasta"		f	"Output the unaligned sequences as FASTA"	flag														off
+option		"fasta-line-width"	w	"Wrap the FASTA output to the given length"	long	default = "0"			dependon = "output-fasta"	optional

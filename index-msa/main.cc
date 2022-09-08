@@ -124,7 +124,7 @@ namespace {
 
 
 	template <bool t_should_output_seq>
-	void process_input(
+	void build_index(
 		std::string const &chr_id,
 		std::string const &seq_id,
 		lb::file_handle &read_handle,
@@ -240,18 +240,21 @@ namespace {
 		std::string					m_msa_index_output_path;
 		std::vector <std::string>	m_pipe_command;
 		std::size_t					m_fasta_line_width{};
+		bool						m_should_output_fasta{};
 		
 	public:
 		input_processor(
 			char const *input_path,
 			char const *msa_index_output_path,
 			char const *pipe_input_command,
+			bool const should_output_fasta,
 			std::size_t const fasta_line_width
 		):
 			m_input_path(input_path),
 			m_msa_index_output_path(msa_index_output_path),
 			m_pipe_command(lb::parse_command_arguments(pipe_input_command)),
-			m_fasta_line_width(fasta_line_width)
+			m_fasta_line_width(fasta_line_width),
+			m_should_output_fasta(should_output_fasta)
 		{
 		}
 		
@@ -317,7 +320,11 @@ namespace {
 							fs::path const path(path_str);
 							auto const fname(path.filename());
 							lb::log_time(std::cerr) << "Processing " << fname << "…\n";
-							process_input <true>(entry.chr_id, fname, handle, seq_buffer, bv, m_fasta_line_width);
+
+							if (m_should_output_fasta)
+								build_index <true>(entry.chr_id, fname, handle, seq_buffer, bv, m_fasta_line_width);
+							else
+								build_index <false>(entry.chr_id, fname, handle, seq_buffer, bv, m_fasta_line_width);
 							
 							auto &seq_entry(msa_chr_entry.sequence_entries.emplace_back());
 							lb::dispatch_group_async_fn(*chr_group, global_queue, [fname, bv = std::move(bv), &seq_entry](){
@@ -370,6 +377,7 @@ namespace {
 			args_info.inputs_arg,
 			args_info.msa_index_output_arg,
 			args_info.pipe_input_arg,
+			args_info.output_fasta_flag,
 			args_info.fasta_line_width_arg
 		);
 		
