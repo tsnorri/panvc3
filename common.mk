@@ -4,8 +4,10 @@ unexport SDKROOT
 # Default values.
 # SeqAn3 uses std::hardware_destructive_interference_size
 # Boost, on the other hand, uses some deprecated builtins (as of Clang 14).
-WARNING_FLAGS		?= -Wall -Werror -Wno-deprecated-builtins -Wno-deprecated-declarations -Wno-unused
-WARNING_CXXFLAGS	?= -Wno-interference-size
+WARNING_FLAGS_		?=
+WARNING_CXXFLAGS_	?=
+WARNING_FLAGS		?= -Wall -Werror -Wno-deprecated-builtins -Wno-deprecated-declarations -Wno-unused $(WARNING_FLAGS_)
+WARNING_CXXFLAGS	?= $(WARNING_CXXFLAGS_)
 OPT_FLAGS			?= -O2 -g
 
 CMAKE			?= cmake
@@ -37,9 +39,9 @@ BOOST_INCLUDE	?= -I$(BOOST_ROOT)/include
 CFLAGS			+= -std=c99   $(OPT_FLAGS) $(WARNING_FLAGS) $(SYSTEM_CFLAGS)
 CXXFLAGS		+= -std=c++2b $(OPT_FLAGS) $(WARNING_FLAGS) $(WARNING_CXXFLAGS) $(SYSTEM_CXXFLAGS)
 CPPFLAGS		+= -DHAVE_CONFIG_H -I../include -I../lib/cereal/include -I../lib/libbio/include -I../lib/libbio/lib/GSL/include -I../lib/libbio/lib/range-v3/include -I../lib/sdsl-lite/include $(BOOST_INCLUDE) $(SYSTEM_CPPFLAGS)
-LDFLAGS			:= ../lib/libbio/src/libbio.a $(BOOST_LIBS) $(LDFLAGS) $(SYSTEM_LDFLAGS)
+LDFLAGS			:= $(BOOST_LIBS) $(LDFLAGS) $(SYSTEM_LDFLAGS)
 
-ifdef USE_LIBDISPATCH
+ifeq ($(shell uname -s),Linux)
 	CPPFLAGS	+= -I../lib/swift-corelibs-libdispatch
 	LDFLAGS		:= ../lib/swift-corelibs-libdispatch/build/src/libdispatch.a ../lib/swift-corelibs-libdispatch/build/src/BlocksRuntime/libBlocksRuntime.a $(LDFLAGS)
 endif

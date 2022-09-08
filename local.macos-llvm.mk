@@ -6,8 +6,6 @@ CXX					= $(CLANG_ROOT)/bin/clang++
 OPT_FLAGS			= -O0 -g
 #OPT_FLAGS			= -Og -g
 #OPT_FLAGS			= -O2 -g
-DOT					= /opt/homebrew/bin/dot
-WGET				= /usr/local/homebrew/bin/wget
 
 ISYSROOT			= -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
 

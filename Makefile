@@ -1,30 +1,40 @@
 include local.mk
 include common.mk
 
-DEPENDENCIES = lib/libbio/src/libbio.a
-ifdef USE_LIBDISPATCH
+# Some of the tools require Clang for building while others require GCC.
+# Unfortunately using either libstdc++ or libc++ with all of the tools
+# was not possible, so we build two versions of libbio.
+DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
+				lib/libbio/build-llvm/libbio.a
+
+OS_NAME = $(shell ./tools/os_name.sh)
+
+ifeq ($(OS_NAME),Linux)
 	DEPENDENCIES += lib/swift-corelibs-libdispatch/build/src/libdispatch.a
 endif
 
 # “$() $()” is a literal space.
-OS_NAME = $(shell tools/os_name.sh)
 VERSION = $(subst $() $(),-,$(shell tools/git_version.sh))
-DIST_TARGET_DIR = vcf2multialign-$(VERSION)
+DIST_TARGET_DIR = panvc3-$(VERSION)
 DIST_NAME_SUFFIX = $(if $(TARGET_TYPE),-$(TARGET_TYPE),)
 DIST_TAR_GZ = panvc3-$(VERSION)-$(OS_NAME)$(DIST_NAME_SUFFIX).tar.gz
 
 
 .PHONY: all clean-all clean clean-dependencies dependencies
 
-all:	make-indexable-fasta/make_indexable_fasta
+all:	make-indexable-fasta/make_indexable_fasta \
+		count-supporting-reads/count_supporting_reads \
+		split-alignments-by-reference/split_alignments_by_reference
 
 clean-all: clean clean-dependencies clean-dist
 
 clean:
 	$(MAKE) -C make-indexable-fasta clean
+	$(MAKE) -C count-supporting-reads clean
+	$(MAKE) -C split-alignments-by-reference clean
 
-clean-dependencies: lib/libbio/local.mk
-	$(MAKE) -C lib/libbio clean-all
+clean-dependencies:
+	$(RM) -r lib/libbio/build-gcc lib/libbio/build-llvm
 	$(RM) -r lib/swift-corelibs-libdispatch/build
 
 clean-dist:
@@ -37,8 +47,14 @@ dist: $(DIST_TAR_GZ)
 test:
 	$(MAKE) -C tests
 
-make-indexable-fasta/make_indexable_fasta: $(DEPENDENCIES)
+make-indexable-fasta/make_indexable_fasta: lib/libbio/build-llvm/libbio.a
 	$(MAKE) -C make-indexable-fasta
+
+count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
+	$(MAKE) -C count-supporting-reads
+
+split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a
+	$(MAKE) -C split-alignments-by-reference
 
 $(DIST_TAR_GZ):	make-indexable-fasta/make_indexable_fasta
 	$(MKDIR) -p $(DIST_TARGET_DIR)
@@ -50,23 +66,9 @@ $(DIST_TAR_GZ):	make-indexable-fasta/make_indexable_fasta
 	$(TAR) czf $(DIST_TAR_GZ) $(DIST_TARGET_DIR)
 	$(RM) -rf $(DIST_TARGET_DIR)
 
-lib/libbio/local.mk: local.mk
-	$(CP) local.mk lib/libbio
-
-lib/libbio/src/libbio.a: lib/libbio/local.mk
-	$(MAKE) -C lib/libbio
+lib/libbio/build-%/libbio.a:
+	$(MKDIR) -p lib/libbio/build-$*
+	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../local.$(OS_NAME)-$*.mk -f ../src/Makefile
 
 lib/swift-corelibs-libdispatch/build/src/libdispatch.a:
-	$(RM) -rf lib/swift-corelibs-libdispatch/build && \
-	cd lib/swift-corelibs-libdispatch && \
-	$(MKDIR) build && \
-	cd build && \
-	$(CMAKE) \
-		-G Ninja \
-		-DCMAKE_C_COMPILER="$(CC)" \
-		-DCMAKE_CXX_COMPILER="$(CXX)" \
-		-DCMAKE_C_FLAGS="$(LIBDISPATCH_CFLAGS)" \
-		-DCMAKE_CXX_FLAGS="$(LIBDISPATCH_CXXFLAGS)" \
-		-DBUILD_SHARED_LIBS=OFF \
-		.. && \
-	$(NINJA) -v
+	$(MAKE) -f libdispatch.mk

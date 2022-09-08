@@ -13,7 +13,7 @@ clean:
 	$(RM) $(OBJECTS) split_alignments_by_reference cmdline.h cmdline.c
 
 split_alignments_by_reference: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/src/libbio.a $(LDFLAGS)
+	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h

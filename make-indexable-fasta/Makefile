@@ -12,7 +12,7 @@ clean:
 	$(RM) $(OBJECTS) make_indexable_fasta cmdline.h cmdline.c
 
 make_indexable_fasta: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) $(LDFLAGS) ../lib/libbio/src/libbio.a
+	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-llvm/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h
