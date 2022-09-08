@@ -4,6 +4,7 @@
  */
 
 #include <cereal/archives/portable_binary.hpp>
+#include <filesystem>
 #include <iostream>
 #include <libbio/dispatch.hh>
 #include <libbio/file_handle.hh>
@@ -120,8 +121,9 @@ namespace {
 		
 		path = entry_sv.substr(start);
 	}
-	
-	
+
+
+	template <bool t_should_output_seq>
 	void process_input(
 		std::string const &chr_id,
 		std::string const &seq_id,
@@ -143,7 +145,8 @@ namespace {
 		bv.resize(sb.st_size, 0);
 		
 		// Output the FASTA header for this sequence.
-		std::cout << '>' << chr_id << '/' << seq_id << '\n';
+		if constexpr (t_should_output_seq)
+			std::cout << '>' << chr_id << '/' << seq_id << '\n';
 		
 		// Read and output the sequence.
 		std::size_t bytes_read{};
@@ -158,20 +161,76 @@ namespace {
 					bv[pos + i] = 1;
 				else
 				{
-					std::cout << cc;
-					++non_gap_count;
-					
-					if (wrap_amt && 0 == non_gap_count % wrap_amt)
-						std::cout << '\n';
+					if constexpr (t_should_output_seq)
+					{
+						std::cout << cc;
+						++non_gap_count;
+						
+						if (wrap_amt && 0 == non_gap_count % wrap_amt)
+							std::cout << '\n';
+					}
 				}
 			}
 			
 			pos += bytes_read;
 		}
 		
-		if (0 == wrap_amt || 0 != non_gap_count % wrap_amt)
-			std::cout << '\n';
+		if constexpr (t_should_output_seq)
+		{
+			if (0 == wrap_amt || 0 != non_gap_count % wrap_amt)
+				std::cout << '\n';
+		}
 	}
+
+
+	struct input_handler
+	{
+		virtual ~input_handler() {}
+
+		virtual void process_input(
+			std::string const &path,
+			std::function <void(lb::file_handle &)> const &cb
+		) = 0;
+	};
+
+
+	struct file_input_handler final : public input_handler
+	{
+		virtual void process_input(
+			std::string const &path,
+			std::function <void(lb::file_handle &)> const &cb
+		) override
+		{
+			lb::file_handle handle(lb::open_file_for_reading(path));
+			cb(handle);
+		}
+	};
+
+
+	class subprocess_input_handler final : public input_handler
+	{
+	public:
+		typedef lb::subprocess <lb::subprocess_handle_spec::STDOUT> subprocess_type;
+
+	protected:
+		std::vector <std::string>	&m_pipe_command;
+
+	public:
+		subprocess_input_handler(std::vector <std::string> &pipe_command):
+			m_pipe_command(pipe_command)
+		{
+		}
+
+		virtual void process_input(
+			std::string const &path,
+			std::function <void(lb::file_handle &)> const &cb
+		) override
+		{
+			m_pipe_command.back() = path;
+			auto subprocess(subprocess_type::subprocess_with_arguments(m_pipe_command));
+			cb(subprocess.stdout_handle());
+		}
+	};
 	
 	
 	class input_processor
@@ -196,7 +255,8 @@ namespace {
 		{
 		}
 		
-		void operator()()
+
+		void process(input_handler &handler)
 		{
 			lb::file_istream path_stream;
 			lb::file_ostream msa_index_stream;
@@ -240,43 +300,31 @@ namespace {
 				auto &msa_chr_entry(find_msa_chr_entry(msa_index, entry.chr_id)); // Adds always.
 				msa_chr_entry.sequence_entries.reserve(entry.paths.size());
 				
-				if (m_pipe_command.empty())
+				for (auto const &path_str : entry.paths)
 				{
-					for (auto const &path_str : entry.paths)
-					{
-						sdsl::bit_vector bv;
-						lb::file_handle handle(lb::open_file_for_reading(path_str));
-						
-						fs::path const path(path_str);
-						auto const fname(path.filename());
-						lb::log_time(std::cerr) << "Processing " << fname << "…\n";
-						process_input(entry.chr_id, fname, handle, seq_buffer, bv, m_fasta_line_width);
-						
-						auto &seq_entry(msa_chr_entry.sequence_entries.emplace_back());
-						lb::dispatch_group_async_fn(*chr_group, global_queue, [fname, bv = std::move(bv), &seq_entry](){
-							seq_entry = panvc3::msa_index::sequence_entry(std::move(fname), bv);
-						});
-					}
-				}
-				else
-				{
-					typedef lb::subprocess <lb::subprocess_handle_spec::STDOUT> subprocess_type;
-					for (auto const &path_str : entry.paths)
-					{
-						sdsl::bit_vector bv;
-						m_pipe_command.back() = path_str;
-						auto subprocess(subprocess_type::subprocess_with_arguments(m_pipe_command));
-						
-						fs::path const path(path_str);
-						auto const fname(path.filename());
-						lb::log_time(std::cerr) << "Processing " << fname << "…\n";
-						process_input(entry.chr_id, fname, subprocess.stdout_handle(), seq_buffer, bv, m_fasta_line_width);
-						
-						auto &seq_entry(msa_chr_entry.sequence_entries.emplace_back());
-						lb::dispatch_group_async_fn(*chr_group, global_queue, [fname, bv = std::move(bv), &seq_entry](){
-							seq_entry = panvc3::msa_index::sequence_entry(std::move(fname), bv);
-						});
-					}
+					handler.process_input(
+						path_str,
+						[
+							this,
+							global_queue,
+							&seq_buffer,
+							&entry,
+							&chr_group,
+							&msa_chr_entry,
+							&path_str
+						](lb::file_handle &handle){
+							sdsl::bit_vector bv;
+							fs::path const path(path_str);
+							auto const fname(path.filename());
+							lb::log_time(std::cerr) << "Processing " << fname << "…\n";
+							process_input <true>(entry.chr_id, fname, handle, seq_buffer, bv, m_fasta_line_width);
+							
+							auto &seq_entry(msa_chr_entry.sequence_entries.emplace_back());
+							lb::dispatch_group_async_fn(*chr_group, global_queue, [fname, bv = std::move(bv), &seq_entry](){
+								seq_entry = panvc3::msa_index::sequence_entry(std::move(fname), bv);
+							});
+						}
+					);
 				}
 				
 				dispatch_group_enter(*main_group);
@@ -297,6 +345,21 @@ namespace {
 			msa_archive(msa_index);
 			lb::log_time(std::cerr) << "Done.\n";
 			std::exit(EXIT_SUCCESS);
+		}
+
+
+		void operator()()
+		{
+			if (m_pipe_command.empty())
+			{
+				file_input_handler handler;
+				process(handler);
+			}
+			else
+			{
+				subprocess_input_handler handler(m_pipe_command);
+				process(handler);
+			}
 		}
 	};
 	
