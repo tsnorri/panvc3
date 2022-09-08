@@ -1,5 +1,7 @@
--include ../local.llvm.mk
-include ../common.mk
+MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include  $(MAKEFILE_DIR)/../make/os-name.mk
+-include $(MAKEFILE_DIR)/../make/local.$(OS_NAME)-llvm.mk
+include  $(MAKEFILE_DIR)/../make/common.mk
 
 .PRECIOUS: 
 
@@ -17,4 +19,4 @@ index_msa: $(OBJECTS)
 main.cc: cmdline.c
 cmdline.c: config.h
 
-include ../config.mk
+include $(MAKEFILE_DIR)/../make/config.mk

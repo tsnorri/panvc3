@@ -1,6 +1,8 @@
--include ../local.gcc.mk
-include ../common.mk
-include ../seqan3.mk
+MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include  $(MAKEFILE_DIR)/../make/os-name.mk
+-include $(MAKEFILE_DIR)/../make/local.$(OS_NAME)-gcc.mk
+include  $(MAKEFILE_DIR)/../make/common.mk
+include  $(MAKEFILE_DIR)/../make/seqan3.mk
 
 .PRECIOUS: 
 
@@ -18,4 +20,4 @@ count_supporting_reads: $(OBJECTS)
 main.cc: cmdline.c
 cmdline.c: config.h
 
-include ../config.mk
+include $(MAKEFILE_DIR)/../make/config.mk

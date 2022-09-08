@@ -2,11 +2,9 @@
 unexport SDKROOT
 
 # Default values.
-# SeqAn3 uses std::hardware_destructive_interference_size
-# Boost, on the other hand, uses some deprecated builtins (as of Clang 14).
 WARNING_FLAGS_		?=
 WARNING_CXXFLAGS_	?=
-WARNING_FLAGS		?= -Wall -Werror -Wno-deprecated-builtins -Wno-deprecated-declarations -Wno-unused $(WARNING_FLAGS_)
+WARNING_FLAGS		?= -Wall -Werror -Wno-deprecated-declarations -Wno-unused $(WARNING_FLAGS_)
 WARNING_CXXFLAGS	?= $(WARNING_CXXFLAGS_)
 OPT_FLAGS			?= -O2 -g
 

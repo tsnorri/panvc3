@@ -10,6 +10,7 @@ ISYSROOT			=
 
 CPPFLAGS			= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_STACKTRACE_USE_NOOP -DLIBBIO_NO_DISPATCH -I/usr/local/homebrew/include
 LDFLAGS				= -L/home/tnorri/.linuxbrew/lib -static -static-libgcc -lpthread -lz -ldl
+WARNING_FLAGS_		= -Wno-deprecated-builtins
 WARNING_CXXFLAGS_	= -Wno-interference-size
 
 SYSTEM_CFLAGS		= $(ISYSROOT)

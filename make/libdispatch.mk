@@ -1,5 +1,6 @@
-include local.llvm.mk
-include common.mk
+MAKE_SCRIPT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(MAKE_SCRIPT_DIR)/local.llvm.mk
+include $(MAKE_SCRIPT_DIR)/common.mk
 
 
 all: lib/swift-corelibs-libdispatch/build/src/libdispatch.a

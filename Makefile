@@ -1,13 +1,13 @@
-include local.mk
-include common.mk
+PANVC3_PROJECT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include  $(PANVC3_PROJECT_DIR)/make/os-name.mk
+-include $(PANVC3_PROJECT_DIR)/make/local.mk
+include  $(PANVC3_PROJECT_DIR)/make/common.mk
 
 # Some of the tools require Clang for building while others require GCC.
 # Unfortunately using either libstdc++ or libc++ with all of the tools
 # was not possible, so we build two versions of libbio.
 DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
 				lib/libbio/build-llvm/libbio.a
-
-OS_NAME = $(shell ./tools/os_name.sh)
 
 ifeq ($(OS_NAME),Linux)
 	DEPENDENCIES += lib/swift-corelibs-libdispatch/build/src/libdispatch.a
@@ -68,7 +68,7 @@ $(DIST_TAR_GZ):	index-msa/index_msa
 
 lib/libbio/build-%/libbio.a:
 	$(MKDIR) -p lib/libbio/build-$*
-	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../local.$(OS_NAME)-$*.mk -f ../src/Makefile
+	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../make/local.$(OS_NAME)-$*.mk -f ../src/Makefile
 
 lib/swift-corelibs-libdispatch/build/src/libdispatch.a:
-	$(MAKE) -f libdispatch.mk
+	$(MAKE) -f make/libdispatch.mk
