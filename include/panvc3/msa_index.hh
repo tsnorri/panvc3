@@ -15,12 +15,14 @@ namespace panvc3 {
 	struct msa_index
 	{
 		typedef sdsl::rrr_vector <15>		bit_vector;
+		typedef bit_vector::rank_0_type		rank0_support_type;
 		typedef bit_vector::select_0_type	select0_support_type;
 		
 		struct sequence_entry
 		{
 			std::string				seq_id;
 			bit_vector				gap_positions;
+			rank0_support_type		gap_positions_rank0_support;
 			select0_support_type	gap_positions_select0_support;
 			
 			sequence_entry() = default;
@@ -28,6 +30,7 @@ namespace panvc3 {
 			sequence_entry(std::string &&seq_id_, sdsl::bit_vector const &gap_positions_):
 				seq_id(std::move(seq_id_)),
 				gap_positions(gap_positions_),
+				gap_positions_rank0_support(&gap_positions),
 				gap_positions_select0_support(&gap_positions)
 			{
 			}
@@ -79,7 +82,9 @@ namespace panvc3 {
 	{
 		ar(seq_id);
 		ar(gap_positions);
+		ar(gap_positions_rank0_support);
 		ar(gap_positions_select0_support);
+		gap_positions_rank0_support.set_vector(&gap_positions);
 		gap_positions_select0_support.set_vector(&gap_positions);
 	}
 	
@@ -89,6 +94,7 @@ namespace panvc3 {
 	{
 		ar(seq_id);
 		ar(gap_positions);
+		ar(gap_positions_rank0_support);
 		ar(gap_positions_select0_support);
 	}
 	
