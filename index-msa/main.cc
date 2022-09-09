@@ -123,6 +123,43 @@ namespace {
 	}
 
 
+	void load_msa_index(char const *path, panvc3::msa_index &msa_index)
+	{
+		lb::log_time(std::cerr) << "Loading the input MSA index…\n";
+		lb::file_istream stream;
+		lb::open_file_for_reading(path, stream);
+		cereal::PortableBinaryInputArchive archive(stream);
+		archive(msa_index);
+	}
+
+
+	void list_index_contents(char const *path)
+	{
+		panvc3::msa_index msa_index;
+		load_msa_index(path, msa_index);
+		
+		for (auto const &chr_entry : msa_index.chr_entries)
+		{
+			std::size_t seq_len{};
+			auto const &seq_entries(chr_entry.sequence_entries);
+			if (!seq_entries.empty())
+				seq_len = seq_entries.front().gap_positions.size();
+
+			std::cout << "Chromosome “" << chr_entry.chr_id << "” (" << chr_entry.sequence_entries.size() << " sequences of " << seq_len << " characters)\n";
+			for (auto const &seq_entry : seq_entries)
+			{
+				if (seq_entry.gap_positions.size() != seq_len)
+				{
+					std::cerr << "ERROR: Sequence " << seq_entry.seq_id << " has " << seq_entry.gap_positions.size() << " characters, expected " << seq_len << '.' << std::endl;
+					std::exit(EXIT_FAILURE);
+				}
+
+				std::cout << "\tSequence “" << seq_entry.seq_id << "”\n";
+			}
+		}
+	}
+
+
 	template <bool t_should_output_seq>
 	void build_index(
 		std::string const &chr_id,
@@ -237,6 +274,7 @@ namespace {
 	{
 	protected:
 		std::string					m_input_path;
+		std::string					m_msa_index_input_path;
 		std::string					m_msa_index_output_path;
 		std::vector <std::string>	m_pipe_command;
 		std::size_t					m_fasta_line_width{};
@@ -245,12 +283,14 @@ namespace {
 	public:
 		input_processor(
 			char const *input_path,
+			char const *msa_index_input_path,
 			char const *msa_index_output_path,
 			char const *pipe_input_command,
 			bool const should_output_fasta,
 			std::size_t const fasta_line_width
 		):
 			m_input_path(input_path),
+			m_msa_index_input_path(msa_index_input_path),
 			m_msa_index_output_path(msa_index_output_path),
 			m_pipe_command(lb::parse_command_arguments(pipe_input_command)),
 			m_fasta_line_width(fasta_line_width),
@@ -261,9 +301,15 @@ namespace {
 
 		void process(input_handler &handler)
 		{
+			panvc3::msa_index msa_index;
+				
 			lb::file_istream path_stream;
 			lb::file_ostream msa_index_stream;
+
+			if (!m_msa_index_input_path.empty())
+				load_msa_index(m_msa_index_input_path.c_str(), msa_index);
 			
+			lb::log_time(std::cerr) << "Loading the input sequences…\n";
 			lb::open_file_for_reading(m_input_path, path_stream);
 			lb::open_file_for_writing(m_msa_index_output_path, msa_index_stream, lb::make_writing_open_mode({lb::writing_open_mode::CREATE})); // FIXME: add overwriting conditionally.
 			cereal::PortableBinaryOutputArchive msa_archive(msa_index_stream);
@@ -287,8 +333,7 @@ namespace {
 			}
 			
 			// Prepare the MSA index.
-			panvc3::msa_index msa_index;
-			msa_index.chr_entries.reserve(chr_entries.size());
+			msa_index.chr_entries.reserve(msa_index.chr_entries.size() + chr_entries.size());
 			
 			// Handle the inputs and compress and sort in background.
 			std::vector <char> seq_buffer;
@@ -300,7 +345,7 @@ namespace {
 				lb::log_time(std::cerr) << "Handling sequences for chromosome " << entry.chr_id << "…\n";
 				
 				lb::dispatch_ptr <dispatch_group_t> chr_group(dispatch_group_create());
-				auto &msa_chr_entry(find_msa_chr_entry(msa_index, entry.chr_id)); // Adds always.
+				auto &msa_chr_entry(find_msa_chr_entry(msa_index, entry.chr_id));
 				msa_chr_entry.sequence_entries.reserve(entry.paths.size());
 				
 				for (auto const &path_str : entry.paths)
@@ -350,6 +395,7 @@ namespace {
 			std::sort(msa_index.chr_entries.begin(), msa_index.chr_entries.end());
 			lb::log_time(std::cerr) << "Serialising the MSA index…\n";
 			msa_archive(msa_index);
+			msa_index_stream << std::flush;
 			lb::log_time(std::cerr) << "Done.\n";
 			std::exit(EXIT_SUCCESS);
 		}
@@ -373,16 +419,25 @@ namespace {
 	
 	extern void process(gengetopt_args_info &args_info)
 	{
-		static input_processor processor(
-			args_info.inputs_arg,
-			args_info.msa_index_output_arg,
-			args_info.pipe_input_arg,
-			args_info.output_fasta_flag,
-			args_info.fasta_line_width_arg
-		);
-		
-		auto caller(lb::dispatch(processor));
-		caller.async <>(dispatch_get_main_queue());
+		if (args_info.list_contents_given)
+		{
+			list_index_contents(args_info.msa_index_input_arg);
+			std::exit(EXIT_SUCCESS);
+		}
+		else
+		{
+			static input_processor processor(
+				args_info.sequence_inputs_arg,
+				args_info.msa_index_input_arg,
+				args_info.msa_index_output_arg,
+				args_info.pipe_input_arg,
+				args_info.output_fasta_flag,
+				args_info.fasta_line_width_arg
+			);
+			
+			auto caller(lb::dispatch(processor));
+			caller.async <>(dispatch_get_main_queue());
+		}
 	}
 }
 

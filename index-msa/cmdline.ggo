@@ -4,11 +4,18 @@
 package		"index-msa"
 version		"0.1"
 purpose		"Build a co-ordinate transformation index from a set of sequences (possibly generated with vcf2multialign) and optionally output indexable FASTA."
-usage		"index_msa --inputs=inputs.txt [--msa-index-output=msa-index.dat] [--output-fasta > combined.fa]"
+usage		"index_msa --build-index --inputs=inputs.txt [--msa-index-output=msa-index.dat] [--output-fasta > combined.fa]"
 description	"The input file should contain the chromosome identifiers and input paths separated by a tabulator, one entry per line."
 
-option		"inputs"			i	"Input as tabulated text (chr_id, path)"	string	typestr = "filename"								required
-option		"msa-index-output"	m	"MSA index output"							string	typestr = "filename"								required
-option		"pipe-input"		p	"Read input from the given command"			string	typestr = "command"									optional
-option		"output-fasta"		f	"Output the unaligned sequences as FASTA"	flag														off
-option		"fasta-line-width"	w	"Wrap the FASTA output to the given length"	long	default = "0"			dependon = "output-fasta"	optional
+option		"msa-index-input"	d	"MSA index input"							string									typestr = "filename"									optional
+
+defmode		"Build index"		modedesc = "Build a MSA index"
+modeoption	"build-index"		B	"Build a MSA index"									mode = "Build index"																	required
+modeoption	"sequence-inputs"	i	"Input as tabulated text (chr_id, path)"	string	mode = "Build index"			typestr = "filename"									required
+modeoption	"msa-index-output"	m	"MSA index output"							string	mode = "Build index"			typestr = "filename"									required
+modeoption	"pipe-input"		p	"Read sequences from the given command"		string	mode = "Build index"			typestr = "command"										optional
+modeoption	"output-fasta"		f	"Output the unaligned sequences as FASTA"	flag	mode = "Build index"			off
+modeoption	"fasta-line-width"	w	"Wrap the FASTA output to the given length"	long	mode = "Build index"			default = "0"			dependon = "output-fasta"		optional
+
+defmode		"List index contents"	modedesc = "List MSA index contents"
+modeoption	"list-contents"		L	"List index contents"						mode = "List index contents"							dependon = "msa-index-input"	required
