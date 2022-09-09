@@ -9,8 +9,10 @@ include  $(PANVC3_PROJECT_DIR)/make/common.mk
 DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
 				lib/libbio/build-llvm/libbio.a
 
+LIBDISPATCH_LINUX_BIN :=
 ifeq ($(OS_NAME),linux)
-	DEPENDENCIES += lib/swift-corelibs-libdispatch/build/src/libdispatch.a
+	LIBDISPATCH_LINUX_BIN := lib/swift-corelibs-libdispatch/build/src/libdispatch.a
+	DEPENDENCIES += $(LIBDISPATCH_BIN)
 endif
 
 BUILD_PRODUCTS	=	index-msa/index_msa \
@@ -50,7 +52,7 @@ dist: $(DIST_TAR_GZ)
 test:
 	$(MAKE) -C tests
 
-index-msa/index_msa: lib/libbio/build-llvm/libbio.a
+index-msa/index_msa: lib/libbio/build-llvm/libbio.a $(LIBDISPATCH_LINUX_BIN)
 	$(MAKE) -C index-msa
 
 count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
