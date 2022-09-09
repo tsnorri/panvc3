@@ -105,7 +105,7 @@ namespace {
 		}
 		
 		
-		void process(gengetopt_args_info &args_info)
+		void process(std::istream &bed_stream, gengetopt_args_info &args_info)
 		{
 			m_chr_id = args_info.chr_arg;
 			m_dst_chr_id = args_info.dst_chr_arg ?: "";
@@ -133,7 +133,7 @@ namespace {
 			// Process.
 			lb::log_time(std::cerr) << "Processing the BED input…\n";
 			lb::bed_reader bed_reader;
-			bed_reader.read_regions(std::cin, *this);
+			bed_reader.read_regions(bed_stream, *this);
 		}
 	};
 }
@@ -148,7 +148,17 @@ int main(int argc, char **argv)
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 	
 	bed_processor processor;
-	processor.process(args_info);
+
+	if (args_info.bed_arg)
+	{
+		lb::file_istream stream;
+		lb::open_file_for_reading(args_info.bed_arg, stream);
+		processor.process(stream, args_info);
+	}
+	else
+	{
+		processor.process(std::cin, args_info);
+	}
 	
 	// Not reached.
 	return EXIT_SUCCESS;
