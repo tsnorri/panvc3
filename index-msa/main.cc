@@ -290,7 +290,7 @@ namespace {
 			std::size_t const fasta_line_width
 		):
 			m_input_path(input_path),
-			m_msa_index_input_path(msa_index_input_path),
+			m_msa_index_input_path(msa_index_input_path ?: ""),
 			m_msa_index_output_path(msa_index_output_path),
 			m_pipe_command(lb::parse_command_arguments(pipe_input_command)),
 			m_fasta_line_width(fasta_line_width),
