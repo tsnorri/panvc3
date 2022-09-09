@@ -16,7 +16,7 @@ namespace fs	= std::filesystem;
 
 namespace {
 	template <typename t_string>
-	panvc3::msa_index::chr_entry const find_chr_entry(panvc3::msa_index::chr_entry_vector const &entries, t_string const &chr_id)
+	panvc3::msa_index::chr_entry const &find_chr_entry(panvc3::msa_index::chr_entry_vector const &entries, t_string const &chr_id)
 	{
 		panvc3::msa_index::chr_entry_cmp chr_cmp;
 		auto const it(std::lower_bound(entries.begin(), entries.end(), chr_id, chr_cmp));
