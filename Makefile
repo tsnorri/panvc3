@@ -9,7 +9,7 @@ include  $(PANVC3_PROJECT_DIR)/make/common.mk
 DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
 				lib/libbio/build-llvm/libbio.a
 
-ifeq ($(OS_NAME),Linux)
+ifeq ($(OS_NAME),linux)
 	DEPENDENCIES += lib/swift-corelibs-libdispatch/build/src/libdispatch.a
 endif
 

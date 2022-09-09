@@ -1,5 +1,5 @@
 MAKE_SCRIPT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-include $(MAKE_SCRIPT_DIR)/local.llvm.mk
+include $(MAKE_SCRIPT_DIR)/local.linux-llvm.mk
 include $(MAKE_SCRIPT_DIR)/common.mk
 
 
