@@ -348,7 +348,7 @@ namespace {
 			dispatch_group_wait(*main_group, DISPATCH_TIME_FOREVER);
 			lb::log_time(std::cerr) << "Sorting the remaining index entries…\n";
 			std::sort(msa_index.chr_entries.begin(), msa_index.chr_entries.end());
-			lb::log_time(std::cerr) << "Serializing the MSA index…\n";
+			lb::log_time(std::cerr) << "Serialising the MSA index…\n";
 			msa_archive(msa_index);
 			lb::log_time(std::cerr) << "Done.\n";
 			std::exit(EXIT_SUCCESS);

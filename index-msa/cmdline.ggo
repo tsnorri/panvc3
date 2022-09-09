@@ -7,7 +7,7 @@ purpose		"Build a co-ordinate transformation index from a set of sequences (poss
 usage		"index_msa --inputs=inputs.txt [--msa-index-output=msa-index.dat] [--output-fasta > combined.fa]"
 description	"The input file should contain the chromosome identifiers and input paths separated by a tabulator, one entry per line."
 
-option		"inputs"			i	"Input as tabulated text"					string	typestr = "filename"								required
+option		"inputs"			i	"Input as tabulated text (chr_id, path)"	string	typestr = "filename"								required
 option		"msa-index-output"	m	"MSA index output"							string	typestr = "filename"								required
 option		"pipe-input"		p	"Read input from the given command"			string	typestr = "command"									optional
 option		"output-fasta"		f	"Output the unaligned sequences as FASTA"	flag														off
