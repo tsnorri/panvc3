@@ -13,6 +13,11 @@ ifeq ($(OS_NAME),Linux)
 	DEPENDENCIES += lib/swift-corelibs-libdispatch/build/src/libdispatch.a
 endif
 
+BUILD_PRODUCTS	=	index-msa/index_msa \
+					count-supporting-reads/count_supporting_reads \
+					convert-bed-positions/convert_bed_positions \
+					split-alignments-by-reference/split_alignments_by_reference
+
 # “$() $()” is a literal space.
 VERSION = $(subst $() $(),-,$(shell tools/git_version.sh))
 DIST_TARGET_DIR = panvc3-$(VERSION)
@@ -22,9 +27,7 @@ DIST_TAR_GZ = panvc3-$(VERSION)-$(OS_NAME)$(DIST_NAME_SUFFIX).tar.gz
 
 .PHONY: all clean-all clean clean-dependencies dependencies
 
-all:	index-msa/index_msa \
-		count-supporting-reads/count_supporting_reads \
-		split-alignments-by-reference/split_alignments_by_reference
+all: $(BUILD_PRODUCTS)
 
 clean-all: clean clean-dependencies clean-dist
 
@@ -53,12 +56,15 @@ index-msa/index_msa: lib/libbio/build-llvm/libbio.a
 count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C count-supporting-reads
 
+convert-bed-positions/convert_bed_positions: lib/libbio/build-llvm/libbio.a
+	$(MAKE) -C convert-bed-positions
+
 split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C split-alignments-by-reference
 
-$(DIST_TAR_GZ):	index-msa/index_msa
+$(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(MKDIR) -p $(DIST_TARGET_DIR)
-	$(CP) index-msa/index_msa $(DIST_TARGET_DIR)
+	for f in $(BUILD_PRODUCTS); do $(CP) $$f $(DIST_TARGET_DIR); done
 	$(CP) README.md $(DIST_TARGET_DIR)
 	$(CP) LICENSE $(DIST_TARGET_DIR)
 	$(CP) lib/swift-corelibs-libdispatch/LICENSE $(DIST_TARGET_DIR)/swift-corelibs-libdispatch-license.txt
