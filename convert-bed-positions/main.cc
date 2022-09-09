@@ -15,8 +15,23 @@ namespace fs	= std::filesystem;
 
 
 namespace {
+	template <typename t_string>
+	panvc3::msa_index::chr_entry const find_chr_entry(panvc3::msa_index::chr_entry_vector const &entries, t_string const &chr_id)
+	{
+		panvc3::msa_index::chr_entry_cmp chr_cmp;
+		auto const it(std::lower_bound(entries.begin(), entries.end(), chr_id, chr_cmp));
+		if (entries.end() == it || it->chr_id != chr_id)
+		{
+			std::cerr << "ERROR: Did not find an entry for chromosome ID “" << chr_id << "” in the MSA index." << std::endl;
+			std::exit(EXIT_FAILURE);
+		}
+
+		return *it;
+	}
+				
 	
-	panvc3::msa_index::sequence_entry const &find_sequence_entry(panvc3::msa_index::sequence_entry_vector const &entries, char const *seq_id)
+	template <typename t_string>
+	panvc3::msa_index::sequence_entry const &find_sequence_entry(panvc3::msa_index::sequence_entry_vector const &entries, t_string const &seq_id)
 	{
 		panvc3::msa_index::sequence_entry_cmp seq_cmp;
 		auto const it(std::lower_bound(entries.begin(), entries.end(), seq_id, seq_cmp));
@@ -37,6 +52,7 @@ namespace {
 		panvc3::msa_index::sequence_entry const	*m_src_entry{};
 		panvc3::msa_index::sequence_entry const	*m_dst_entry{};
 		std::string								m_chr_id;
+		std::string								m_dst_chr_id;
 		std::size_t								m_chr_id_matches{};
 		std::size_t								m_chr_id_mismatches{};
 		
@@ -92,6 +108,7 @@ namespace {
 		void process(gengetopt_args_info &args_info)
 		{
 			m_chr_id = args_info.chr_arg;
+			m_dst_chr_id = args_info.dst_chr_arg ?: "";
 			
 			lb::log_time(std::cerr) << "Loading the MSA index…\n";
 		
@@ -104,18 +121,13 @@ namespace {
 			
 			// Find the relevant entries in the MSA index.
 			{
-				panvc3::msa_index::chr_entry_cmp chr_cmp;
 				auto const &chr_entries(m_msa_index.chr_entries);
-				auto const chr_it(std::lower_bound(chr_entries.begin(), chr_entries.end(), m_chr_id, chr_cmp));
-				if (chr_entries.end() == chr_it || chr_it->chr_id != m_chr_id)
-				{
-					std::cerr << "ERROR: Did not find an entry for chromosome ID “" << m_chr_id << "” in the MSA index." << std::endl;
-					std::exit(EXIT_FAILURE);
-				}
-				
-				auto const &seq_entries(chr_it->sequence_entries);
-				m_src_entry = &find_sequence_entry(seq_entries, args_info.src_seq_arg);
-				m_dst_entry = &find_sequence_entry(seq_entries, args_info.dst_seq_arg);
+				auto const &src_chr(find_chr_entry(chr_entries, m_chr_id));
+				auto const &dst_chr(m_dst_chr_id.empty() ? src_chr : find_chr_entry(chr_entries, m_dst_chr_id));
+				auto const &src_seq_entries(src_chr.sequence_entries);
+				auto const &dst_seq_entries(dst_chr.sequence_entries);
+				m_src_entry = &find_sequence_entry(src_seq_entries, args_info.src_seq_arg);
+				m_dst_entry = &find_sequence_entry(dst_seq_entries, args_info.dst_seq_arg);
 			}
 			
 			// Process.

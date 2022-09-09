@@ -6,7 +6,8 @@ version		"0.1"
 purpose		"Convert positions in a BED file based on a MSA index"
 usage		"convert_bed_positions --msa-index=index.dat --chr-id=chr --src-id=src-seq-id --dst-id=dst-seq-id < input.bed"
 
-option		"msa-index"	m	"Input MSA index file path"					string	typestr = "filename"	required
-option		"chr"		c	"Chromosome identifier"						string							required
-option		"src-seq"	s	"Source sequence identifier in MSA"			string							required
-option		"dst-seq"	d	"Destination sequence identifier in MSA"	string							required
+option		"msa-index"	m	"Input MSA index file path"									string	typestr = "filename"	required
+option		"chr"		c	"Chromosome identifier"										string							required
+option		"dst-chr"	t	"Destination chromosome identifier (use source by default)"	string							optional
+option		"src-seq"	s	"Source sequence identifier in MSA"							string							required
+option		"dst-seq"	d	"Destination sequence identifier in MSA"					string							required
