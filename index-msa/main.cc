@@ -145,7 +145,7 @@ namespace {
 			if (!seq_entries.empty())
 				seq_len = seq_entries.front().gap_positions.size();
 
-			std::cout << "Chromosome “" << chr_entry.chr_id << "” (" << chr_entry.sequence_entries.size() << " sequences of " << seq_len << " characters)\n";
+			std::cout << chr_entry.chr_id << " (" << chr_entry.sequence_entries.size() << " sequences of " << seq_len << " characters)\n";
 			for (auto const &seq_entry : seq_entries)
 			{
 				if (seq_entry.gap_positions.size() != seq_len)
@@ -154,7 +154,7 @@ namespace {
 					std::exit(EXIT_FAILURE);
 				}
 
-				std::cout << "\tSequence “" << seq_entry.seq_id << "”\n";
+				std::cout << '\t' << seq_entry.seq_id << '\n';
 			}
 		}
 	}
