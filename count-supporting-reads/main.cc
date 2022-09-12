@@ -297,6 +297,32 @@ namespace {
 	};
 	
 	
+	constexpr static auto sam_reader_fields()
+	{
+		return seqan3::fields <
+			seqan3::field::ref_id,
+			seqan3::field::ref_offset,
+			seqan3::field::mate,
+			seqan3::field::seq,
+			seqan3::field::flag,
+			seqan3::field::cigar
+		>{};
+	}
+	
+	
+	static auto open_alignment_input_file(fs::path const &path)
+	{
+		return seqan3::sam_file_input(path, sam_reader_fields());
+	}
+	
+	
+	template <typename t_format>
+	static auto open_alignment_input_stream(std::istream &stream, t_format &&format)
+	{
+		return seqan3::sam_file_input(stream, std::forward <t_format>(format), sam_reader_fields());
+	}
+	
+	
 	template <typename t_aln_input>
 	class alignment_reader
 	{
@@ -320,6 +346,7 @@ namespace {
 		std::size_t					m_reads_processed{};
 		bool						m_should_consider_primary_alignments_only{};
 		bool						m_requires_same_config_prefix_in_next{};
+		
 		
 	public:
 		alignment_reader(
@@ -647,24 +674,15 @@ namespace {
 	void process(gengetopt_args_info const &args_info)
 	{
 		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
-		seqan3::fields <
-			seqan3::field::ref_id,
-			seqan3::field::ref_offset,
-			seqan3::field::mate,
-			seqan3::field::seq,
-			seqan3::field::flag,
-			seqan3::field::cigar
-		> fields{};
-
 		if (args_info.alignments_arg)
 		{
 			fs::path const alignments_path(args_info.alignments_arg);
-			seqan3::sam_file_input aln_input(alignments_path, fields);
+			auto aln_input(open_alignment_input_file(alignments_path));
 			process_(aln_input, args_info);
 		}
 		else
 		{
-			seqan3::sam_file_input aln_input(std::cin, seqan3::format_sam{}, fields);
+			auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_sam{}));
 			process_(aln_input, args_info);
 		}
 	}
