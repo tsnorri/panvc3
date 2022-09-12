@@ -335,15 +335,24 @@ namespace {
 		typedef record <alignment_record_type>					record_type;
 		typedef std::set <record_type, reference_position_cmp>	record_set;
 		
+		struct alignment_statistics
+		{
+			std::size_t	reads_processed{};
+			std::size_t	flags_not_matched{};
+			std::size_t	ref_id_mismatches{};
+			std::size_t	mate_ref_id_mismatches{};
+			std::size_t	position_mismatches{};
+			std::size_t	matched_reads{};
+		};
+		
 	protected:
 		alignment_iterator_type		m_it;
 		alignment_sentinel_type		m_end;
 		reference_ids_type const	&m_reference_ids; // Change to a pointer if needed.
 		char const					*m_contig_prefix{};
 		record_set					m_candidate_records;
+		alignment_statistics		m_statistics{};
 		std::size_t					m_prev_record_pos{};
-		std::size_t					m_unmapped_count{};
-		std::size_t					m_reads_processed{};
 		bool						m_should_consider_primary_alignments_only{};
 		bool						m_requires_same_config_prefix_in_next{};
 		
@@ -365,6 +374,7 @@ namespace {
 		}
 		
 		record_set const &candidate_records() const { return m_candidate_records; }
+		alignment_statistics statistics() const { return m_statistics; }
 		
 		void update_candidate_records(std::size_t const var_pos)
 		{
@@ -376,9 +386,9 @@ namespace {
 			// Iterate over the alignment records.
 			for (; m_it != m_end; ++m_it)
 			{
-				++m_reads_processed;
-				if (0 == m_reads_processed % 10000000)
-					lb::log_time(std::cerr) << "Processed " << m_reads_processed << " reads…\n";
+				++m_statistics.reads_processed;
+				if (0 == m_statistics.reads_processed % 10000000)
+					lb::log_time(std::cerr) << "Processed " << m_statistics.reads_processed << " reads…\n";
 				
 				// If POS is zero, skip the record.
 				auto &aln_rec(*m_it);
@@ -390,11 +400,17 @@ namespace {
 					seqan3::sam_flag::duplicate					|
 					seqan3::sam_flag::supplementary_alignment
 				))) // Ignore unmapped, filtered, duplicate and supplementary.
+				{
+					++m_statistics.flags_not_matched;
 					continue;
+				}
 				
 				// Ignore secondary if requested.
 				if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & seqan3::sam_flag::secondary_alignment))
+				{
+					++m_statistics.flags_not_matched;
 					continue;
+				}
 				
 				// Check the contig name if requested.
 				auto const ref_id(aln_rec.reference_id());
@@ -402,25 +418,40 @@ namespace {
 				{
 					// Check the contig prefix for the current alignment.
 					if (!ref_id.has_value())
+					{
+						++m_statistics.ref_id_mismatches;
 						continue;
+					}
 					
 					if (!m_reference_ids[*ref_id].starts_with(m_contig_prefix))
+					{
+						++m_statistics.ref_id_mismatches;
 						continue;
+					}
 					
 					// Check the contig prefix of the next primary alignment.
 					// (Currently we do not try to determine the reference ID of all the possible alignments
 					// of the next read.)
 					auto const mate_ref_id(aln_rec.mate_reference_id());
 					if (!mate_ref_id.has_value())
+					{
+						++m_statistics.mate_ref_id_mismatches;
 						continue;
+					}
 					
 					if (!m_reference_ids[*mate_ref_id].starts_with(m_contig_prefix))
+					{
+						++m_statistics.mate_ref_id_mismatches;
 						continue;
+					}
 				}
 				
 				auto const aln_ref_pos_(aln_rec.reference_position());
 				if (!aln_ref_pos_.has_value())
+				{
+					++m_statistics.flags_not_matched;
 					continue;
+				}
 				
 				auto const aln_ref_pos(*aln_ref_pos_);
 				// The following assertion check that aln_ref_pos is non-negative, too.
@@ -430,14 +461,21 @@ namespace {
 				
 				// Check that the alignment starts before the left boundary of the variant.
 				if (! (std::size_t(aln_ref_pos) <= var_pos))
+				{
+					++m_statistics.position_mismatches;
 					return;
+				}
 				
 				auto const aln_ref_len(calculate_reference_length(aln_rec));
 				auto const aln_ref_end(aln_ref_pos + aln_ref_len);
 				if (aln_ref_end <= var_pos)
+				{
+					++m_statistics.position_mismatches;
 					continue;
+				}
 				
-				//m_candidate_records.emplace(std::move(aln_rec), aln_ref_len); // FIXME: check that this is safe.
+				// We could calculate this from the other statistics but having a separate variable is safer w.r.t. potential bugs.
+				++m_statistics.matched_reads;
 				m_candidate_records.emplace(aln_rec, aln_ref_len);
 			}
 		}
@@ -556,7 +594,7 @@ namespace {
 		);
 		std::map <panvc3::dna10_vector, std::size_t> supported_sequences;
 		panvc3::dna10_vector buffer;
-		variant_statistics statistics;
+		variant_statistics var_statistics;
 		
 		vcf_reader.set_parsed_fields(vcf::field::ALL);
 		vcf_reader.parse(
@@ -567,11 +605,11 @@ namespace {
 				&aln_reader,
 				&supported_sequences,
 				&buffer,
-				&statistics
+				&var_statistics
 			](vcf::transient_variant const &var){
-				++statistics.variants_processed;
-				if (0 == statistics.variants_processed % 100000)
-					lb::log_time(std::cerr) << "Processed " << statistics.variants_processed << " variants…\n";
+				++var_statistics.variants_processed;
+				if (0 == var_statistics.variants_processed % 100000)
+					lb::log_time(std::cerr) << "Processed " << var_statistics.variants_processed << " variants…\n";
 				
 				auto const var_pos(var.zero_based_pos());
 				
@@ -585,7 +623,7 @@ namespace {
 				// Check the chromosome identifier.
 				if (chr_id && (chr_id != var.chrom_id()))
 				{
-					++statistics.chr_id_mismatches;
+					++var_statistics.chr_id_mismatches;
 					return true;
 				}
 				
@@ -602,7 +640,7 @@ namespace {
 				
 				if (1 != zygosity)
 				{
-					++statistics.zygosity_mismatches;
+					++var_statistics.zygosity_mismatches;
 					return true;
 				}
 				
@@ -615,7 +653,7 @@ namespace {
 				auto const &candidate_records(aln_reader.candidate_records());
 				if (candidate_records.empty())
 				{
-					++statistics.zero_coverage;
+					++var_statistics.zero_coverage;
 					return true;
 				}
 				
@@ -657,14 +695,24 @@ namespace {
 		
 		// Output statistics.
 		{
-			auto const chr_id_mismatches(statistics.chr_id_mismatches + variant_validator.chromosome_id_mismatches());
+			auto const chr_id_mismatches(var_statistics.chr_id_mismatches + variant_validator.chromosome_id_mismatches());
 			
-			std::cout << "S\tTotal variants\t"				<< statistics.variants_processed			<< '\n';
+			std::cout << "S\tTotal variants\t"				<< var_statistics.variants_processed		<< '\n';
 			std::cout << "S\tChromosome ID mismatches\t"	<< chr_id_mismatches						<< '\n';
 			std::cout << "S\tPosition mismatches\t"			<< variant_validator.position_mismatches()	<< '\n';
-			std::cout << "S\tZygosity mismatches\t"			<< statistics.zygosity_mismatches			<< '\n';
-			std::cout << "S\tZero coverage\t"				<< statistics.zero_coverage					<< '\n';
+			std::cout << "S\tZygosity mismatches\t"			<< var_statistics.zygosity_mismatches		<< '\n';
+			std::cout << "S\tZero coverage\t"				<< var_statistics.zero_coverage				<< '\n';
 			std::cout << std::flush;
+		}
+		
+		{
+			auto const &aln_statistics(aln_reader.statistics());
+			std::cout << "T\tReads processed\t"				<< aln_statistics.reads_processed			<< '\n';
+			std::cout << "T\tFlags not matched\t"			<< aln_statistics.flags_not_matched			<< '\n';
+			std::cout << "T\tRef. ID mismatches\t"			<< aln_statistics.ref_id_mismatches			<< '\n';
+			std::cout << "T\tPair ref. ID mismatches\t"		<< aln_statistics.mate_ref_id_mismatches	<< '\n';
+			std::cout << "T\tPosition mismatches\t"			<< aln_statistics.position_mismatches		<< '\n';
+			std::cout << "T\tMatched alignments\t"			<< aln_statistics.matched_reads				<< '\n';
 		}
 		
 		lb::log_time(std::cerr) << "Done.\n";
