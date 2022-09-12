@@ -432,17 +432,20 @@ namespace {
 					// Check the contig prefix of the next primary alignment.
 					// (Currently we do not try to determine the reference ID of all the possible alignments
 					// of the next read.)
-					auto const mate_ref_id(aln_rec.mate_reference_id());
-					if (!mate_ref_id.has_value())
+					if (m_requires_same_config_prefix_in_next)
 					{
-						++m_statistics.mate_ref_id_mismatches;
-						continue;
-					}
-					
-					if (!m_reference_ids[*mate_ref_id].starts_with(m_contig_prefix))
-					{
-						++m_statistics.mate_ref_id_mismatches;
-						continue;
+						auto const mate_ref_id(aln_rec.mate_reference_id());
+						if (!mate_ref_id.has_value())
+						{
+							++m_statistics.mate_ref_id_mismatches;
+							continue;
+						}
+						
+						if (!m_reference_ids[*mate_ref_id].starts_with(m_contig_prefix))
+						{
+							++m_statistics.mate_ref_id_mismatches;
+							continue;
+						}
 					}
 				}
 				
@@ -747,7 +750,7 @@ int main(int argc, char **argv)
 	
 	if (args_info.same_ref_flag)
 	{
-		if (args_info.contig_prefix_arg)
+		if (!args_info.contig_prefix_arg)
 		{
 			std::cerr << "ERROR: --same-ref requires --contig-prefix." << std::endl;
 			return EXIT_FAILURE;
