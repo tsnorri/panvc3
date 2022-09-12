@@ -318,15 +318,22 @@ namespace {
 		std::size_t					m_prev_record_pos{};
 		std::size_t					m_unmapped_count{};
 		std::size_t					m_reads_processed{};
-		bool						m_should_consider_primary_alignments_only;
+		bool						m_should_consider_primary_alignments_only{};
+		bool						m_requires_same_config_prefix_in_next{};
 		
 	public:
-		alignment_reader(t_aln_input &aln_input, char const *contig_prefix, bool const should_consider_primary_alignments_only):
+		alignment_reader(
+			t_aln_input &aln_input,
+			char const *contig_prefix,
+			bool const should_consider_primary_alignments_only,
+			bool const requires_same_config_prefix_in_next
+		):
 			m_it(aln_input.begin()),
 			m_end(aln_input.end()),
 			m_reference_ids(aln_input.header().ref_ids()),
 			m_contig_prefix(contig_prefix),
-			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only)
+			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
+			m_requires_same_config_prefix_in_next(requires_same_config_prefix_in_next)
 		{
 		}
 		
@@ -364,8 +371,25 @@ namespace {
 				
 				// Check the contig name if requested.
 				auto const ref_id(aln_rec.reference_id());
-				if (m_contig_prefix && !(ref_id.has_value() && m_reference_ids[*ref_id].starts_with(m_contig_prefix)))
-					continue;
+				if (m_contig_prefix)
+				{
+					// Check the contig prefix for the current alignment.
+					if (!ref_id.has_value())
+						continue;
+					
+					if (!m_reference_ids[*ref_id].starts_with(m_contig_prefix))
+						continue;
+					
+					// Check the contig prefix of the next primary alignment.
+					// (Currently we do not try to determine the reference ID of all the possible alignments
+					// of the next read.)
+					auto const mate_ref_id(aln_rec.mate_reference_id());
+					if (!mate_ref_id.has_value())
+						continue;
+					
+					if (!m_reference_ids[*mate_ref_id].starts_with(m_contig_prefix))
+						continue;
+				}
 				
 				auto const aln_ref_pos_(aln_rec.reference_position());
 				if (!aln_ref_pos_.has_value())
@@ -460,14 +484,16 @@ namespace {
 	template <typename t_aln_input>
 	void process_(
 		t_aln_input &aln_input,
-		char const *vcf_path,
-		char const *chr_id,
-		char const *regions_path,
-		char const *contig_prefix,
-		bool const should_consider_primary_alignments_only,
-		bool const should_include_clipping
+		gengetopt_args_info const &args_info
 	)
 	{
+		auto const chr_id(args_info.chr_arg);
+		auto const vcf_path(args_info.vcf_arg);
+		auto const regions_path(args_info.regions_arg);
+		bool const should_include_clipping(args_info.include_clipping_flag);
+		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
+		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
+		
 		// Open the VCF file.
 		vcf::stream_input <lb::file_istream> vcf_input;
 		lb::open_file_for_reading(vcf_path, vcf_input.stream());
@@ -495,7 +521,12 @@ namespace {
 			bed_reader.read_regions(regions_path, delegate);
 		}
 		
-		alignment_reader aln_reader(aln_input, contig_prefix, should_consider_primary_alignments_only);
+		alignment_reader aln_reader(
+			aln_input,
+			args_info.contig_prefix_arg,
+			should_consider_primary_alignments_only,
+			requires_same_config_prefix_in_next
+		);
 		std::map <panvc3::dna10_vector, std::size_t> supported_sequences;
 		panvc3::dna10_vector buffer;
 		variant_statistics statistics;
@@ -613,35 +644,28 @@ namespace {
 	}
 
 
-	void process(
-		char const *vcf_path,
-		char const *aln_path,
-		char const *chr_id,
-		char const *regions_path,
-		char const *contig_prefix,
-		bool const should_consider_primary_alignments_only,
-		bool const should_include_clipping
-	)
+	void process(gengetopt_args_info const &args_info)
 	{
 		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
 		seqan3::fields <
 			seqan3::field::ref_id,
 			seqan3::field::ref_offset,
+			seqan3::field::mate,
 			seqan3::field::seq,
 			seqan3::field::flag,
 			seqan3::field::cigar
 		> fields{};
 
-		if (aln_path)
+		if (args_info.alignments_arg)
 		{
-			fs::path const alignments_path(aln_path);
+			fs::path const alignments_path(args_info.alignments_arg);
 			seqan3::sam_file_input aln_input(alignments_path, fields);
-			process_(aln_input, vcf_path, chr_id, regions_path, contig_prefix, should_consider_primary_alignments_only, should_include_clipping);
+			process_(aln_input, args_info);
 		}
 		else
 		{
 			seqan3::sam_file_input aln_input(std::cin, seqan3::format_sam{}, fields);
-			process_(aln_input, vcf_path, chr_id, regions_path, contig_prefix, should_consider_primary_alignments_only, should_include_clipping);
+			process_(aln_input, args_info);
 		}
 	}
 }
@@ -655,15 +679,22 @@ int main(int argc, char **argv)
 	
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 	
-	process(
-		args_info.vcf_arg,
-		args_info.alignments_arg,
-		args_info.chr_arg,
-		args_info.regions_arg,
-		args_info.contig_prefix_arg,
-		args_info.primary_only_flag,
-		args_info.include_clipping_flag
-	);
+	if (args_info.same_ref_flag)
+	{
+		if (args_info.contig_prefix_arg)
+		{
+			std::cerr << "ERROR: --same-ref requires --contig-prefix." << std::endl;
+			return EXIT_FAILURE;
+		}
+		
+		if (!args_info.primary_only_flag)
+		{
+			std::cerr << "ERROR: --same-ref currently requires --primary-only." << std::endl;
+			return EXIT_FAILURE;
+		}
+	}
+	
+	process(args_info);
 	
 	return EXIT_SUCCESS;
 }
