@@ -12,6 +12,7 @@
 #include <libbio/file_handling.hh>
 #include <panvc3/dna10_alphabet.hh>
 #include <range/v3/all.hpp>
+#include <seqan3/alphabet/cigar/cigar.hpp>
 #include <seqan3/io/sam_file/all.hpp>
 #include <string>
 #include <string_view>
@@ -84,7 +85,9 @@ namespace {
 	template <typename t_aln_record>
 	std::size_t calculate_reference_length(t_aln_record const &aln_record)
 	{
-		std::size_t retval{};
+		std::size_t reference_length{};
+		//std::size_t query_length{};
+		
 		for (auto const &cigar_item : aln_record.cigar_sequence())
 		{
 			// For some reason the correct seqan3::get does not get used when accessing cigar_item
@@ -92,23 +95,38 @@ namespace {
 			// FIXME: check if this is still true.
 			std::uint32_t const op_count(cigar_item);
 			seqan3::cigar::operation const operation(cigar_item);
+			auto const cc(operation.to_char());
 			
-			switch (operation.to_char())
+			switch (cc)
 			{
-				case 'M':
-				case 'D':
-				case 'N':
+				case 'M': // Consume both query and reference.
 				case '=':
 				case 'X':
-					retval += op_count;
+					reference_length += op_count;
+					//query_length += op_count;
+					break;
+				
+				case 'I': // Consume query.
+				case 'S':
+					//query_length += op_count;
+					break;
+					
+				case 'D': // Consume reference.
+				case 'N':
+					reference_length += op_count;
+					break;
+				
+				case 'H':
+				case 'P':
 					break;
 				
 				default:
+					libbio_fail("Unexpected CIGAR operation “", cc, "”");
 					break;
 			}
 		}
 		
-		return retval;
+		return reference_length;
 	}
 	
 	
@@ -133,15 +151,18 @@ namespace {
 	
 	
 	template <typename t_aln_record> // FIXME: try to find a way to get the sequence type crom t_aln_record instead of assuming dna5.
-	void read_aligned_sequence(
+	bool try_read_aligned_sequence(
 		t_aln_record const &aln_record,
-		std::size_t const aln_len,
+		std::size_t const rec_len,
 		std::size_t const var_pos,
-		std::size_t var_len,
+		std::size_t var_ref_len,
+		std::size_t var_alt_len,
 		panvc3::dna10_vector &dst,
 		bool const should_include_clipping
 	)
 	{
+		// Caller checks that the variant is contained in the read.
+		
 		dst.clear();
 		
 		// Process the CIGAR string and read the characters the alignment suggests.
@@ -150,12 +171,12 @@ namespace {
 		auto it(cigar_seq.begin());
 		auto const end(cigar_seq.end());
 		
-		auto const aln_pos_(aln_record.reference_position());
-		libbio_assert(aln_pos_);
-		libbio_assert_lte(0, *aln_pos_);
-		std::size_t aln_pos(*aln_pos_);
-		libbio_assert_lte(aln_pos, var_pos);
-		libbio_assert_lte(var_pos + var_len, aln_pos + aln_len);
+		auto const rec_pos_(aln_record.reference_position());
+		libbio_assert(rec_pos_);
+		libbio_assert_lte(0, *rec_pos_);
+		std::size_t rec_pos(*rec_pos_);
+		libbio_assert_lte(rec_pos, var_pos);
+		libbio_assert_lte(var_pos + var_ref_len, rec_pos + rec_len);
 		
 		std::size_t seg_pos{};
 		std::uint32_t op_count{};
@@ -163,47 +184,48 @@ namespace {
 		
 		try
 		{
-			for (; 0 < var_len && it != end; ++it)
+			for (; it != end; ++it)
 			{
 				// FIXME: check if the note in calculate_reference_length() still holds.
 				op_count = *it;
 				operation = *it;
-			
-				if (aln_pos < var_pos)
+				
+				if (rec_pos < var_pos)
 				{
 					// Find the variant position in the aligned segment.
 					auto const operation_(operation.to_char());
 					switch (operation_)
 					{
-						case 'M':
+						case 'M':	// Consume both query and reference.
 						case '=':
 						case 'X':
 						{
-							auto const min_length(lb::min_ct(var_pos - aln_pos, op_count));
+							auto const min_length(lb::min_ct(var_pos - rec_pos, op_count));
 							op_count -= min_length;
-							aln_pos += min_length;
+							rec_pos += min_length;
 							seg_pos += min_length;
 							if (op_count)
 								break;
-						
+							
 							continue; // Continues the enclosing loop.
 						}
 					
-						case 'D':
+						case 'D':	// Consume reference.
 						case 'N':
 						{
-							auto const min_length(lb::min_ct(var_pos - aln_pos, op_count));
+							auto const min_length(lb::min_ct(var_pos - rec_pos, op_count));
 							op_count -= min_length;
-							aln_pos += min_length;
+							rec_pos += min_length;
 							if (op_count)
 								break;
 						
 							continue; // Continues the enclosing loop.
 						}
 						
-						case 'I':
+						case 'I':	// Consume query.
 						case 'S':
 						{
+							// Not yet at var_pos, so we need to skip this segment.
 							seg_pos += op_count;
 							continue; // Continues the enclosing loop.
 						}
@@ -212,40 +234,67 @@ namespace {
 							continue; // Continues the enclosing loop.
 					}
 				}
-			
+				
 				// Read the aligned sequence.
-				// Reached iff. var_pos ≤ aln_pos or op_count is non-zero as a result of the last subtraction.
-				auto const min_length(lb::min_ct(op_count, var_len));
+				// Reached iff. var_pos ≤ rec_pos or op_count is non-zero as a result of the last subtraction.
 				auto const operation_(operation.to_char());
 				switch (operation_)
 				{
-					case 'M': // Consumes both query and reference.
+					case 'M': // Consume both query and reference.
 					case '=':
 					case 'X':
+					{
+						auto const min_length(lb::min_ct(op_count, std::min(var_ref_len, var_alt_len)));
+						if (0 == min_length)
+							goto finish; // Skips incrementing the iterator.
 						copy_sequence_slice(seq, seg_pos, min_length, dst);
 						seg_pos += min_length;
-						var_len -= min_length;
+						var_ref_len -= min_length;
+						var_alt_len -= min_length;
 						break;
-				
+					}
+					
 					case 'I': // Consumes query.
+					{
+						auto const min_length(lb::min_ct(op_count, var_alt_len));
+						if (0 == min_length)
+							goto finish; // Skips incrementing the iterator.
 						copy_sequence_slice(seq, seg_pos, min_length, dst);
 						seg_pos += min_length;
+						var_alt_len -= min_length;
+						op_count -= min_length; // Needed for the post-processing step after the for loop.
 						break;
-				
-					case 'D': // Consumes reference.
+					}
+					
+					case 'D': // Consume reference.
 					case 'N':
-						var_len -= min_length;
+					{
+						auto const min_length(lb::min_ct(op_count, var_ref_len));
+						if (0 == min_length)
+							goto finish; // Skips incrementing the iterator.
+						var_ref_len -= min_length;
 						break;
-				
-					case 'S': // Consumes query.
+					}
+					
+					case 'S': // Consume query.
+					{
+						auto const min_length(lb::min_ct(op_count, var_alt_len));
+						if (0 == min_length)
+							goto finish; // Skips incrementing the iterator.
 						if (should_include_clipping)
-							copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
-						seg_pos += op_count;
+							copy_sequence_slice_clipped(seq, seg_pos, min_length, dst);
+						seg_pos += min_length;
+						var_alt_len -= min_length;
+						op_count -= min_length; // Needed for the post-processing step after the for loop.
 						break;
-				
-					case 'H':
+					}
+					
+					case 'H': // Consume nothing.
 					case 'P':
+						break;
+						
 					default:
+						libbio_fail("Unexpected CIGAR operation “", operation_, "”");
 						break;
 				}
 			}
@@ -259,18 +308,69 @@ namespace {
 			throw;
 		}
 		
+	finish:
+		auto copy_seg(
+			[&seq, &seg_pos, &dst, &var_alt_len]
+			(auto const op, auto op_count)
+			{
+				using seqan3::literals::operator""_cigar_operation;
+				
+				if ('S'_cigar_operation == op)
+					copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
+				else
+				{
+					if ('I'_cigar_operation == op)
+						var_alt_len -= lb::min_ct(var_alt_len, op_count);
+					
+					copy_sequence_slice(seq, seg_pos, op_count, dst);
+				}
+				
+				seg_pos += op_count;
+			}
+		);
 		
-		// Check for soft clipping.
-		if (should_include_clipping && it != end)
+		auto handle_trailing(
+			[&it, &end, &copy_seg]
+			(auto const expected_op, auto operation, auto op_count)
+			{
+				if (expected_op == operation)
+				{
+					copy_seg(operation, op_count);
+					if (it == end)
+						return;
+					
+					// I don’t think the file format allows consecutive operations of same type but we check anyway.
+					++it;
+					for (; it != end; ++it)
+					{
+						op_count = *it;
+						operation = *it;
+						
+						if (expected_op != operation)
+							return;
+						
+						copy_seg(operation, op_count);
+					}
+				}
+			}
+		);
+		
+		// Check if there are insertion operations with characters left.
+		// In this case, we would like to include them in the sequence suggested by the read.
 		{
-			op_count = *it;
-			operation = *it;
-			if ('S' == operation.to_char())
-				copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
+			using seqan3::literals::operator""_cigar_operation;
+			
+			handle_trailing('I'_cigar_operation, operation, op_count);
+			
+			// Check for soft clipping.
+			if (should_include_clipping)
+				handle_trailing('S'_cigar_operation, operation, op_count);
 		}
 		
-		// The variant should have been consumed at this point.
-		libbio_always_assert_eq(0, var_len);
+		// The reference sequence of the variant should have been consumed at this point.
+		libbio_always_assert_eq(0, var_ref_len);
+		
+		return 0 == var_alt_len;
 	}
 	
 	
@@ -280,8 +380,8 @@ namespace {
 	template <typename t_aln_record>
 	struct record
 	{
-		t_aln_record 	alignment_record;
-		std::size_t		reference_length;
+		t_aln_record	alignment_record;
+		std::size_t		reference_length{};
 		
 		record(t_aln_record &alignment_record_, std::size_t const reference_length_):
 			alignment_record(alignment_record_),
@@ -296,16 +396,18 @@ namespace {
 		}
 		
 		auto reference_position() const { return *alignment_record.reference_position(); }
+		std::size_t reference_end() const { return reference_position() + reference_length; }
 		
 		// FIXME: try to find a way to get the sequence type from t_aln_record, i.e. dna10 only if the source is dna5.
-		void read_aligned_sequence(
+		bool try_read_aligned_sequence(
 			std::size_t const var_pos,
-			std::size_t const var_len,
+			std::size_t const var_ref_len,
+			std::size_t const var_alt_len,
 			panvc3::dna10_vector &dst,
 			bool const should_include_clipping
 		) const
 		{
-			::read_aligned_sequence(alignment_record, reference_length, var_pos, var_len, dst, should_include_clipping);
+			return ::try_read_aligned_sequence(alignment_record, reference_length, var_pos, var_ref_len, var_alt_len, dst, should_include_clipping);
 		}
 	};
 	
@@ -403,7 +505,7 @@ namespace {
 		{
 			// Remove the old records.
 			std::erase_if(m_candidate_records, [var_pos](auto const &rec){
-				return rec.reference_position() + rec.reference_length <= var_pos;
+				return rec.reference_end() <= var_pos;
 			});
 			
 			// Iterate over the alignment records.
@@ -472,29 +574,29 @@ namespace {
 					}
 				}
 				
-				auto const aln_ref_pos_(aln_rec.reference_position());
-				if (!aln_ref_pos_.has_value())
+				auto const rec_ref_pos_(aln_rec.reference_position());
+				if (!rec_ref_pos_.has_value())
 				{
 					++m_statistics.flags_not_matched;
 					continue;
 				}
 				
-				auto const aln_ref_pos(*aln_ref_pos_);
-				// The following assertion check that aln_ref_pos is non-negative, too.
-				libbio_always_assert_lte(m_prev_record_pos, aln_ref_pos); // FIXME: error message: alignments need to be sorted by position.
+				auto const rec_ref_pos(*rec_ref_pos_);
+				// The following assertion check that rec_ref_pos is non-negative, too.
+				libbio_always_assert_lte(m_prev_record_pos, rec_ref_pos); // FIXME: error message: alignments need to be sorted by position.
 				
-				m_prev_record_pos = aln_ref_pos; // We could also consider some of the filtered reads’ positions for m_prev_record_pos, but I think this will suffice.
+				m_prev_record_pos = rec_ref_pos; // We could also consider some of the filtered reads’ positions for m_prev_record_pos, but I think this will suffice.
 				
 				// Check that the alignment starts before the left boundary of the variant.
-				if (! (std::size_t(aln_ref_pos) <= var_pos))
+				if (! (std::size_t(rec_ref_pos) <= var_pos))
 				{
 					++m_statistics.position_mismatches;
 					return;
 				}
 				
-				auto const aln_ref_len(calculate_reference_length(aln_rec));
-				auto const aln_ref_end(aln_ref_pos + aln_ref_len);
-				if (aln_ref_end <= var_pos)
+				auto const rec_ref_len(calculate_reference_length(aln_rec));
+				auto const rec_ref_end(rec_ref_pos + rec_ref_len);
+				if (rec_ref_end <= var_pos)
 				{
 					++m_statistics.position_mismatches;
 					continue;
@@ -502,7 +604,7 @@ namespace {
 				
 				// We could calculate this from the other statistics but having a separate variable is safer w.r.t. potential bugs.
 				++m_statistics.matched_reads;
-				m_candidate_records.emplace(aln_rec, aln_ref_len);
+				m_candidate_records.emplace(aln_rec, rec_ref_len);
 			}
 		}
 	};
@@ -693,20 +795,27 @@ namespace {
 				// FIXME: While we output all ALTs above, considering each for counting supporting reads would be quite difficult. Since we only handle heterozygous variants of diploid donors (for now), this is not needed.
 				libbio_always_assert_eq(1, var.alts().size());
 				auto const &alt(var.alts().front());
-				auto const alt_len(alt.alt.size());
+				auto const var_alt_len(alt.alt.size());
+				
+				auto const var_ref_len(var_end_pos - var_pos);
 				
 				supported_sequences.clear();
 				for (auto const &rec : candidate_records)
 				{
-					auto const aln_pos(rec.reference_position());
+					auto const rec_pos(rec.reference_position());
 					
 					try
 					{
-						libbio_assert_lte(aln_pos, var_pos);
-						if (var_end_pos <= aln_pos + rec.reference_length)
+						libbio_assert_lte(rec_pos, var_pos);
+						
+						// Add to the supported sequences if possible.
+						// Check first that at least the reference sequence is present in the current read.
+						// FIXME: Do we need to count the mismatch? By variant?
+						if (
+							var_end_pos <= rec_pos + rec.reference_length && 
+							rec.try_read_aligned_sequence(var_pos, var_ref_len, var_alt_len, buffer, should_include_clipping)
+						)
 						{
-							// Add to the supported sequences.
-							rec.read_aligned_sequence(var_pos, var_end_pos - var_pos, buffer, should_include_clipping);
 							auto &&[it, did_emplace] = supported_sequences.try_emplace(buffer, 0);
 							++(it->second);
 						}
@@ -714,12 +823,12 @@ namespace {
 					catch (lb::assertion_failure_exception const &exc)
 					{
 						// For debugging.
-						std::cerr << "ref_len:     " << rec.reference_length << '\n';
-						std::cerr << "aln_pos:     " << aln_pos << '\n';
+						std::cerr << "rec_ref_len: " << rec.reference_length << '\n';
+						std::cerr << "rec_pos:     " << rec_pos << '\n';
 						std::cerr << "var_pos:     " << var_pos << '\n';
 						std::cerr << "var_end_pos: " << var_end_pos << '\n';
-						std::cerr << "var_len:     " << (var_end_pos - var_pos) << '\n';
-						std::cerr << "alt_len:     " << alt_len << '\n';
+						std::cerr << "var_ref_len: " << var_ref_len << '\n';
+						std::cerr << "var_alt_len: " << var_alt_len << '\n';
 						std::cerr << "ALT:         " << alt.alt << '\n';
 						throw;
 					}
