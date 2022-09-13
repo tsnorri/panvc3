@@ -27,6 +27,17 @@ namespace vcf	= libbio::vcf;
 
 namespace {
 	
+	void output_cigar(std::vector <seqan3::cigar> const &cigar_seq, std::ostream &os)
+	{
+		for (auto const &cc : cigar_seq)
+		{
+			std::uint32_t op_count(cc);
+			seqan3::cigar::operation operation(cc);
+			os << op_count << operation.to_char();
+		}
+	}
+	
+	
 	// From libvcf2multialign.
 	// FIXME: come up with a way not to duplicate the code needed for storing field pointers.
 	struct variant_format final : public vcf::variant_format
@@ -150,92 +161,104 @@ namespace {
 		std::uint32_t op_count{};
 		seqan3::cigar::operation operation{};
 		
-		for (; 0 < var_len && it != end; ++it)
+		try
 		{
-			// FIXME: check if the note in calculate_reference_length() still holds.
-			op_count = *it;
-			operation = *it;
-			
-			if (aln_pos < var_pos)
+			for (; 0 < var_len && it != end; ++it)
 			{
-				// Find the variant position in the aligned segment.
+				// FIXME: check if the note in calculate_reference_length() still holds.
+				op_count = *it;
+				operation = *it;
+			
+				if (aln_pos < var_pos)
+				{
+					// Find the variant position in the aligned segment.
+					auto const operation_(operation.to_char());
+					switch (operation_)
+					{
+						case 'M':
+						case '=':
+						case 'X':
+						{
+							auto const min_length(lb::min_ct(var_pos - aln_pos, op_count));
+							op_count -= min_length;
+							aln_pos += min_length;
+							seg_pos += min_length;
+							if (op_count)
+								break;
+						
+							continue; // Continues the enclosing loop.
+						}
+					
+						case 'D':
+						case 'N':
+						{
+							auto const min_length(lb::min_ct(var_pos - aln_pos, op_count));
+							op_count -= min_length;
+							aln_pos += min_length;
+							if (op_count)
+								break;
+						
+							continue; // Continues the enclosing loop.
+						}
+						
+						case 'I':
+						case 'S':
+						{
+							seg_pos += op_count;
+							continue; // Continues the enclosing loop.
+						}
+						
+						default:
+							continue; // Continues the enclosing loop.
+					}
+				}
+			
+				// Read the aligned sequence.
+				// Reached iff. var_pos ≤ aln_pos or op_count is non-zero as a result of the last subtraction.
+				auto const min_length(lb::min_ct(op_count, var_len));
 				auto const operation_(operation.to_char());
 				switch (operation_)
 				{
-					case 'M':
+					case 'M': // Consumes both query and reference.
 					case '=':
 					case 'X':
-					{
-						auto const min_length(lb::min_ct(var_pos - aln_pos, op_count));
-						op_count -= min_length;
-						aln_pos += min_length;
+						copy_sequence_slice(seq, seg_pos, min_length, dst);
 						seg_pos += min_length;
-						if (op_count)
-							break;
-						
-						continue; // Continues the enclosing loop.
-					}
-					
-					case 'D':
+						var_len -= min_length;
+						break;
+				
+					case 'I': // Consumes query.
+						copy_sequence_slice(seq, seg_pos, min_length, dst);
+						seg_pos += min_length;
+						break;
+				
+					case 'D': // Consumes reference.
 					case 'N':
-					{
-						auto const min_length(lb::min_ct(var_pos - aln_pos, op_count));
-						op_count -= min_length;
-						aln_pos += min_length;
-						if (op_count)
-							break;
-						
-						continue; // Continues the enclosing loop.
-					}
-						
-					case 'I':
-					case 'S':
-					{
+						var_len -= min_length;
+						break;
+				
+					case 'S': // Consumes query.
+						if (should_include_clipping)
+							copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
 						seg_pos += op_count;
-						continue; // Continues the enclosing loop.
-					}
-						
+						break;
+				
+					case 'H':
+					case 'P':
 					default:
-						continue; // Continues the enclosing loop.
+						break;
 				}
 			}
-			
-			// Read the aligned sequence.
-			// Reached iff. var_pos ≤ aln_pos or op_count is non-zero as a result of the last subtraction.
-			auto const min_length(lb::min_ct(op_count, var_len));
-			auto const operation_(operation.to_char());
-			switch (operation_)
-			{
-				case 'M': // Consumes both query and reference.
-				case '=':
-				case 'X':
-					copy_sequence_slice(seq, seg_pos, min_length, dst);
-					seg_pos += min_length;
-					var_len -= min_length;
-					break;
-				
-				case 'I': // Consumes query.
-					copy_sequence_slice(seq, seg_pos, min_length, dst);
-					seg_pos += min_length;
-					break;
-				
-				case 'D': // Consumes reference.
-				case 'N':
-					var_len -= min_length;
-					break;
-				
-				case 'S': // Consumes query.
-					if (should_include_clipping)
-						copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
-					seg_pos += op_count;
-					break;
-				
-				case 'H':
-				case 'P':
-				default:
-					break;
-			}
 		}
+		catch (lb::assertion_failure_exception const &exc)
+		{
+			// For debugging.
+			std::cerr << "CIGAR: "; 
+			output_cigar(cigar_seq, std::cerr);
+			std::cerr << '\n';
+			throw;
+		}
+		
 		
 		// Check for soft clipping.
 		if (should_include_clipping && it != end)
@@ -671,13 +694,27 @@ namespace {
 				for (auto const &rec : candidate_records)
 				{
 					auto const aln_pos(rec.reference_position());
-					libbio_assert_lte(aln_pos, var_pos);
-					if (var_end_pos <= aln_pos + rec.reference_length)
+					
+					try
 					{
-						// Add to the supported sequences.
-						rec.read_aligned_sequence(var_pos, var_end_pos - var_pos, buffer, should_include_clipping);
-						auto &&[it, did_emplace] = supported_sequences.try_emplace(buffer, 0);
-						++(it->second);
+						libbio_assert_lte(aln_pos, var_pos);
+						if (var_end_pos <= aln_pos + rec.reference_length)
+						{
+							// Add to the supported sequences.
+							rec.read_aligned_sequence(var_pos, var_end_pos - var_pos, buffer, should_include_clipping);
+							auto &&[it, did_emplace] = supported_sequences.try_emplace(buffer, 0);
+							++(it->second);
+						}
+					}
+					catch (lb::assertion_failure_exception const &exc)
+					{
+						// For debugging.
+						std::cerr << "ref_len:     " << rec.reference_length << '\n';
+						std::cerr << "aln_pos:     " << aln_pos << '\n';
+						std::cerr << "var_pos:     " << var_pos << '\n';
+						std::cerr << "var_end_pos: " << var_end_pos << '\n';
+						std::cerr << "var_len:     " << (var_end_pos - var_pos) << '\n';
+						throw;
 					}
 				}
 				
