@@ -164,6 +164,8 @@ namespace {
 		// Caller checks that the variant is contained in the read.
 		
 		dst.clear();
+		auto const var_ref_len_(var_ref_len);
+		auto const var_alt_len_(var_alt_len);
 		
 		// Process the CIGAR string and read the characters the alignment suggests.
 		auto const &seq(aln_record.sequence()); // std::vector <seqan3::dna5> by default.
@@ -367,8 +369,14 @@ namespace {
 				handle_trailing('S'_cigar_operation, operation, op_count);
 		}
 		
-		// The reference sequence of the variant should have been consumed at this point.
-		libbio_always_assert_eq(0, var_ref_len);
+		// The reference sequence of the variant should have been consumed at this point
+		// unless it was originally longer than the alternative sequence.
+		libbio_always_assert_msg(
+			var_alt_len < var_ref_len_ || 0 == var_ref_len,
+			"var_ref_len_: ", var_ref_len_,
+			" var_alt_len_: ", var_alt_len_,
+			" var_ref_len: ", var_ref_len
+		);
 		
 		return 0 == var_alt_len;
 	}
