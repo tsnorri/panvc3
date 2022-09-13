@@ -690,6 +690,11 @@ namespace {
 				output_alts(var, std::cout);
 				std::cout << '\n';
 				
+				// FIXME: While we output all ALTs above, considering each for counting supporting reads would be quite difficult. Since we only handle heterozygous variants of diploid donors (for now), this is not needed.
+				libbio_always_assert_eq(1, var.alts().size());
+				auto const &alt(var.alts().front());
+				auto const alt_len(alt.alt.size());
+				
 				supported_sequences.clear();
 				for (auto const &rec : candidate_records)
 				{
@@ -714,6 +719,8 @@ namespace {
 						std::cerr << "var_pos:     " << var_pos << '\n';
 						std::cerr << "var_end_pos: " << var_end_pos << '\n';
 						std::cerr << "var_len:     " << (var_end_pos - var_pos) << '\n';
+						std::cerr << "alt_len:     " << alt_len << '\n';
+						std::cerr << "ALT:         " << alt.alt << '\n';
 						throw;
 					}
 				}
