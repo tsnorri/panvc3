@@ -3,8 +3,8 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#ifndef PANVC3_DNA10_ALPHABET_HH
-#define PANVC3_DNA10_ALPHABET_HH
+#ifndef PANVC3_DNA11_ALPHABET_HH
+#define PANVC3_DNA11_ALPHABET_HH
 
 #include <seqan3/alphabet/nucleotide/dna5.hpp>
 
@@ -12,22 +12,22 @@ namespace panvc3 {
 	
 	// Alphabet for representing soft-clipped bases with lowercase letters.
 	// FIXME: this could be rewritten as a decorator.
-	class dna10 : public seqan3::nucleotide_base <dna10, 10>
+	class dna11 : public seqan3::nucleotide_base <dna11, 11>
 	{
 	private:
-		typedef seqan3::nucleotide_base <dna10, 10>	base_t;
+		typedef seqan3::nucleotide_base <dna11, 11>	base_t;
 		friend base_t;
 		friend base_t::base_t;
 		
 	public:
-		constexpr dna10()							noexcept = default;
-		constexpr dna10(dna10 const &)				noexcept = default;
-		constexpr dna10(dna10 &&)					noexcept = default;
-		constexpr dna10 &operator=(dna10 const &)	noexcept = default;
-		constexpr dna10 &operator=(dna10 &&)		noexcept = default;
-		~dna10()									noexcept = default;
+		constexpr dna11()							noexcept = default;
+		constexpr dna11(dna11 const &)				noexcept = default;
+		constexpr dna11(dna11 &&)					noexcept = default;
+		constexpr dna11 &operator=(dna11 const &)	noexcept = default;
+		constexpr dna11 &operator=(dna11 &&)		noexcept = default;
+		~dna11()									noexcept = default;
 		
-		constexpr dna10(seqan3::dna5 const cc, bool const is_clipped = false) noexcept // Not explicit.
+		constexpr dna11(seqan3::dna5 const cc, bool const is_clipped = false) noexcept // Not explicit.
 		{
 			static_assert(0 == alphabet_size % 2);
 			assign_rank(cc.to_rank() + is_clipped * alphabet_size / 2);
@@ -48,7 +48,8 @@ namespace panvc3 {
 			'c', // 6
 			'g', // 7
 			'n', // 8
-			't'  // 9
+			't', // 9
+			'~', // 10
 		};
 		
 		constexpr static rank_type rank_complement_table[alphabet_size]{
@@ -61,7 +62,8 @@ namespace panvc3 {
 			7,	// c
 			6,	// g
 			8,	// n
-			5	// t
+			5,	// t
+			10	// ~
 		};
 		
 		constexpr static rank_type rank_complement(rank_type const rank)
@@ -99,16 +101,16 @@ namespace panvc3 {
 	};
 	
 	
-	typedef std::vector <dna10>	dna10_vector;
+	typedef std::vector <dna11>	dna11_vector;
 	
 	
-	constexpr dna10 operator""_dna10(char const cc) noexcept
+	constexpr dna11 operator""_dna11(char const cc) noexcept
 	{
-		return dna10{}.assign_char(cc);
+		return dna11{}.assign_char(cc);
 	}
 	
 	
-	std::ostream &operator<<(std::ostream &os, dna10 const cc)
+	std::ostream &operator<<(std::ostream &os, dna11 const cc)
 	{
 		os << cc.to_char();
 		return os;
