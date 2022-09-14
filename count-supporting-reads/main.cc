@@ -82,10 +82,26 @@ namespace {
 	};
 	
 	
-	template <typename t_aln_record>
-	std::size_t calculate_reference_length(t_aln_record const &aln_record)
+	struct record_length
 	{
 		std::size_t reference_length{};
+		std::size_t right_anchored_length{};
+		
+		record_length() = default;
+		
+		record_length(std::size_t const reference_length_, std::size_t const right_anchored_length_):
+			reference_length(reference_length_),
+			right_anchored_length(right_anchored_length_)
+		{
+		}
+	};
+	
+	
+	template <typename t_aln_record>
+	record_length calculate_record_lengths(t_aln_record const &aln_record)
+	{
+		std::size_t reference_length{};
+		std::size_t right_anchored_length{};
 		//std::size_t query_length{};
 		
 		for (auto const &cigar_item : aln_record.cigar_sequence())
@@ -104,6 +120,7 @@ namespace {
 				case 'X':
 					reference_length += op_count;
 					//query_length += op_count;
+					right_anchored_length = reference_length;
 					break;
 				
 				case 'I': // Consume query.
@@ -126,7 +143,7 @@ namespace {
 			}
 		}
 		
-		return reference_length;
+		return {reference_length, right_anchored_length};
 	}
 	
 	
@@ -219,7 +236,7 @@ namespace {
 			
 			for (; it != end; ++it)
 			{
-				// FIXME: check if the note in calculate_reference_length() still holds.
+				// FIXME: check if the note in calculate_record_lengths() still holds.
 				op_count = *it;
 				operation = *it;
 				
@@ -420,22 +437,24 @@ namespace {
 	struct record
 	{
 		t_aln_record	alignment_record;
-		std::size_t		reference_length{};
+		record_length	rec_length;
 		
-		record(t_aln_record &alignment_record_, std::size_t const reference_length_):
+		record(t_aln_record &alignment_record_, record_length const rec_length_):
 			alignment_record(alignment_record_),
-			reference_length(reference_length_)
+			rec_length(rec_length_)
 		{
 			libbio_assert(alignment_record.reference_position().has_value()); // Make sure that the optional holds a value.
 		}
 
 		explicit record(t_aln_record &alignment_record_):
-			record(alignment_record_, calculate_reference_length(alignment_record))
+			record(alignment_record_, calculate_record_lengths(alignment_record))
 		{
 		}
 		
 		auto reference_position() const { return *alignment_record.reference_position(); }
-		std::size_t reference_end() const { return reference_position() + reference_length; }
+		std::size_t reference_length() const { return rec_length.reference_length; }
+		std::size_t reference_end() const { return reference_position() + reference_length(); }
+		std::size_t right_anchored_length() const { return rec_length.right_anchored_length; }
 		
 		// FIXME: try to find a way to get the sequence type from t_aln_record, i.e. dna11 only if the source is dna5.
 		bool try_read_aligned_sequence(
@@ -446,7 +465,7 @@ namespace {
 			bool const should_include_clipping
 		) const
 		{
-			return ::try_read_aligned_sequence(alignment_record, reference_length, var_pos, var_ref_len, var_alt_len, dst, should_include_clipping);
+			return ::try_read_aligned_sequence(alignment_record, reference_length(), var_pos, var_ref_len, var_alt_len, dst, should_include_clipping);
 		}
 	};
 	
@@ -633,17 +652,18 @@ namespace {
 					return;
 				}
 				
-				auto const rec_ref_len(calculate_reference_length(aln_rec));
-				auto const rec_ref_end(rec_ref_pos + rec_ref_len);
+				auto const rec_lengths(calculate_record_lengths(aln_rec));
+				auto const rec_ref_end(rec_ref_pos + rec_lengths.reference_length);
 				if (rec_ref_end <= var_pos)
 				{
 					++m_statistics.position_mismatches;
 					continue;
 				}
 				
-				// We could calculate this from the other statistics but having a separate variable is safer w.r.t. potential bugs.
+				// We could calculate the number of matched reads from the other statistics
+				// but having a separate variable is safer w.r.t. potential bugs.
 				++m_statistics.matched_reads;
-				m_candidate_records.emplace(aln_rec, rec_ref_len);
+				m_candidate_records.emplace(aln_rec, rec_lengths);
 			}
 		}
 	};
@@ -738,6 +758,7 @@ namespace {
 		bool const should_include_clipping(args_info.include_clipping_flag);
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
 		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
+		bool const should_anchor_reads_left_only(args_info.anchor_left_flag);
 		
 		// Open the VCF file.
 		vcf::stream_input <lb::file_istream> vcf_input;
@@ -779,9 +800,10 @@ namespace {
 		vcf_reader.set_parsed_fields(vcf::field::ALL);
 		vcf_reader.parse(
 			[
-				chr_id,						// Pointer
-				vcf_end_field,				// Pointer
-				should_include_clipping,	// bool
+				chr_id,							// Pointer
+				vcf_end_field,					// Pointer
+				should_include_clipping,		// bool
+				should_anchor_reads_left_only,	// bool
 				&aln_reader,
 				&supported_sequences,
 				&buffer,
@@ -863,9 +885,11 @@ namespace {
 						// Add to the supported sequences if possible.
 						// Check first that at least the reference sequence is present in the current read.
 						// FIXME: Do we need to count the mismatch? By variant?
-						if (
-							var_end_pos <= rec_pos + rec.reference_length && 
-							rec.try_read_aligned_sequence(var_pos, var_ref_len, var_alt_len, buffer, should_include_clipping)
+						if ((
+								should_anchor_reads_left_only
+								? var_end_pos <= rec_pos + rec.reference_length()
+								: var_end_pos <  rec_pos + rec.right_anchored_length()
+							) && rec.try_read_aligned_sequence(var_pos, var_ref_len, var_alt_len, buffer, should_include_clipping)
 						)
 						{
 							auto &&[it, did_emplace] = supported_sequences.try_emplace(buffer, 0);
@@ -875,7 +899,7 @@ namespace {
 					catch (lb::assertion_failure_exception const &exc)
 					{
 						// For debugging.
-						std::cerr << "rec_ref_len: " << rec.reference_length << '\n';
+						std::cerr << "rec_ref_len: " << rec.reference_length() << '\n';
 						std::cerr << "rec_pos:     " << rec_pos << '\n';
 						std::cerr << "var_pos:     " << var_pos << '\n';
 						std::cerr << "var_end_pos: " << var_end_pos << '\n';
