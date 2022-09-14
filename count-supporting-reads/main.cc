@@ -798,6 +798,7 @@ namespace {
 		variant_statistics var_statistics;
 		
 		vcf_reader.set_parsed_fields(vcf::field::ALL);
+		lb::log_time(std::cerr) << "Processing…\n";
 		vcf_reader.parse(
 			[
 				chr_id,							// Pointer
