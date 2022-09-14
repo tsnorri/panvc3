@@ -29,10 +29,8 @@ namespace panvc3 {
 		
 		constexpr dna11(seqan3::dna5 const cc, bool const is_clipped = false) noexcept // Not explicit.
 		{
-			static_assert(0 == alphabet_size % 2);
 			assign_rank(cc.to_rank() + is_clipped * alphabet_size / 2);
 		}
-		
 		
 		using base_t::base_t;
 		
