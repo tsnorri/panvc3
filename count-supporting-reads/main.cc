@@ -286,10 +286,10 @@ namespace {
 						var_alt_len -= std::min(var_alt_len, min_length);
 						op_count -= min_length;
 						
-						// Handle the case where the variant has an insertion but
-						// the whole M / = / X operation was not consumed.
+						// Handle the case where the variant has an insertion (relative to the
+						// current position) but the whole M / = / X operation was not consumed.
 						if (op_count && 0 == var_ref_len)
-							var_alt_len = 0; // Clearly the read does not have an insertion.
+							var_alt_len = 0; // Clearly the read does not have an insertion since the nucleotides are aligned.
 						
 						break;
 					}
