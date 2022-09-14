@@ -10,7 +10,7 @@
 #include <libbio/vcf/variant_end_pos.hh>
 #include <libbio/vcf/vcf_reader.hh>
 #include <libbio/file_handling.hh>
-#include <panvc3/dna10_alphabet.hh>
+#include <panvc3/dna11_alphabet.hh>
 #include <range/v3/all.hpp>
 #include <seqan3/alphabet/cigar/cigar.hpp>
 #include <seqan3/io/sam_file/all.hpp>
@@ -140,15 +140,44 @@ namespace {
 	template <typename t_src, typename t_dst>
 	inline void copy_sequence_slice_clipped(t_src const &src, std::size_t const pos, std::size_t const length, t_dst &dst)
 	{
-		// Construct clipped panvc3::dna10 characters from plain seqan3::dna5 characters.
+		// Construct clipped panvc3::dna11 characters from plain seqan3::dna5 characters.
 		ranges::copy(
 			src
 			| rsv::slice(pos, pos + length)
-			| rsv::transform([](auto const &cc){ return panvc3::dna10(cc, true); }),
+			| rsv::transform([](auto const &cc){ return panvc3::dna11(cc, true); }),
 			ranges::back_inserter(dst)
 		);
 	}
-	
+
+
+	// Check compatibility in terms of what operations can be used to continue
+	bool can_continue_with_operation(seqan3::cigar::operation const lhs, seqan3::cigar::operation const rhs)
+	{
+		// The specification forbids some combinations, e.g. H can only appear as the first
+		// or the last operation. We handle them anyway b.c. it is not very complicated.
+		switch (lhs.to_char())
+		{
+			case 'D':
+			case 'N':
+			{
+				auto const cc(rhs.to_char());
+				return ('D' == cc || 'N' == cc);
+			}
+				
+			case 'H':
+			case 'P':
+			{
+				auto const cc(rhs.to_char());
+				return ('H' == cc || 'P' == cc);
+			}
+				
+			default:
+				break;
+		}
+		
+		return lhs == rhs;
+	}
+
 	
 	template <typename t_aln_record> // FIXME: try to find a way to get the sequence type crom t_aln_record instead of assuming dna5.
 	bool try_read_aligned_sequence(
@@ -157,11 +186,13 @@ namespace {
 		std::size_t const var_pos,
 		std::size_t var_ref_len,
 		std::size_t var_alt_len,
-		panvc3::dna10_vector &dst,
+		panvc3::dna11_vector &dst,
 		bool const should_include_clipping
 	)
 	{
 		// Caller checks that the variant is contained in the read.
+		using panvc3::operator""_dna11;
+		using seqan3::literals::operator""_cigar_operation;
 		
 		dst.clear();
 		auto const var_ref_len_(var_ref_len);
@@ -172,20 +203,20 @@ namespace {
 		auto const &cigar_seq(aln_record.cigar_sequence());
 		auto it(cigar_seq.begin());
 		auto const end(cigar_seq.end());
-		
-		auto const rec_pos_(aln_record.reference_position());
-		libbio_assert(rec_pos_);
-		libbio_assert_lte(0, *rec_pos_);
-		std::size_t rec_pos(*rec_pos_);
-		libbio_assert_lte(rec_pos, var_pos);
-		libbio_assert_lte(var_pos + var_ref_len, rec_pos + rec_len);
-		
-		std::size_t seg_pos{};
-		std::uint32_t op_count{};
-		seqan3::cigar::operation operation{};
-		
+
 		try
 		{
+			auto const rec_pos_(aln_record.reference_position());
+			libbio_assert(rec_pos_);
+			libbio_assert_lte(0, *rec_pos_);
+			std::size_t rec_pos(*rec_pos_);
+			libbio_assert_lte(rec_pos, var_pos);
+			libbio_assert_lte(var_pos + var_ref_len, rec_pos + rec_len);
+			
+			std::size_t seg_pos{};
+			std::uint32_t op_count{};
+			seqan3::cigar::operation operation{};
+			
 			for (; it != end; ++it)
 			{
 				// FIXME: check if the note in calculate_reference_length() still holds.
@@ -246,60 +277,130 @@ namespace {
 					case '=':
 					case 'X':
 					{
-						auto const min_length(lb::min_ct(op_count, std::min(var_ref_len, var_alt_len)));
-						if (0 == min_length)
-							goto finish; // Skips incrementing the iterator.
+						// Since the segment is aligned to the reference, consume as many
+						// characters that correspond to REF as possible.
+						auto const min_length(lb::min_ct(op_count, var_ref_len));
 						copy_sequence_slice(seq, seg_pos, min_length, dst);
 						seg_pos += min_length;
-						var_ref_len -= min_length;
-						var_alt_len -= min_length;
+						var_ref_len -= std::min(var_ref_len, min_length);
+						var_alt_len -= std::min(var_alt_len, min_length);
+						op_count -= min_length;
+						
+						// Handle the case where the variant has an insertion but
+						// the whole M / = / X operation was not consumed.
+						if (op_count && 0 == var_ref_len)
+							var_alt_len = 0; // Clearly the read does not have an insertion.
+						
 						break;
 					}
 					
 					case 'I': // Consumes query.
 					{
-						auto const min_length(lb::min_ct(op_count, var_alt_len));
-						if (0 == min_length)
-							goto finish; // Skips incrementing the iterator.
-						copy_sequence_slice(seq, seg_pos, min_length, dst);
-						seg_pos += min_length;
-						var_alt_len -= min_length;
-						op_count -= min_length; // Needed for the post-processing step after the for loop.
+						// Consider the whole insertion.
+						copy_sequence_slice(seq, seg_pos, op_count, dst);
+						seg_pos += op_count;
+						var_alt_len -= lb::min_ct(var_alt_len, op_count);
+						op_count = 0;
 						break;
 					}
 					
 					case 'D': // Consume reference.
 					case 'N':
 					{
-						auto const min_length(lb::min_ct(op_count, var_ref_len));
-						if (0 == min_length)
-							goto finish; // Skips incrementing the iterator.
-						var_ref_len -= min_length;
+						if (var_ref_len < op_count && (dst.empty() || dst.back() != '~'_dna11))
+							dst.push_back('~'_dna11);
+						
+						var_ref_len -= lb::min_ct(var_ref_len, op_count);
+						op_count = 0;
 						break;
 					}
 					
 					case 'S': // Consume query.
 					{
-						auto const min_length(lb::min_ct(op_count, var_alt_len));
-						if (0 == min_length)
-							goto finish; // Skips incrementing the iterator.
 						if (should_include_clipping)
-							copy_sequence_slice_clipped(seq, seg_pos, min_length, dst);
-						seg_pos += min_length;
-						var_alt_len -= min_length;
-						op_count -= min_length; // Needed for the post-processing step after the for loop.
+							copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
+						seg_pos += op_count;
+						var_alt_len -= lb::min_ct(var_alt_len, op_count); // FIXME: Should the characters actually be considered part of ALT?
+						op_count = 0;
 						break;
 					}
 					
 					case 'H': // Consume nothing.
 					case 'P':
+						op_count = 0;
 						break;
 						
 					default:
 						libbio_fail("Unexpected CIGAR operation “", operation_, "”");
 						break;
 				}
+				
+				if (0 == var_ref_len && 0 == var_alt_len)
+					goto finish; // Skip incrementing the iterator.
 			}
+			
+			// This should be the case now.
+			libbio_assert(0 != var_ref_len || 0 != var_alt_len);
+			return false;
+			
+		finish:
+			libbio_assert(0 == var_ref_len && 0 == var_alt_len);
+
+			// The SAM/BAM specification only states that adjacent CIGAR operations “should” be different
+			// (Sequence Alignment/Map Format Specification, 22nd Aug 2022, Section 2, Item 2),
+			// so we try to handle the trailing operations that match if needed.
+			if (0 == op_count && it != end) // op_count ≠ 0 => There are remaining M / = / X operations that need not be handled.
+			{
+				// Check the next operation if there is one.
+				++it;
+				auto const prev_operation(operation);
+				for (; it != end; ++it)
+				{
+					op_count = *it;
+					operation = *it;
+					
+					if ('S'_cigar_operation == operation)
+					{
+						if (should_include_clipping)
+							copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
+						seg_pos += op_count;
+						continue;
+					}
+					
+					if (!can_continue_with_operation(prev_operation, operation))
+						break;
+					
+					// Continue with the same operation.
+					auto const operation_(operation.to_char());
+					switch (operation_)
+					{
+						case 'I': // Consumes query.
+						{
+							copy_sequence_slice(seq, seg_pos, op_count, dst);
+							seg_pos += op_count;
+							break;
+						}
+						
+						case 'D': // Consume reference.
+						case 'N':
+						{
+							if (dst.empty() || dst.back() != '~'_dna11)
+								dst.push_back('~'_dna11);
+							break;
+						}
+						
+						case 'H': // Consume nothing.
+						case 'P':
+							break;
+							
+						default:
+							libbio_fail("Unexpected CIGAR operation “", operation_, "”");
+							break;
+					}
+				}
+			}
+			
+			return true;
 		}
 		catch (lb::assertion_failure_exception const &exc)
 		{
@@ -309,76 +410,6 @@ namespace {
 			std::cerr << '\n';
 			throw;
 		}
-		
-	finish:
-		auto copy_seg(
-			[&seq, &seg_pos, &dst, &var_alt_len]
-			(auto const op, auto op_count)
-			{
-				using seqan3::literals::operator""_cigar_operation;
-				
-				if ('S'_cigar_operation == op)
-					copy_sequence_slice_clipped(seq, seg_pos, op_count, dst);
-				else
-				{
-					if ('I'_cigar_operation == op)
-						var_alt_len -= lb::min_ct(var_alt_len, op_count);
-					
-					copy_sequence_slice(seq, seg_pos, op_count, dst);
-				}
-				
-				seg_pos += op_count;
-			}
-		);
-		
-		auto handle_trailing(
-			[&it, &end, &copy_seg]
-			(auto const expected_op, auto operation, auto op_count)
-			{
-				if (expected_op == operation)
-				{
-					copy_seg(operation, op_count);
-					if (it == end)
-						return;
-					
-					// I don’t think the file format allows consecutive operations of same type but we check anyway.
-					++it;
-					for (; it != end; ++it)
-					{
-						op_count = *it;
-						operation = *it;
-						
-						if (expected_op != operation)
-							return;
-						
-						copy_seg(operation, op_count);
-					}
-				}
-			}
-		);
-		
-		// Check if there are insertion operations with characters left.
-		// In this case, we would like to include them in the sequence suggested by the read.
-		{
-			using seqan3::literals::operator""_cigar_operation;
-			
-			handle_trailing('I'_cigar_operation, operation, op_count);
-			
-			// Check for soft clipping.
-			if (should_include_clipping)
-				handle_trailing('S'_cigar_operation, operation, op_count);
-		}
-		
-		// The reference sequence of the variant should have been consumed at this point
-		// unless it was originally longer than the alternative sequence.
-		libbio_always_assert_msg(
-			var_alt_len < var_ref_len_ || 0 == var_ref_len,
-			"var_ref_len_: ", var_ref_len_,
-			" var_alt_len_: ", var_alt_len_,
-			" var_ref_len: ", var_ref_len
-		);
-		
-		return 0 == var_alt_len;
 	}
 	
 	
@@ -406,12 +437,12 @@ namespace {
 		auto reference_position() const { return *alignment_record.reference_position(); }
 		std::size_t reference_end() const { return reference_position() + reference_length; }
 		
-		// FIXME: try to find a way to get the sequence type from t_aln_record, i.e. dna10 only if the source is dna5.
+		// FIXME: try to find a way to get the sequence type from t_aln_record, i.e. dna11 only if the source is dna5.
 		bool try_read_aligned_sequence(
 			std::size_t const var_pos,
 			std::size_t const var_ref_len,
 			std::size_t const var_alt_len,
-			panvc3::dna10_vector &dst,
+			panvc3::dna11_vector &dst,
 			bool const should_include_clipping
 		) const
 		{
@@ -688,6 +719,19 @@ namespace {
 		gengetopt_args_info const &args_info
 	)
 	{
+		// Overview of the algorithm
+		// =========================
+		// – Process the VCF and SAM/BAM records from the smallest co-ordinate to the largest.
+		// – For each VCF record, determine the set of alignments where the REF sequence of the variant
+		//   is fully contained in the alignment. Process each such alignment.
+		// – Find the starting point of the variant in question within the alignment.
+		// – Copy characters from the read as indicated by the CIGAR operations until both |REF| and
+		//   |ALT| have been reached. The only exception is that the process is stopped early if the
+		//   next aligned pair of characters (i.e. an M / = / X operation) is found.
+		// – If the rightmost operation was an insertion or a deletion, continue handling similar
+		//   operations.
+		// – If both limits were reached, the operation is consiered successful.
+		
 		auto const chr_id(args_info.chr_arg);
 		auto const vcf_path(args_info.vcf_arg);
 		auto const regions_path(args_info.regions_arg);
@@ -728,8 +772,8 @@ namespace {
 			should_consider_primary_alignments_only,
 			requires_same_config_prefix_in_next
 		);
-		std::map <panvc3::dna10_vector, std::size_t> supported_sequences;
-		panvc3::dna10_vector buffer;
+		std::map <panvc3::dna11_vector, std::size_t> supported_sequences;
+		panvc3::dna11_vector buffer;
 		variant_statistics var_statistics;
 		
 		vcf_reader.set_parsed_fields(vcf::field::ALL);
@@ -849,7 +893,7 @@ namespace {
 					if (kv.first.empty())
 						std::cout << "<DEL>";
 					else
-						std::copy(kv.first.begin(), kv.first.end(), std::ostream_iterator <panvc3::dna10>(std::cout));
+						std::copy(kv.first.begin(), kv.first.end(), std::ostream_iterator <panvc3::dna11>(std::cout));
 					std::cout << '\n';
 				}
 				
