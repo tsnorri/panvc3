@@ -7,7 +7,13 @@ purpose		"Split the given alignments by the given reference names or reference n
 usage		"split_alignments_by_reference --alignments=alignments.bam --reference-names=names.txt"
 description	"The resulting alignments will be written to separate files in the current working directory. The output files may then be e.g. sorted by position and finally concatenated in order to match the order of a VCF file with multiple contigs."
 
-option		"alignments"		a	"Alignment file path"								string	typestr = "filename"	required
-option		"reference-names"	n	"Reference names, one per line"						string	typestr = "filename"	required
-option		"prefixes"			p	"Treat reference names are prefixes"				flag	off
-option		"report-unmatched"	r	"Report reference names without matching prefix"	flag	off
+option			"alignments"			a	"Alignment file path"								string	typestr = "filename"	required
+
+defmode			"Split alignment file"		modedesc = "Split input alignments"
+modeoption		"split-alignments"		S	"Split the given alignment file by reference"		mode = "Split alignment file"									required
+modeoption		"reference-names"		n	"Reference names, one per line"						mode = "Split alignment file"	string	typestr = "filename"	required
+modeoption		"prefixes"				p	"Treat reference names are prefixes"				mode = "Split alignment file"									optional
+modeoption		"report-unmatched"		r	"Report reference names without matching prefix"	mode = "Split alignment file"									optional
+
+defmode			"Read reference names"		modedesc = "Output the reference names in the given alignment file"
+modeoption		"read-reference-names"	R	"Only output the reference names"				    mode = "Read reference names"									required

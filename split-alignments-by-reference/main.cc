@@ -152,7 +152,7 @@ namespace {
 			if (0 == (1 + rec_idx) % 100000)
 				lb::log_time(std::cerr) << "Processed " << (1 + rec_idx) << " alignments…\n";
 			
-			auto const ref_id_(aln_rec.reference_id());
+			auto const &ref_id_(aln_rec.reference_id());
 			if (!ref_id_.has_value())
 			{
 				++ref_id_missing;
@@ -204,6 +204,28 @@ namespace {
 		
 		lb::log_time(std::cerr) << "Done.\n";
 	}
+
+
+	void read_reference_names(char const *aln_path)
+	{
+		fs::path const alignments_path(aln_path);
+		seqan3::fields <seqan3::field::ref_id> fields{};
+		seqan3::sam_file_input aln_input(alignments_path, fields);
+
+		std::set <std::string> refs;
+		auto const &ref_ids(aln_input.header().ref_ids());
+		for (auto const &aln_rec : aln_input)
+		{
+			auto const &ref_id_(aln_rec.reference_id());
+			if (!ref_id_.has_value())
+				continue;
+			auto const &ref_id(ref_ids[*ref_id_]);
+			refs.emplace(ref_id);
+		}
+
+		for (auto const &rr : refs)
+			std::cout << rr << '\n';
+	}
 }
 
 
@@ -214,13 +236,18 @@ int main(int argc, char **argv)
 		std::exit(EXIT_FAILURE);
 	
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
-	
-	process(
-		args_info.alignments_arg,
-		args_info.reference_names_arg,
-		args_info.prefixes_flag,
-		args_info.report_unmatched_flag
-	);
+
+	if (args_info.read_reference_names_given)
+		read_reference_names(args_info.alignments_arg);
+	else
+	{
+		process(
+			args_info.alignments_arg,
+			args_info.reference_names_arg,
+			args_info.prefixes_given,
+			args_info.report_unmatched_given
+		);
+	}
 	
 	return EXIT_SUCCESS;
 }
