@@ -49,6 +49,10 @@ class ReadSupportParser(object):
 				if self.alt == "<DEL>":
 					self.alt = ""
 				self.ref = fields[4]
+
+				is_reversed = int(fields[6])
+				if is_reversed:
+					self.ref, self.alt = self.alt, self.ref
 				
 				self.ref_count = 0
 				self.alt_count = 0

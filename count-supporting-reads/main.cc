@@ -27,6 +27,9 @@ namespace vcf	= libbio::vcf;
 
 
 namespace {
+
+	typedef vcf::info_field <vcf::metadata_value_type::FLAG>	info_field_co;
+	typedef vcf::info_field <vcf::metadata_value_type::FLAG>	info_field_usra;
 	
 	void output_cigar(std::vector <seqan3::cigar> const &cigar_seq, std::ostream &os)
 	{
@@ -774,7 +777,11 @@ namespace {
 		
 		// Retrieve the END field.
 		vcf::info_field_end *vcf_end_field{};
-		vcf_reader.get_info_field_ptr("END", vcf_end_field);
+		info_field_co *vcf_co_field{};
+		info_field_usra *vcf_usra_field{};
+		vcf_reader.get_info_field_ptr(args_info.end_field_id_arg, vcf_end_field);
+		vcf_reader.get_info_field_ptr(args_info.co_field_id_arg, vcf_co_field);
+		vcf_reader.get_info_field_ptr(args_info.usra_field_id_arg, vcf_usra_field);
 		libbio_always_assert(vcf_end_field); // Reserved so should be set.
 		
 		// Read the regions if needed, otherwise make sure that the variants are in a consistent order.
@@ -803,6 +810,8 @@ namespace {
 			[
 				chr_id,							// Pointer
 				vcf_end_field,					// Pointer
+				vcf_co_field,					// Pointer
+				vcf_usra_field,					// Pointer
 				should_include_clipping,		// bool
 				should_anchor_reads_left_only,	// bool
 				&aln_reader,
@@ -860,12 +869,12 @@ namespace {
 					return true;
 				}
 				
-				// Output “V” chrom pos id(s) ref alts, separated by tabs.
+				// Output “V” chrom pos id(s) ref alts is_reversed, separated by tabs.
 				std::cout << "V\t" << var.chrom_id() << '\t' << var_pos << '\t';
 				ranges::copy(var.id(), ranges::make_ostream_joiner(std::cout, ","));
 				std::cout << '\t' << var.ref() << '\t';
 				output_alts(var, std::cout);
-				std::cout << '\n';
+				std::cout << '\t' << +((vcf_co_field && vcf_co_field->has_value(var)) || (vcf_usra_field && vcf_usra_field->has_value(var))) << '\n';
 				
 				// FIXME: While we output all ALTs above, considering each for counting supporting reads would be quite difficult. Since we only handle heterozygous variants of diploid donors (for now), this is not needed.
 				libbio_always_assert_eq(1, var.alts().size());

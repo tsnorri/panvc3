@@ -16,3 +16,6 @@ option		"primary-only"		m	"Consider primary alignments only"											flag	off
 option		"same-ref"			s	"Consider alignments with the same contig prefix only"						flag	off
 option		"include-clipping"	l	"Include soft clipping"														flag	off
 option		"anchor-left"		n	"Anchor each read only to the left boundary of the overlapping variants"	flag	off
+option		"end-field-id"		-	"END info field identifier"													string	default = "END"			optional
+option		"co-field-id"		-	"CO info field identifier"													string	default = "CO"			optional
+option		"usra-field-id"		-	"USRA info field identifier"												string	default = "USRA"		optional
