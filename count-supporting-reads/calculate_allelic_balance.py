@@ -23,13 +23,15 @@ class ReadSupportParser(object):
 		if self.min_cov <= self.ref_count + self.alt_count:
 			self.variants_counted += 1
 			balance = float(self.ref_count) / float(self.ref_count + self.alt_count)
-			len_diff = len(self.alt) - len(self.ref)
-			sys.stdout.write(f"{balance}\t{len_diff}\n")
+			ref_len = len(self.ref)
+			alt_len = len(self.alt)
+			sys.stdout.write(f"{balance}\t{ref_len}\t{alt_len}\n")
 		else:
 			self.variants_skipped += 1
 
 
 	def parse(self, fp):
+		sys.stdout.write(f"BALANCE\tREF_LENGTH\tALT_LENGTH\n")
 		for lineno, line_ in enumerate(fp, start = 1):
 			line = line_.rstrip("\n")
 			fields = line.split("\t")
@@ -80,7 +82,7 @@ class ReadSupportParser(object):
 		sys.stderr.write(f"Variants skipped: {self.variants_skipped}\n")
 		if 0 < self.overall_alt_count:
 			ratio = float(self.overall_ref_count) / float(self.overall_alt_count)
-			sys.stderr.write(f"Overall ref-to-alt ratio: {ratio}\n")
+			sys.stdout.write(f"# Overall ref-to-alt ratio: {ratio}\n")
 		else:
 			sys.stderr.write("Found zero ALT alleles.\n")
 
