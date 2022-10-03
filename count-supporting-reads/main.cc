@@ -643,7 +643,7 @@ namespace {
 				}
 				
 				auto const rec_ref_pos(*rec_ref_pos_);
-				// The following assertion check that rec_ref_pos is non-negative, too.
+				// The following assertion checks that rec_ref_pos is non-negative, too.
 				libbio_always_assert_lte(m_prev_record_pos, rec_ref_pos); // FIXME: error message: alignments need to be sorted by position.
 				
 				m_prev_record_pos = rec_ref_pos; // We could also consider some of the filtered reads’ positions for m_prev_record_pos, but I think this will suffice.
@@ -847,7 +847,7 @@ namespace {
 				// Check the zygosity. (Generalized for polyploid.)
 				static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
 				auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::uint64_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
-					return acc + sample_gt.alt;
+					return acc + (sample_gt.alt ? 1 : 0);
 				}));
 				
 				if (1 != zygosity)
