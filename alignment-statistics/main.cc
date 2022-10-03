@@ -142,6 +142,7 @@ namespace {
 		std::multiset <interval, interval_end_pos_cmp> coverage_right;
 		
 		lb::log_time(std::cerr) << "Calculating coverage…\n";
+		std::cout << "POSITION\tCOVERAGE\n";
 		
 		std::size_t prev_record_pos{};
 		for (auto const &aln_rec : aln_input)
@@ -225,6 +226,8 @@ namespace {
 			if (prev_record_pos < rec_ref_pos)
 			{
 				// Move the intervals from the right to the left.
+				// This is done first b.c. the left bound of every such record is equal to prev_record_pos and hence
+				// they need to be counted when calculating the coverage.
 				{
 					auto it(coverage_right.begin());
 					auto const end(coverage_right.end()); // extract() only invalidates iterators to the extracted element.
@@ -236,18 +239,20 @@ namespace {
 						coverage_left.insert(coverage_left.end(), coverage_right.extract(it_));
 					}
 				}
-				
-				if (!coverage_left.empty())
-				{
-					std::cout << prev_record_pos << '\t' << coverage_left.size() << '\n';
 
+				while (!coverage_left.empty() && prev_record_pos < rec_ref_pos)
+				{
 					// Remove from the left.
 					// Find the intervals where the end position is greater than the current position,
 					// i.e. ones that cover the current position.
-					auto it(coverage_left.upper_bound(rec_ref_pos));
+					auto it(coverage_left.upper_bound(prev_record_pos));
 				
-					// Erase the rest.
+					// Erase the complement.
 					coverage_left.erase(coverage_left.begin(), it);
+
+					std::cout << prev_record_pos << '\t' << coverage_left.size() << '\n';
+
+					++prev_record_pos;
 				}
 			}
 			
@@ -255,10 +260,17 @@ namespace {
 			if (ref_length)
 				coverage_right.emplace(rec_ref_pos, rec_ref_end);
 			
-			prev_record_pos = rec_ref_pos; // We could also consider some of the filtered reads’ positions for m_prev_record_pos, but I think this will suffice.
+			prev_record_pos = rec_ref_pos; // We could also consider some of the filtered reads’ positions for prev_record_pos, but I think this will suffice.
 		}
 		
-		std::cout << prev_record_pos << '\t' << coverage_left.size() << '\n';
+		while (!coverage_left.empty())
+		{
+			auto it(coverage_left.upper_bound(prev_record_pos));
+			coverage_left.erase(coverage_left.begin(), it);
+			std::cout << prev_record_pos << '\t' << coverage_left.size() << '\n';
+			++prev_record_pos;
+		}
+
 		lb::log_time(std::cerr) << "Done.\n";
 	}
 	
