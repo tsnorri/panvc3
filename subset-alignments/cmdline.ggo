@@ -1,0 +1,14 @@
+# Copyright (c) 2022 Tuukka Norri
+# This code is licensed under MIT license (see LICENSE for details).
+
+package		"subset-alignments"
+version		"0.1"
+purpose		"Make a subset of the given alignemnts."
+usage		"subset_alignments --alignments=alignments.bam [ ... ]"
+description	"The resulting alignments will be written to stdout."
+
+option		"alignments"		a	"Alignment file path"								string	typestr = "filename"	required
+option		"chr"				c	"Subset by chromosome"								string	typestr = "id"			optional
+option		"read-id"			r	"Subset by read ID, read from stdin"				flag	off
+option		"output-sam"		S	"Output SAM instead of BAM"							flag	off
+option		"verbose"			e	"Verbose output"									flag	off
