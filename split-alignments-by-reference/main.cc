@@ -24,10 +24,18 @@ namespace {
 	struct reference_name_record
 	{
 		std::string	reference_name;
+		std::string	new_reference_name;
 		std::size_t	matches{};
 		
-		reference_name_record(std::string	const &reference_name_):
+		explicit reference_name_record(std::string const &reference_name_):
 			reference_name(reference_name_)
+		{
+		}
+
+		template <typename t_string>
+		reference_name_record(t_string &&reference_name_, t_string &&new_reference_name_):
+			reference_name(std::forward <t_string>(reference_name_)),
+			new_reference_name(std::forward <t_string>(new_reference_name_))
 		{
 		}
 		
@@ -64,7 +72,11 @@ namespace {
 	};
 	
 	
-	std::vector <reference_name_record> read_reference_names(char const *path, bool const should_treat_reference_names_as_prefixes)
+	std::vector <reference_name_record> read_reference_names(
+		char const *path,
+		bool const should_treat_reference_names_as_prefixes,
+		bool const should_rewrite_reference_names
+	)
 	{
 		std::vector <reference_name_record> retval;
 		std::string buffer;
@@ -72,8 +84,32 @@ namespace {
 		lb::file_istream stream;
 		lb::open_file_for_reading(path, stream);
 		
-		while (std::getline(stream, buffer))
-			retval.emplace_back(buffer);
+		if (should_rewrite_reference_names)
+		{
+			// Read tab-separated names.
+			std::size_t lineno{};
+			while (std::getline(stream, buffer))
+			{
+				++lineno;
+				std::string_view const line(buffer);
+				auto const tab_pos(line.find('\t'));
+				if (std::string_view::npos == tab_pos)
+				{
+					std::cerr << "ERROR: Unable to parse reference name on line " << lineno << ".\n";
+					std::exit(EXIT_FAILURE);
+				}
+
+				auto const rname(line.substr(0, tab_pos));
+				auto const new_rname(line.substr(1 + tab_pos));
+				retval.emplace_back(rname, new_rname);
+
+			}
+		}
+		else
+		{
+			while (std::getline(stream, buffer))
+				retval.emplace_back(buffer);
+		}
 		
 		if (retval.empty())
 		{
@@ -122,29 +158,51 @@ namespace {
 		char const *aln_path,
 		char const *reference_names_path,
 		bool const should_treat_reference_names_as_prefixes,
+		bool const should_rewrite_reference_names,
 		bool const should_report_unmatched
 	)
 	{
 		// Non-const needed for statistics.
-		auto reference_names(read_reference_names(reference_names_path, should_treat_reference_names_as_prefixes));
+		auto reference_names(read_reference_names(
+			reference_names_path,
+			should_treat_reference_names_as_prefixes,
+			should_rewrite_reference_names
+		));
 		
 		fs::path const alignments_path(aln_path);
 		seqan3::sam_file_input <> aln_input(alignments_path); // Reads everything by default.
+
+		reference_name_record_cmp const cmp;
 		
 		// Prepare the output.
 		std::vector <seqan3::sam_file_output <>> aln_outputs;
 		aln_outputs.reserve(reference_names.size());
+		auto const &ref_ids(aln_input.header().ref_ids());
 		for (auto const &rec : reference_names)
 		{
 			std::string path_str(rec.reference_name);
 			path_str += ".bam";
 			fs::path const path(path_str);
-			aln_outputs.emplace_back(path);
+			auto &aln_output(aln_outputs.emplace_back(path));
+
+			if (should_rewrite_reference_names)
+			{
+				// By default std::deque <std::string>.
+				auto &output_ref_ids(aln_output.header().ref_ids());
+				output_ref_ids.resize(ref_ids.size());
+				std::copy(ref_ids.begin(), ref_ids.end(), output_ref_ids.begin());
+
+				for (auto &ref_id : output_ref_ids)
+				{
+					auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
+					assert(it != reference_names.end()); // if consteval used by libbio/assert.hh but not available on some compilers.
+					ref_id = it->new_reference_name;
+				}
+			}
 		}
 		
 		// Process the records.
 		lb::log_time(std::cerr) << "Processing the alignment records…\n";
-		auto const &ref_ids(aln_input.header().ref_ids());
 		std::size_t ref_id_missing{};
 		std::size_t no_match{};
 		for (auto const &[rec_idx, aln_rec] : rsv::enumerate(aln_input))
@@ -162,7 +220,6 @@ namespace {
 			// If we have a prefix or a match, it is bound to be lexicographically smaller
 			// than the reference contig name.
 			auto const &ref_id(ref_ids[*ref_id_]);
-			reference_name_record_cmp cmp;
 			auto const it(std::upper_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
 			
 			if (reference_names.begin() == it)
@@ -245,6 +302,7 @@ int main(int argc, char **argv)
 			args_info.alignments_arg,
 			args_info.reference_names_arg,
 			args_info.prefixes_given,
+			args_info.rewrite_reference_names_given,
 			args_info.report_unmatched_given
 		);
 	}
