@@ -86,7 +86,7 @@ namespace {
 		
 		if (should_rewrite_reference_names)
 		{
-			// Read tab-separated names.
+			// Read the tab-separated names.
 			std::size_t lineno{};
 			while (std::getline(stream, buffer))
 			{
@@ -102,7 +102,6 @@ namespace {
 				auto const rname(line.substr(0, tab_pos));
 				auto const new_rname(line.substr(1 + tab_pos));
 				retval.emplace_back(rname, new_rname);
-
 			}
 		}
 		else
@@ -157,6 +156,7 @@ namespace {
 	void process(
 		char const *aln_path,
 		char const *reference_names_path,
+		char const *basename,
 		bool const should_treat_reference_names_as_prefixes,
 		bool const should_rewrite_reference_names,
 		bool const should_report_unmatched
@@ -180,9 +180,11 @@ namespace {
 		auto const &ref_ids(aln_input.header().ref_ids());
 		for (auto const &rec : reference_names)
 		{
-			std::string path_str(rec.reference_name);
-			path_str += ".bam";
-			fs::path const path(path_str);
+			std::stringstream path_;
+			if (basename) path_ << basename;
+			path_ << rec.reference_name << ".bam";
+
+			fs::path const path(path_.view());
 			auto &aln_output(aln_outputs.emplace_back(path));
 
 			if (should_rewrite_reference_names)
@@ -301,6 +303,7 @@ int main(int argc, char **argv)
 		process(
 			args_info.alignments_arg,
 			args_info.reference_names_arg,
+			args_info.basename_arg,
 			args_info.prefixes_given,
 			args_info.rewrite_reference_names_given,
 			args_info.report_unmatched_given

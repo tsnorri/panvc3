@@ -15,6 +15,7 @@ modeoption		"reference-names"			n	"Reference names, one per line"						mode = "S
 modeoption		"prefixes"					p	"Treat reference names are prefixes"				mode = "Split alignment file"									optional
 modeoption		"rewrite-reference-names"	e	"Rewrite the reference names"						mode = "Split alignment file"									optional
 modeoption		"report-unmatched"			r	"Report reference names without matching prefix"	mode = "Split alignment file"									optional
+modeoption		"basename"					b	"Output file base name"								mode = "Split alignment file"	string							optional
 
 defmode			"Read reference names"			modedesc = "Output the reference names in the given alignment file"
 modeoption		"read-reference-names"		R	"Only output the reference names"				    mode = "Read reference names"									required
