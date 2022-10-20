@@ -7,7 +7,7 @@ purpose		"Split the given alignments by the given reference names or reference n
 usage		"split_alignments_by_reference --alignments=alignments.bam --reference-names=names.txt"
 description	"The resulting alignments will be written to separate files in the current working directory. The output files may then be e.g. sorted by position and finally concatenated in order to match the order of a VCF file with multiple contigs."
 
-option			"alignments"				a	"Alignment file path"								string	typestr = "filename"	required
+option			"alignments"				a	"Alignment file path"								string	typestr = "filename"									optional
 
 defmode			"Split alignment file"			modedesc = "Split input alignments"
 modeoption		"split-alignments"			S	"Split the given alignment file by reference"		mode = "Split alignment file"									required

@@ -9,6 +9,7 @@
 #include <libbio/file_handling.hh>
 #include <libbio/utility.hh>
 #include <range/v3/view/enumerate.hpp>
+#include <range/v3/view/transform.hpp>
 #include <seqan3/io/sam_file/all.hpp>
 #include <string>
 #include <vector>
@@ -151,10 +152,23 @@ namespace {
 	{
 		std::cerr << "WARNING: No reference name found that would match “" << ref_id << "”.\n";
 	}
+
+
+	fs::path alignment_output_path(
+		char const *basename,
+		std::string const &reference_name
+	)
+	{
+		std::stringstream path;
+		if (basename) path << basename;
+		path << reference_name << ".bam";
+		return {path.view()};
+	}
 	
 	
-	void process(
-		char const *aln_path,
+	template <typename t_aln_input>
+	void process_(
+		t_aln_input &aln_input,
 		char const *reference_names_path,
 		char const *basename,
 		bool const should_treat_reference_names_as_prefixes,
@@ -169,38 +183,42 @@ namespace {
 			should_rewrite_reference_names
 		));
 		
-		fs::path const alignments_path(aln_path);
-		seqan3::sam_file_input <> aln_input(alignments_path); // Reads everything by default.
-
 		reference_name_record_cmp const cmp;
 		
 		// Prepare the output.
-		std::vector <seqan3::sam_file_output <>> aln_outputs;
+		auto &aln_input_header(aln_input.header()); // ref_ids() not const.
+		auto const &ref_ids(aln_input_header.ref_ids());
+		typedef seqan3::sam_file_output <
+			typename t_aln_input::selected_field_ids,
+			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
+			std::remove_cvref_t <decltype(ref_ids)> // sam_file_output does not seem to accept a reference for this.
+		> sam_file_output_type;
+		std::vector <sam_file_output_type> aln_outputs;
 		aln_outputs.reserve(reference_names.size());
-		auto const &ref_ids(aln_input.header().ref_ids());
-		for (auto const &rec : reference_names)
+
+		if (should_rewrite_reference_names)
 		{
-			std::stringstream path_;
-			if (basename) path_ << basename;
-			path_ << rec.reference_name << ".bam";
-
-			fs::path const path(path_.view());
-			auto &aln_output(aln_outputs.emplace_back(path));
-
-			if (should_rewrite_reference_names)
+			auto output_ref_ids(ref_ids); // Copy.
+			for (auto &ref_id : output_ref_ids)
 			{
-				// By default std::deque <std::string>.
-				auto &output_ref_ids(aln_output.header().ref_ids());
-				output_ref_ids.resize(ref_ids.size());
-				std::copy(ref_ids.begin(), ref_ids.end(), output_ref_ids.begin());
-
-				for (auto &ref_id : output_ref_ids)
-				{
-					auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
-					assert(it != reference_names.end()); // if consteval used by libbio/assert.hh but not available on some compilers.
-					ref_id = it->new_reference_name;
-				}
+				auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
+				assert(it != reference_names.end()); // if consteval used by libbio/assert.hh but not available on some compilers.
+				ref_id = it->new_reference_name;
 			}
+
+			for (auto const &rec : reference_names)
+			{
+				aln_outputs.emplace_back(
+					alignment_output_path(basename, rec.reference_name),
+					output_ref_ids,
+					aln_input_header.ref_id_info | rsv::transform([](auto const &tup){ return std::get <0>(tup); })
+				);
+			}
+		}
+		else
+		{
+			for (auto const &rec : reference_names)
+				aln_outputs.emplace_back(alignment_output_path(basename, rec.reference_name));
 		}
 		
 		// Process the records.
@@ -262,6 +280,43 @@ namespace {
 		std::cout << "No matching reference ID\t" << no_match << '\n';
 		
 		lb::log_time(std::cerr) << "Done.\n";
+	}
+	
+
+	void process(
+		char const *aln_path,
+		char const *reference_names_path,
+		char const *basename,
+		bool const should_treat_reference_names_as_prefixes,
+		bool const should_rewrite_reference_names,
+		bool const should_report_unmatched
+	)
+	{
+		if (aln_path)
+		{
+			seqan3::sam_file_input <> aln_input(fs::path{aln_path});
+			process_(
+				aln_input,
+				reference_names_path,
+				basename,
+				should_treat_reference_names_as_prefixes,
+				should_rewrite_reference_names,
+				should_report_unmatched
+			);
+		}
+		else
+		{
+			std::cerr << "Reading alignments from stdin.\n";
+			seqan3::sam_file_input <> aln_input(std::cin, seqan3::format_sam{});
+			process_(
+				aln_input,
+				reference_names_path,
+				basename,
+				should_treat_reference_names_as_prefixes,
+				should_rewrite_reference_names,
+				should_report_unmatched
+			);
+		}
 	}
 
 
