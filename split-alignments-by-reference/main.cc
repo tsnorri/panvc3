@@ -227,7 +227,7 @@ namespace {
 		std::size_t no_match{};
 		for (auto const &[rec_idx, aln_rec] : rsv::enumerate(aln_input))
 		{
-			if (0 == (1 + rec_idx) % 1000000)
+			if (0 == (1 + rec_idx) % 10000000)
 				lb::log_time(std::cerr) << "Processed " << (1 + rec_idx) << " alignments…\n";
 			
 			auto const &ref_id_(aln_rec.reference_id());
