@@ -272,7 +272,7 @@ namespace {
 			output_file.push_back(aln_rec);
 		}
 		
-		// Report matches.
+		// Report the matches.
 		for (auto const &rec : reference_names)
 			std::cout << rec.reference_name << '\t' << rec.matches << '\n';
 		
@@ -292,9 +292,28 @@ namespace {
 		bool const should_report_unmatched
 	)
 	{
+		typedef seqan3::sam_file_input <
+			seqan3::sam_file_input_default_traits <>,
+			seqan3::fields <
+				seqan3::field::seq,
+				seqan3::field::id,
+				seqan3::field::offset,
+				seqan3::field::ref_id,
+				seqan3::field::ref_offset,
+				seqan3::field::alignment,
+				seqan3::field::cigar,
+				seqan3::field::mapq,
+				seqan3::field::qual,
+				seqan3::field::flag,
+				seqan3::field::mate,
+				seqan3::field::tags
+				//seqan3::field::header_ptr // Skip this so that sam_file_output does not copy the reference name from the record.
+			>
+		> sam_file_input;
+
 		if (aln_path)
 		{
-			seqan3::sam_file_input <> aln_input(fs::path{aln_path});
+			sam_file_input aln_input(fs::path{aln_path});
 			process_(
 				aln_input,
 				reference_names_path,
@@ -307,7 +326,7 @@ namespace {
 		else
 		{
 			std::cerr << "Reading alignments from stdin.\n";
-			seqan3::sam_file_input <> aln_input(std::cin, seqan3::format_sam{});
+			sam_file_input aln_input(std::cin, seqan3::format_sam{});
 			process_(
 				aln_input,
 				reference_names_path,
