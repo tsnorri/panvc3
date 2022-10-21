@@ -195,10 +195,13 @@ namespace {
 		> sam_file_output_type;
 		std::vector <sam_file_output_type> aln_outputs;
 		aln_outputs.reserve(reference_names.size());
-
+		
+		// seqan3::sam_file_output makes a non-owning reference to output reference ids
+		// under some conditions, so try to make it not deallocate before the outputs.
+		std::remove_cvref_t <decltype(ref_ids)> output_ref_ids;
 		if (should_rewrite_reference_names)
 		{
-			auto output_ref_ids(ref_ids); // Copy.
+			output_ref_ids = ref_ids; // Copy.
 			for (auto &ref_id : output_ref_ids)
 			{
 				auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
