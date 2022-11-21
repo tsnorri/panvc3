@@ -7,6 +7,7 @@
 #define PANVC3_CIGAR_HH
 
 #include <libbio/assert.hh>
+#include <panvc3/utility.hh>
 #include <range/v3/range/access.hpp>
 #include <seqan3/alphabet/cigar/cigar.hpp>
 #include <vector>
@@ -15,6 +16,9 @@
 namespace panvc3 {
 	
 	typedef std::vector <seqan3::cigar>	cigar_vector;
+	
+	typedef type_list_to_tuple_t <seqan3::cigar::seqan3_required_types>	cigar_component_types;
+	typedef std::tuple_element_t <0, cigar_component_types>				cigar_count_type;
 	
 	
 	class cigar_buffer
@@ -25,7 +29,7 @@ namespace panvc3 {
 		bool			m_is_first{true};
 		
 	public:
-		void push_back(seqan3::cigar::operation const op, std::uint32_t const count = 1);
+		void push_back(seqan3::cigar::operation const op, cigar_count_type const count = 1);
 		void finish();
 		void clear();
 		

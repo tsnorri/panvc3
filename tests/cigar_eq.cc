@@ -65,23 +65,8 @@ namespace {
 	}
 	
 	
-	// I’m not sure how to get the types from seqan3::type_list, so here is a helper for that.
-	template <typename t_type>
-	struct type_list_to_tuple {};
-	
-	template <typename... t_types>
-	struct type_list_to_tuple <seqan3::type_list <t_types...>>
-	{
-		typedef std::tuple <t_types...> type;
-	};
-	
-	template <typename t_type>
-	using type_list_to_tuple_t = type_list_to_tuple <t_type>::type;
-	
-	
-	typedef type_list_to_tuple_t <seqan3::cigar::seqan3_required_types>	cigar_component_types;
-	typedef std::tuple_element_t <0, cigar_component_types>				cigar_count_type;
-	typedef std::vector <cigar_count_type>								cigar_count_vector;
+	typedef panvc3::cigar_count_type		cigar_count_type;
+	typedef std::vector <cigar_count_type>	cigar_count_vector;
 	
 	
 	constexpr static auto const cigar_non_indel_operations(std::to_array({
