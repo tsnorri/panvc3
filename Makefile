@@ -7,7 +7,8 @@ include  $(PANVC3_PROJECT_DIR)/make/common.mk
 # Unfortunately using either libstdc++ or libc++ with all of the tools
 # was not possible, so we build two versions of libbio.
 DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
-				lib/libbio/build-llvm/libbio.a
+				lib/libbio/build-llvm/libbio.a \
+				lib/rapidcheck/build/librapidcheck.a
 
 LIBDISPATCH_LINUX_BIN :=
 ifeq ($(OS_NAME),linux)
@@ -34,13 +35,18 @@ all: $(BUILD_PRODUCTS)
 clean-all: clean clean-dependencies clean-dist
 
 clean:
-	$(MAKE) -C index-msa clean
+	$(MAKE) -C alignment-statistics clean
+	$(MAKE) -C convert-bed-positions clean
 	$(MAKE) -C count-supporting-reads clean
+	$(MAKE) -C index-msa clean
+	$(MAKE) -C libpanvc3 clean
 	$(MAKE) -C split-alignments-by-reference clean
+	$(MAKE) -C subset-alignments clean
 
 clean-dependencies:
 	$(RM) -r lib/libbio/build-gcc lib/libbio/build-llvm
 	$(RM) -r lib/swift-corelibs-libdispatch/build
+	$(RM) -r lib/rapidcheck/build
 
 clean-dist:
 	$(RM) -rf $(DIST_TARGET_DIR)
@@ -49,17 +55,17 @@ dependencies: $(DEPENDENCIES)
 
 dist: $(DIST_TAR_GZ)
 
-test:
-	$(MAKE) -C tests
+convert-bed-positions/convert_bed_positions: lib/libbio/build-llvm/libbio.a
+	$(MAKE) -C convert-bed-positions
+	
+count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
+	$(MAKE) -C count-supporting-reads
 
 index-msa/index_msa: lib/libbio/build-llvm/libbio.a $(LIBDISPATCH_LINUX_BIN)
 	$(MAKE) -C index-msa
 
-count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
-	$(MAKE) -C count-supporting-reads
-
-convert-bed-positions/convert_bed_positions: lib/libbio/build-llvm/libbio.a
-	$(MAKE) -C convert-bed-positions
+libpanvc3/libpanvc3.a:
+	$(MAKE) -C libpanvc3
 
 split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C split-alignments-by-reference
@@ -77,6 +83,9 @@ $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 lib/libbio/build-%/libbio.a:
 	$(MKDIR) -p lib/libbio/build-$*
 	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../make/local.$(OS_NAME)-$*.mk -f ../src/Makefile
+
+lib/rapidcheck/build/librapidcheck.a:
+	$(MAKE) -f make/librapidcheck.mk
 
 lib/swift-corelibs-libdispatch/build/src/libdispatch.a:
 	$(MAKE) -f make/libdispatch.mk
