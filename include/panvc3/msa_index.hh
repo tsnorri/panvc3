@@ -7,9 +7,31 @@
 #define PANVC3_MSA_INDEX_HH
 
 #include <libbio/utility/compare_strings_transparent.hh>
+#include <range/v3/view/enumerate.hpp>
+#include <range/v3/view/filter.hpp>
+#include <range/v3/view/transform.hpp>
 #include <sdsl/int_vector.hpp>
 #include <sdsl/rrr_vector.hpp>
 #include <vector>
+
+namespace panvc3::detail {
+	
+	template <typename t_rng>
+	void fill_gaps(t_rng &&str, sdsl::bit_vector &bv)
+	{
+		namespace rsv = ranges::views;
+		libbio_assert_eq(ranges::size(str), bv.size());
+	
+		auto rng(
+			rsv::enumerate(str)
+			| rsv::filter([](auto const &tup){ return '-' == std::get <1>(tup); })
+			| rsv::transform([](auto const &tup) -> std::size_t { return std::get <0>(tup); })
+		);
+	
+		for (auto const idx : rng)
+			bv[idx] = 1;
+	}
+}
 
 namespace panvc3 {
 	
@@ -22,7 +44,7 @@ namespace panvc3 {
 		struct sequence_entry
 		{
 			std::string				seq_id;
-			bit_vector				gap_positions;
+			bit_vector				gap_positions;	// 1 iff. gap
 			rank0_support_type		gap_positions_rank0_support;
 			select0_support_type	gap_positions_select0_support;
 			
@@ -39,6 +61,7 @@ namespace panvc3 {
 			bool operator<(sequence_entry const &other) const { return seq_id < other.seq_id; }
 			template <typename t_archive> void load(t_archive &ar, std::uint32_t const version);
 			template <typename t_archive> void save(t_archive &ar, std::uint32_t const version) const;
+			inline void fix_rank_select_pointers();
 		};
 		
 		struct sequence_entry_cmp
@@ -145,6 +168,50 @@ namespace panvc3 {
 	void msa_index::serialize(t_archive &ar, std::uint32_t const version)
 	{
 		ar(chr_entries);
+	}
+	
+	
+	void msa_index::sequence_entry::fix_rank_select_pointers()
+	{
+		gap_positions_rank0_support.set_vector(&gap_positions);
+		gap_positions_select0_support.set_vector(&gap_positions);
+	}
+
+	
+	inline std::ostream &operator<<(std::ostream &os, msa_index::sequence_entry const &entry)
+	{
+		// FIXME: this is likely quite inefficient.
+		for (auto const val : entry.gap_positions)
+			os << (+val);
+		return os;
+	}
+	
+	
+	typedef std::pair <msa_index::sequence_entry, msa_index::sequence_entry> sequence_entry_pair;
+	
+	// Helper function for writing tests.
+	template <typename t_lhs_rng, typename t_rhs_rng>
+	void make_sequence_entry_pair(
+		t_lhs_rng &&lhs,
+		t_rhs_rng &&rhs,
+		sequence_entry_pair &dst
+	)
+	{
+		auto const lhs_size(ranges::size(lhs));
+		auto const rhs_size(ranges::size(rhs));
+		libbio_assert_eq(lhs_size, rhs_size);
+		
+		sdsl::bit_vector lhsg(lhs_size, 0);
+		sdsl::bit_vector rhsg(rhs_size, 0);
+		
+		detail::fill_gaps(lhs, lhsg);
+		detail::fill_gaps(rhs, rhsg);
+		
+		dst.first = {"", lhsg};
+		dst.second = {"", rhsg};
+		
+		dst.first.fix_rank_select_pointers();
+		dst.second.fix_rank_select_pointers();
 	}
 }
 
