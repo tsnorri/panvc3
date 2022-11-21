@@ -82,7 +82,7 @@ namespace panvc3 {
 				case 'X':	// Mismatch, consumes both.
 				{
 					// Process one character at a time.
-					for (std::uint32_t i(0); i < op_count; ++i)
+					for (cigar_count_type i(0); i < op_count; ++i)
 					{
 						// Add a deletion if needed.
 						auto const aln_pos(src_entry.gap_positions_select0_support(1 + src_pos));	// Convert to an aligned position.
@@ -120,7 +120,7 @@ namespace panvc3 {
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
 				{
 					// Process one character at a time.
-					for (std::uint32_t i(0); i < op_count; ++i)
+					for (cigar_count_type i(0); i < op_count; ++i)
 					{
 						// Add a deletion if needed.
 						auto const aln_pos(src_entry.gap_positions_select0_support(1 + src_pos));	// Convert to an aligned position.

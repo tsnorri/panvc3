@@ -17,7 +17,7 @@ namespace panvc3 {
 	}
 	
 	
-	void cigar_buffer::push_back(seqan3::cigar::operation const op, std::uint32_t count)
+	void cigar_buffer::push_back(seqan3::cigar::operation const op, cigar_count_type count)
 	{
 		using seqan3::get;
 		
