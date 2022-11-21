@@ -36,7 +36,17 @@ BOOST_INCLUDE	?= -I$(BOOST_ROOT)/include
 
 CFLAGS			+= -std=c99   $(OPT_FLAGS) $(WARNING_FLAGS) $(SYSTEM_CFLAGS)
 CXXFLAGS		+= -std=c++2b $(OPT_FLAGS) $(WARNING_FLAGS) $(WARNING_CXXFLAGS) $(SYSTEM_CXXFLAGS)
-CPPFLAGS		+= -DHAVE_CONFIG_H -I../include -I../lib/cereal/include -I../lib/libbio/include -I../lib/libbio/lib/GSL/include -I../lib/libbio/lib/range-v3/include -I../lib/sdsl-lite/include $(BOOST_INCLUDE) $(SYSTEM_CPPFLAGS)
+CPPFLAGS		+=	-DHAVE_CONFIG_H \
+					-I../include \
+					-I../lib/cereal/include \
+					-I../lib/libbio/include \
+					-I../lib/libbio/lib/GSL/include \
+					-I../lib/libbio/lib/range-v3/include \
+					-I../lib/rapidcheck/include \
+					-I../lib/rapidcheck/extras/catch/include \
+					-I../lib/sdsl-lite/include \
+					$(BOOST_INCLUDE) \
+					$(SYSTEM_CPPFLAGS)
 LDFLAGS			:= $(BOOST_LIBS) $(LDFLAGS) $(SYSTEM_LDFLAGS)
 
 ifeq ($(shell uname -s),Linux)
