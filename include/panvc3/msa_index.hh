@@ -35,6 +35,9 @@ namespace panvc3::detail {
 
 namespace panvc3 {
 	
+	typedef std::uint32_t cereal_version_type;
+	
+	
 	struct msa_index
 	{
 		typedef sdsl::rrr_vector <15>		bit_vector;
@@ -59,8 +62,8 @@ namespace panvc3 {
 			}
 			
 			bool operator<(sequence_entry const &other) const { return seq_id < other.seq_id; }
-			template <typename t_archive> void load(t_archive &ar, std::uint32_t const version);
-			template <typename t_archive> void save(t_archive &ar, std::uint32_t const version) const;
+			template <typename t_archive> void load(t_archive &ar, cereal_version_type const version);
+			template <typename t_archive> void save(t_archive &ar, cereal_version_type const version) const;
 			inline void fix_rank_select_pointers();
 		};
 		
@@ -85,7 +88,7 @@ namespace panvc3 {
 			}
 			
 			bool operator<(chr_entry const &other) const { return chr_id < other.chr_id; }
-			template <typename t_archive> void serialize(t_archive &ar, std::uint32_t const version);
+			template <typename t_archive> void serialize(t_archive &ar, cereal_version_type const version);
 		};
 		
 		struct chr_entry_cmp
@@ -100,7 +103,7 @@ namespace panvc3 {
 		
 		msa_index() = default;
 		
-		template <typename t_archive> void serialize(t_archive &ar, std::uint32_t const version);
+		template <typename t_archive> void serialize(t_archive &ar, cereal_version_type const version);
 	};
 	
 	
@@ -135,7 +138,7 @@ namespace panvc3 {
 	
 	
 	template <typename t_archive>
-	void msa_index::sequence_entry::load(t_archive &ar, std::uint32_t const version)
+	void msa_index::sequence_entry::load(t_archive &ar, cereal_version_type const version)
 	{
 		ar(seq_id);
 		ar(gap_positions);
@@ -147,7 +150,7 @@ namespace panvc3 {
 	
 	
 	template <typename t_archive>
-	void msa_index::sequence_entry::save(t_archive &ar, std::uint32_t const version) const
+	void msa_index::sequence_entry::save(t_archive &ar, cereal_version_type const version) const
 	{
 		ar(seq_id);
 		ar(gap_positions);
@@ -157,7 +160,7 @@ namespace panvc3 {
 	
 	
 	template <typename t_archive>
-	void msa_index::chr_entry::serialize(t_archive &ar, std::uint32_t const version)
+	void msa_index::chr_entry::serialize(t_archive &ar, cereal_version_type const version)
 	{
 		ar(chr_id);
 		ar(sequence_entries);
@@ -165,7 +168,7 @@ namespace panvc3 {
 	
 	
 	template <typename t_archive>
-	void msa_index::serialize(t_archive &ar, std::uint32_t const version)
+	void msa_index::serialize(t_archive &ar, cereal_version_type const version)
 	{
 		ar(chr_entries);
 	}
