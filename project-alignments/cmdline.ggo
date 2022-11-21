@@ -1,0 +1,19 @@
+# (c) 2022 Tuukka Norri
+# This code is licensed under MIT license (see LICENSE for details).
+
+package		"project-alignments"
+version		"0.1"
+purpose		"Project alignments to founder sequences to a given reference sequence"
+usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa > projected.bam"
+
+option		"alignments"				a	"Alignment file path"														string	typestr = "filename"	optional
+option		"msa-index"					m	"MSA index path"															string	typestr = "filename"	required
+option		"reference"					r	"Reference sequence FASTA path"												string	typestr = "filename"	required
+option		"reference-id"				i	"Reference sequence ID"														string							required
+option		"reference-msa-id"			d	"Reference sequence ID in MSA index (same as reference ID by default)"		string							optional
+option		"output-seq-id"				o	"Output sequence ID (same as reference ID by default)"						string							optional
+option		"ref-id-separator"			s	"Reference ID separator in input"											string	default = "_"			optional
+option		"gap-opening-cost"			g	"Gap opening cost when re-aligning runs of insertions and deletions"		int		default = "0"			optional
+option		"gap-extension-cost"		e	"Gap extension cost when re-aligning runs of insertions and deletions"		int		default = "-1"			optional
+option		"primary-only"				p	"Consider primary alignments only"											flag	off
+option		"use-read-base-qualities"	q	"Take base qualities into account when realigning"							flag	off
