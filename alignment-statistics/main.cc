@@ -52,11 +52,10 @@ namespace {
 		
 		for (auto const &cigar_item : aln_record.cigar_sequence())
 		{
-			// For some reason the correct seqan3::get does not get used when accessing cigar_item
-			// with it. The type coversion operator does work, though.
-			// FIXME: check if this is still true.
-			std::uint32_t const op_count(cigar_item);
-			seqan3::cigar::operation const operation(cigar_item);
+			using seqan3::get;
+			
+			auto const op_count(get <0>(cigar_item));
+			auto const operation(get <1>(cigar_item));
 			auto const cc(operation.to_char());
 			
 			switch (cc)
