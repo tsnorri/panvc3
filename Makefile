@@ -16,10 +16,14 @@ ifeq ($(OS_NAME),linux)
 	DEPENDENCIES += $(LIBDISPATCH_BIN)
 endif
 
-BUILD_PRODUCTS	=	index-msa/index_msa \
-					count-supporting-reads/count_supporting_reads \
+BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
 					convert-bed-positions/convert_bed_positions \
-					split-alignments-by-reference/split_alignments_by_reference
+					count-supporting-reads/count_supporting_reads \
+					index-msa/index_msa \
+					libpanvc3/libpanvc3.a \
+					project-alignments/project_alignments \
+					split-alignments-by-reference/split_alignments_by_reference \
+					subset-alignments/subset_alignments \
 
 # “$() $()” is a literal space.
 VERSION = $(subst $() $(),-,$(shell tools/git_version.sh))
@@ -40,8 +44,10 @@ clean:
 	$(MAKE) -C count-supporting-reads clean
 	$(MAKE) -C index-msa clean
 	$(MAKE) -C libpanvc3 clean
+	$(MAKE) -C project-alignments clean
 	$(MAKE) -C split-alignments-by-reference clean
 	$(MAKE) -C subset-alignments clean
+	$(MAKE) -C tests clean
 
 clean-dependencies:
 	$(RM) -r lib/libbio/build-gcc lib/libbio/build-llvm
@@ -55,6 +61,12 @@ dependencies: $(DEPENDENCIES)
 
 dist: $(DIST_TAR_GZ)
 
+tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a
+	$(MAKE) -C tests
+
+alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a
+	$(MAKE) -C alignment-statistics
+
 convert-bed-positions/convert_bed_positions: lib/libbio/build-llvm/libbio.a
 	$(MAKE) -C convert-bed-positions
 	
@@ -67,8 +79,14 @@ index-msa/index_msa: lib/libbio/build-llvm/libbio.a $(LIBDISPATCH_LINUX_BIN)
 libpanvc3/libpanvc3.a:
 	$(MAKE) -C libpanvc3
 
+project-alignments/project_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+	$(MAKE) -C project-alignments
+
 split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C split-alignments-by-reference
+
+subset-alignments/subset_alignments: lib/libbio/build-gcc/libbio.a
+	$(MAKE) -C subset-alignments
 
 $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(MKDIR) -p $(DIST_TARGET_DIR)
