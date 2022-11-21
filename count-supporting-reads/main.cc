@@ -10,6 +10,7 @@
 #include <libbio/vcf/variant_end_pos.hh>
 #include <libbio/vcf/vcf_reader.hh>
 #include <libbio/file_handling.hh>
+#include <panvc3/cigar.hh>
 #include <panvc3/dna11_alphabet.hh>
 #include <range/v3/all.hpp>
 #include <seqan3/alphabet/cigar/cigar.hpp>
@@ -33,10 +34,12 @@ namespace {
 	
 	void output_cigar(std::vector <seqan3::cigar> const &cigar_seq, std::ostream &os)
 	{
-		for (auto const &cc : cigar_seq)
+		using seqan3::get;
+		
+		for (auto const cigar_item : cigar_seq)
 		{
-			std::uint32_t op_count(cc);
-			seqan3::cigar::operation operation(cc);
+			auto const op_count(get <0>(cigar_item));
+			auto const operation(get <1>(cigar_item));
 			os << op_count << operation.to_char();
 		}
 	}
@@ -109,11 +112,10 @@ namespace {
 		
 		for (auto const &cigar_item : aln_record.cigar_sequence())
 		{
-			// For some reason the correct seqan3::get does not get used when accessing cigar_item
-			// with it. The type coversion operator does work, though.
-			// FIXME: check if this is still true.
-			std::uint32_t const op_count(cigar_item);
-			seqan3::cigar::operation const operation(cigar_item);
+			using seqan3::get;
+			
+			auto const op_count(get <0>(cigar_item));
+			auto const operation(get <1>(cigar_item));
 			auto const cc(operation.to_char());
 			
 			switch (cc)
@@ -233,15 +235,14 @@ namespace {
 			libbio_assert_lte(rec_pos, var_pos);
 			libbio_assert_lte(var_pos + var_ref_len, rec_pos + rec_len);
 			
-			std::size_t seg_pos{};
-			std::uint32_t op_count{};
+			panvc3::cigar_count_type op_count{};
 			seqan3::cigar::operation operation{};
-			
+			std::size_t seg_pos{};
 			for (; it != end; ++it)
 			{
-				// FIXME: check if the note in calculate_record_lengths() still holds.
-				op_count = *it;
-				operation = *it;
+				using seqan3::get;
+				op_count = get <0>(*it);
+				operation = get <1>(*it);
 				
 				if (rec_pos < var_pos)
 				{
@@ -376,8 +377,9 @@ namespace {
 				auto const prev_operation(operation);
 				for (; it != end; ++it)
 				{
-					op_count = *it;
-					operation = *it;
+					using seqan3::get;
+					op_count = get <0>(*it);
+					operation = get <1>(*it);
 					
 					if ('S'_cigar_operation == operation)
 					{
