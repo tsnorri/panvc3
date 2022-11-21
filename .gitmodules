@@ -13,3 +13,6 @@
 [submodule "lib/swift-corelibs-libdispatch"]
 	path = lib/swift-corelibs-libdispatch
 	url = https://github.com/apple/swift-corelibs-libdispatch.git
+[submodule "lib/rapidcheck"]
+	path = lib/rapidcheck
+	url = https://github.com/emil-e/rapidcheck.git
