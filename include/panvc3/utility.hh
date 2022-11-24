@@ -25,6 +25,16 @@ namespace panvc3 {
 	
 	template <typename t_type>
 	using type_list_to_tuple_t = type_list_to_tuple <t_type>::type;
+	
+	
+	// FIXME: check that t_alphabet is one of SeqAn3’s alphabets.
+	template <typename t_alphabet>
+	constexpr inline t_alphabet max_letter()
+	{
+		t_alphabet retval;
+		retval.assign_rank(t_alphabet::alphabet_size - 1);
+		return retval;
+	}
 }
 
 #endif

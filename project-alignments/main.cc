@@ -7,10 +7,7 @@
 #include <libbio/dispatch/dispatch_caller.hh>
 #include <libbio/fasta_reader.hh>
 #include <libbio/file_handling.hh>
-#include <panvc3/align.hh>
-#include <panvc3/cigar.hh>
-#include <panvc3/indel_run_checker.hh>
-#include <panvc3/rewrite_cigar.hh>
+#include <panvc3/alignment_projector.hh>
 #include <panvc3/spsc_queue.hh>
 #include <range/v3/algorithm/copy.hpp>
 #include <range/v3/iterator/insert_iterators.hpp>
@@ -309,15 +306,6 @@ namespace {
 	}
 	
 	
-	template <typename t_alphabet>
-	constexpr inline t_alphabet max_letter()
-	{
-		t_alphabet retval;
-		retval.assign_rank(t_alphabet::alphabet_size - 1);
-		return retval;
-	}
-	
-	
 	template <typename t_input_processor>
 	void project_task <t_input_processor>::process()
 	{
@@ -332,10 +320,7 @@ namespace {
 		auto const gap_opening_cost(m_input_processor->gap_opening_cost());
 		auto const gap_extension_cost(m_input_processor->gap_extension_cost());
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
-		panvc3::cigar_buffer cigar_buffer;
-		panvc3::cigar_buffer cigar_realign_buffer;
-		panvc3::cigar_vector cigar_realigned;
-		panvc3::indel_run_checker indel_run_checker;
+		panvc3::alignment_projector alignment_projector;
 		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
@@ -376,101 +361,18 @@ namespace {
 			auto const src_pos(*aln_rec.reference_position());
 			auto const &query_seq(aln_rec.sequence());
 			auto const &cigar_seq(aln_rec.cigar_sequence());
-			auto const dst_pos(panvc3::rewrite_cigar(
+			
+			auto const dst_pos(alignment_projector.project_alignment(
 				src_pos,
-				cigar_seq,
 				src_seq_entry,
 				dst_seq_entry,
-				query_seq | rsv::transform([](auto const dna_cc){ return dna_cc.to_char(); }),
 				ref_seq,
-				cigar_buffer
+				query_seq,
+				cigar_seq,
+				aln_rec.base_qualities(),
+				gap_opening_cost,
+				gap_extension_cost
 			));
-			
-			// Realign where needed, i.e. if there are runs of adjacent insertions and deletions.
-			{
-				auto const &cigar_original(cigar_buffer.operations());
-				auto cigar_begin(cigar_original.begin());
-				indel_run_checker.reset(cigar_original, dst_pos);
-				cigar_realigned.clear();
-				while (indel_run_checker.find_next_range_for_realigning())
-				{
-					// Copy the non-realigned part to cigar_realigned.
-					ranges::copy(
-						ranges::subrange(cigar_begin, indel_run_checker.cigar_realigned_range_begin()),
-						ranges::back_inserter(cigar_realigned)
-					);
-					cigar_begin = indel_run_checker.cigar_current_pos();
-				
-					// Realign the found range.
-					auto const ref_range(indel_run_checker.reference_range());
-					auto const query_range(indel_run_checker.query_range());
-					
-					if (should_use_read_base_qualities)
-					{
-						typedef typename input_traits_type::quality_alphabet			quality_alphabet;
-						typedef seqan3::qualified <sequence_alphabet, quality_alphabet>	qualified_alphabet;
-						auto ref_part(
-							ref_seq
-							| ref_range.slice()
-							| rsv::transform([](auto const cc) -> qualified_alphabet {
-								sequence_alphabet scc;
-								scc.assign_char(cc);
-								qualified_alphabet retval;
-								retval = scc;
-								retval = max_letter <qualified_alphabet>();	// Assign maximum qualities to the reference.
-								return retval;								// (We could take the variant likelihoods into account, though.)
-							})
-						);
-						auto query_part(
-							rsv::zip(
-								query_seq,
-								aln_rec.base_qualities()
-							)
-							| query_range.slice()
-							| rsv::transform([](auto const tup) -> qualified_alphabet {
-								qualified_alphabet retval;
-								retval = std::get <0>(tup);
-								retval = std::get <1>(tup);
-								return retval;
-							})
-						);
-						
-						panvc3::align_global <true, sequence_alphabet, quality_alphabet>(
-							ref_part,
-							query_part,
-							gap_opening_cost,
-							gap_extension_cost,
-							cigar_realign_buffer
-						);
-					}
-					else
-					{
-						auto ref_part(ref_seq | ref_range.slice() | rsv::transform([](auto const cc){
-							sequence_alphabet scc;
-							scc.assign_char(cc);
-							return scc;
-						}));
-						auto query_part(query_seq | query_range.slice());
-						panvc3::align_global <false>(
-							ref_part,
-							query_part,
-							gap_opening_cost,
-							gap_extension_cost,
-							cigar_realign_buffer
-						);
-					}
-					
-					// Copy the new operations.
-					auto const &realigned_part(cigar_realign_buffer.operations());
-					cigar_realigned.insert(cigar_realigned.end(), realigned_part.begin(), realigned_part.end());
-				}
-				
-				// Copy to cigar_realigned.
-				ranges::copy(
-					ranges::subrange(cigar_begin, cigar_original.end()),
-					ranges::back_inserter(cigar_realigned)
-				);
-			}
 		}
 		
 		// Continue in the output queue.

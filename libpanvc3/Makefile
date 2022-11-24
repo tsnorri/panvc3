@@ -4,7 +4,8 @@ include  $(MAKEFILE_DIR)/../make/os-name.mk
 include  $(MAKEFILE_DIR)/../make/common.mk
 include  $(MAKEFILE_DIR)/../make/seqan3.mk
 
-OBJECTS		=	cigar.o \
+OBJECTS		=	alignment_projector.o \
+				cigar.o \
 				indel_run_checker.o
 
 CFLAGS		+= -fPIC
