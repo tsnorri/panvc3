@@ -335,7 +335,7 @@ namespace {
 		panvc3::cigar_buffer cigar_buffer;
 		panvc3::cigar_buffer cigar_realign_buffer;
 		panvc3::cigar_vector cigar_realigned;
-		panvc3::indel_run_checker indel_run_checker(ref_seq);
+		panvc3::indel_run_checker indel_run_checker;
 		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.

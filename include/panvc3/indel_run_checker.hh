@@ -47,7 +47,6 @@ namespace panvc3 {
 		};
 		
 	protected:
-		sequence_vector	const					&m_reference;
 		panvc3::cigar_vector::const_iterator	m_cigar_it{};
 		panvc3::cigar_vector::const_iterator	m_cigar_end{};
 		panvc3::cigar_vector::const_iterator	m_cigar_realigned_range_begin{};
@@ -58,11 +57,6 @@ namespace panvc3 {
 		std::uint8_t							m_run_type{};
 		
 	public:
-		indel_run_checker(sequence_vector const &reference):
-			m_reference(reference)
-		{
-		}
-		
 		void reset(panvc3::cigar_vector const &cigar_vector, std::size_t const ref_pos);
 		bool find_next_range_for_realigning();
 		range reference_range() const { return m_ref_range; }
