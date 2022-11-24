@@ -35,6 +35,13 @@ namespace panvc3 {
 		retval.assign_rank(t_alphabet::alphabet_size - 1);
 		return retval;
 	}
+	
+	
+	template <typename t_value>
+	constexpr bool is_power_of_2(t_value const val)
+	{
+		return 0 < val && !(val & (val - 1));
+	}
 }
 
 #endif

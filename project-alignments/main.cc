@@ -9,6 +9,7 @@
 #include <libbio/file_handling.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/spsc_queue.hh>
+#include <panvc3/utility.hh>
 #include <range/v3/algorithm/copy.hpp>
 #include <range/v3/iterator/insert_iterators.hpp>
 #include <range/v3/view/enumerate.hpp>
@@ -26,13 +27,6 @@ namespace {
 	
 	constexpr inline std::size_t	QUEUE_SIZE{512};
 	constexpr inline std::size_t	CHUNK_SIZE{32};
-	
-	
-	template <typename t_value>
-	constexpr bool is_power_of_2(t_value const val)
-	{
-		return 0 < val && !(val & (val - 1));
-	}
 	
 	
 	template <typename t_string>
@@ -121,7 +115,7 @@ namespace {
 	template <typename t_aln_input, typename t_aln_output>
 	class input_processor
 	{
-		static_assert(is_power_of_2(QUEUE_SIZE));
+		static_assert(panvc3::is_power_of_2(QUEUE_SIZE));
 		
 	public:
 		typedef t_aln_input											input_type;
@@ -407,7 +401,7 @@ namespace {
 	{
 		std::cout << std::flush;
 		lb::log_time(std::cerr) << "Done." << std::endl;
-		// FIXME: output statistics.
+		// FIXME: output the statistics.
 		std::exit(EXIT_SUCCESS);
 	}
 	
