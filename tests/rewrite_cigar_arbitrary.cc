@@ -7,7 +7,7 @@
 #include <boost/pfr/core.hpp>						// boost::pfr::structure_to_tuple
 #include <catch2/catch.hpp>
 #include <libbio/assert.hh>
-#include <panvc3/fmap.hh>
+#include <libbio/fmap.hh>
 #include <panvc3/rewrite_cigar.hh>
 #include <range/v3/view/concat.hpp>
 #include <range/v3/view/reverse.hpp>
@@ -987,7 +987,7 @@ namespace rc {
 						return std::apply(
 							// For some reason passing gen::construct <msa_builder> directly as the callback causes an error.
 							[](auto && ... values){ return gen::construct <msa_builder>(std::forward <decltype(values)>(values)...); },
-							panvc3::map_to_tuple(
+							lb::map_to_tuple(
 								std::make_index_sequence <section_count>{},
 								// Not specifying the return type causes (at least) GCC to make a wrong deduction.
 								[&factors, &multipliers]<typename t_idx>(t_idx const idx_) -> Gen <std::tuple_element_t <t_idx::value, section_tuple_type>> {
@@ -1002,7 +1002,7 @@ namespace rc {
 									if constexpr (0 == idx)
 									{
 										// The segment_section gets the complement of the sum of the other scale factors as its scale factor.
-										auto const weighted_factors(panvc3::map_to_array(
+										auto const weighted_factors(lb::map_to_array(
 											std::make_index_sequence <factor_count>{},
 											[&](auto const idx_){
 												constexpr auto const idx(decltype(idx_)::value);
