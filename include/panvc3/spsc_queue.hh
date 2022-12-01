@@ -9,17 +9,11 @@
 #include <array>
 #include <dispatch/dispatch.h>
 #include <libbio/dispatch/dispatch_ptr.hh>
-#include <numeric> // std::iota
+#include <numeric>							// std::iota
+#include <panvc3/utility.hh>				// is_power_of_2()
 
 
 namespace panvc3 {
-	
-	template <typename t_value>
-	constexpr bool is_power_of_2(t_value const val)
-	{
-		return 0 < val && !(val & (val - 1));
-	}
-	
 	
 	template <typename t_value, std::uint16_t t_size>
 	class spsc_queue
