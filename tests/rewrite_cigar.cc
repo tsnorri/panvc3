@@ -8,18 +8,16 @@
 #include <libbio/assert.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/generic_parser.hh>
+#include <libbio/generic_parser/cigar_field.hh>
 #include <libbio/utility/tuple_slice.hh>
 #include <panvc3/rewrite_cigar.hh>
 #include <range/v3/algorithm/equal.hpp>
 #include <range/v3/view/filter.hpp>
 #include <range/v3/view/transform.hpp>
 
-
 namespace lb	= libbio;
 namespace lbp	= libbio::parsing;
 namespace rsv	= ranges::views;
-
-using seqan3::operator""_cigar_operation;
 
 
 namespace {
@@ -100,104 +98,6 @@ namespace {
 		lbp::traits::delimited <lbp::delimiter <'\t'>, lbp::delimiter <'\n'>>,
 		t_args...
 	>;
-	
-	
-	struct cigar_field
-	{
-		template <bool t_should_copy>
-		using value_type = std::vector <seqan3::cigar>;
-		
-		
-		template <typename t_range>
-		constexpr inline seqan3::cigar parse_one(t_range &range) const
-		{
-			seqan3::cigar retval{};
-			panvc3::cigar_count_type count{};
-			char cigar_op{};
-			lbp::fields::integer <panvc3::cigar_count_type> integer_field;
-			lbp::fields::character character_field;
-			
-			integer_field.parse_value <lbp::field_position::middle_>(range, count);
-			retval = count;
-			
-			character_field.parse_value <lbp::field_position::middle_>(range, cigar_op);
-			switch (cigar_op)
-			{
-				case 'M':
-					retval = 'M'_cigar_operation;
-					break;
-				case 'I':
-					retval = 'I'_cigar_operation;
-					break;
-				case 'D':
-					retval = 'D'_cigar_operation;
-					break;
-				case 'N':
-					retval = 'N'_cigar_operation;
-					break;
-				case 'S':
-					retval = 'S'_cigar_operation;
-					break;
-				case 'H':
-					retval = 'H'_cigar_operation;
-					break;
-				case 'P':
-					retval = 'P'_cigar_operation;
-					break;
-				case '=':
-					retval = '='_cigar_operation;
-					break;
-				case 'X':
-					retval = 'X'_cigar_operation;
-					break;
-				default:
-					throw lbp::parse_error_tpl(lbp::errors::unexpected_character(cigar_op));
-			}
-			
-			return retval;
-		}
-		
-		
-		template <typename t_delimiter, lbp::field_position t_field_position = lbp::field_position::middle_, typename t_range>
-		constexpr inline bool parse(t_range &range, std::vector <seqan3::cigar> &dst) const
-		{
-			dst.clear();
-			
-			if constexpr (any(lbp::field_position::initial_ & t_field_position))
-			{
-				if (range.is_at_end())
-					return false;
-				goto continue_parsing;
-			}
-			
-			while (!range.is_at_end())
-			{
-			continue_parsing:
-				dst.emplace_back(parse_one(range));
-				
-				auto const cc(*range.it);
-				if (t_delimiter::matches(cc))
-				{
-					++range.it;
-					return true;
-				}
-			}
-			
-			if constexpr (t_field_position == lbp::field_position::final_)
-			{
-				if (range.is_at_end())
-					return true;
-			}
-			else
-			{
-				if (range.is_at_end())
-					throw lbp::parse_error_tpl(lbp::errors::unexpected_eof());
-			}
-			
-			libbio_fail("Should not be reached");
-			return false;
-		}
-	};
 }
 
 
@@ -218,8 +118,8 @@ SCENARIO("rewrite_cigar() can handle predefined inputs", "[rewrite_cigar]")
 		lbp::fields::text <>,
 		lbp::fields::numeric <std::uint16_t>,
 		lbp::fields::numeric <std::uint16_t>,
-		cigar_field,
-		cigar_field,
+		lbp::fields::cigar_field,
+		lbp::fields::cigar_field,
 		lbp::fields::text <>, 
 		lbp::fields::text <>
 	> query_parser_type;
