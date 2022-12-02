@@ -54,10 +54,7 @@ namespace {
 	{
 		return panvc3::rewrite_cigar(src_pos, cigar_seq, std::get <0>(seq_entry_pair), std::get <1>(seq_entry_pair), query_seq, dst_seq, destination);
 	}
-}
-
-
-namespace {
+	
 	
 	template <typename... t_args>
 	using parser = lbp::parser <
