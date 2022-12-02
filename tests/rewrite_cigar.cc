@@ -14,44 +14,15 @@
 #include <range/v3/algorithm/equal.hpp>
 #include <range/v3/view/filter.hpp>
 #include <range/v3/view/transform.hpp>
+#include "test_additions.hh"
 
 namespace lb	= libbio;
 namespace lbp	= libbio::parsing;
 namespace rsv	= ranges::views;
+namespace tests	= panvc3::tests;
 
 
 namespace {
-	
-	// Output helpers.
-	struct cigar
-	{
-		seqan3::cigar	op;
-		
-		cigar(seqan3::cigar op_): op(op_) {}
-	};
-	
-	std::ostream &operator<<(std::ostream &os, cigar const cc)
-	{
-		using seqan3::get;
-		os << '(' << get <0>(cc.op) << ", " << get <1>(cc.op).to_char() << ')';
-		return os;
-	}
-	
-	auto to_readable(std::span <seqan3::cigar const> span)
-	{
-		return span
-		| rsv::transform([](auto const op) -> cigar {
-			return {op};
-		});
-	}
-
-
-	std::string copy_without_gaps(std::string_view const src)
-	{
-		auto rng(src | rsv::filter([](auto const cc){ return '-' != cc; }));
-		return {ranges::begin(rng), ranges::end(rng)};
-	}
-	
 	
 	struct input_fixture
 	{
@@ -69,7 +40,7 @@ namespace {
 		):
 			src(std::forward <t_src>(src_)),
 			dst(std::forward <t_dst>(dst_)),
-			dst_without_gaps(copy_without_gaps(dst))
+			dst_without_gaps(tests::copy_without_gaps(dst))
 		{
 			panvc3::make_sequence_entry_pair(src, dst, seq_entry_pair);
 		}
@@ -199,8 +170,8 @@ SCENARIO("rewrite_cigar() can handle predefined inputs", "[rewrite_cigar]")
 											{
 												INFO("expected_dst_pos: " << expected_dst_pos);
 												INFO("actual:           " << dst_pos);
-												INFO("expected_cigar:   " << to_readable(expected_cigar));
-												INFO("actual:           " << to_readable(buffer.operations()));
+												INFO("expected_cigar:   " << tests::to_readable(expected_cigar));
+												INFO("actual:           " << tests::to_readable(buffer.operations()));
 												CHECK(expected_dst_pos == dst_pos);
 												CHECK(panvc3::cigar_eq <true>(expected_cigar, buffer.operations()));
 											}
