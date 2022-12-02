@@ -90,47 +90,6 @@ namespace {
 	{
 		return panvc3::rewrite_cigar(src_pos, cigar_seq, std::get <0>(seq_entry_pair), std::get <1>(seq_entry_pair), query_seq, dst_seq, destination);
 	}
-	
-	
-	void rewrite_cigar_and_check(
-		std::string const &query,
-		std::size_t const src_pos,
-		std::string const &dst,
-		std::size_t const expected_dst_pos,
-		panvc3::sequence_entry_pair const &seq_entry_pair,
-		std::span <seqan3::cigar const> const cigar,
-		std::span <seqan3::cigar const> const expected_cigar
-	)
-	{
-		WHEN("the CIGAR string is rewritten")
-		{
-			panvc3::cigar_buffer buffer;
-			auto const dst_pos(rewrite_cigar(src_pos, cigar, seq_entry_pair, query, dst, buffer));
-			
-			THEN("the new position and the rewritten CIGAR match the expected")
-			{
-				INFO("expected_dst_pos: " << expected_dst_pos);
-				INFO("actual:           " << dst_pos);
-				INFO("expected_cigar:   " << to_readable(expected_cigar));
-				INFO("actual:           " << to_readable(buffer.operations()));
-				CHECK(expected_dst_pos == dst_pos);
-				CHECK(panvc3::cigar_eq <true>(expected_cigar, buffer.operations()));
-			}
-		}
-	}
-	
-	
-	inline void rewrite_cigar_and_check(
-		input_fixture const &input,
-		std::string const &query,
-		std::size_t const src_pos,
-		std::size_t const expected_dst_pos,
-		std::span <seqan3::cigar const> const cigar,
-		std::span <seqan3::cigar const> const expected_cigar
-	)
-	{
-		rewrite_cigar_and_check(query, src_pos, input.dst_without_gaps, expected_dst_pos, input.seq_entry_pair, cigar, expected_cigar);
-	}
 }
 
 
@@ -328,14 +287,31 @@ SCENARIO("rewrite_cigar() can handle predefined inputs", "[rewrite_cigar]")
 								std::apply(
 									[&fixture]
 									(auto const &query, auto const src_pos, auto const expected_dst_pos, auto const &cigar, auto const &expected_cigar){
-										rewrite_cigar_and_check(fixture, query, src_pos, expected_dst_pos, cigar, expected_cigar);
+										auto const &seq_entry_pair(fixture.seq_entry_pair);
+										auto const &dst(fixture.dst_without_gaps);
+										
+										WHEN("the CIGAR string is rewritten")
+										{
+											panvc3::cigar_buffer buffer;
+											auto const dst_pos(rewrite_cigar(src_pos, cigar, seq_entry_pair, query, dst, buffer));
+											
+											THEN("the new position and the rewritten CIGAR match the expected")
+											{
+												INFO("expected_dst_pos: " << expected_dst_pos);
+												INFO("actual:           " << dst_pos);
+												INFO("expected_cigar:   " << to_readable(expected_cigar));
+												INFO("actual:           " << to_readable(buffer.operations()));
+												CHECK(expected_dst_pos == dst_pos);
+												CHECK(panvc3::cigar_eq <true>(expected_cigar, buffer.operations()));
+											}
+										}
 									},
 									lb::tuple_slice <0, 5, true>(query_tuple)
 								);
 							}
 						}
 					}
-				
+					
 					break;
 				}
 			
