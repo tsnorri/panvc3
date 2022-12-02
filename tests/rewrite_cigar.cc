@@ -3,7 +3,6 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <array>
 #include <catch2/catch.hpp>
 #include <libbio/assert.hh>
 #include <libbio/file_handling.hh>
@@ -11,9 +10,6 @@
 #include <libbio/generic_parser/cigar_field.hh>
 #include <libbio/utility/tuple_slice.hh>
 #include <panvc3/rewrite_cigar.hh>
-#include <range/v3/algorithm/equal.hpp>
-#include <range/v3/view/filter.hpp>
-#include <range/v3/view/transform.hpp>
 #include "test_additions.hh"
 
 namespace lb	= libbio;
