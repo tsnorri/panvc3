@@ -4,7 +4,6 @@
  */
 
 #include <catch2/catch.hpp>
-#include <libbio/assert.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/generic_parser.hh>
 #include <libbio/generic_parser/cigar_field.hh>
