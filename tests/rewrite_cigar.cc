@@ -6,6 +6,9 @@
 #include <array>
 #include <catch2/catch.hpp>
 #include <libbio/assert.hh>
+#include <libbio/file_handling.hh>
+#include <libbio/generic_parser.hh>
+#include <libbio/utility/tuple_slice.hh>
 #include <panvc3/rewrite_cigar.hh>
 #include <range/v3/algorithm/equal.hpp>
 #include <range/v3/view/filter.hpp>
@@ -13,6 +16,7 @@
 
 
 namespace lb	= libbio;
+namespace lbp	= libbio::parsing;
 namespace rsv	= ranges::views;
 
 using seqan3::operator""_cigar_operation;
@@ -58,6 +62,7 @@ namespace {
 		std::string					dst_without_gaps;
 		panvc3::sequence_entry_pair	seq_entry_pair;
 		
+		input_fixture() = default;
 		
 		template <typename t_src, typename t_dst>
 		input_fixture(
@@ -116,10 +121,10 @@ namespace {
 	
 	
 	inline void rewrite_cigar_and_check(
+		input_fixture const &input,
 		std::string const &query,
 		std::size_t const src_pos,
 		std::size_t const expected_dst_pos,
-		input_fixture const &input,
 		std::span <seqan3::cigar const> const cigar,
 		std::span <seqan3::cigar const> const expected_cigar
 	)
@@ -130,344 +135,216 @@ namespace {
 
 
 namespace {
-	input_fixture const &simple_input_fixture_1()
-	{
-		static input_fixture retval{
-			"GAT-ACA",
-			"GATTACA"
-		};
-		return retval;
-	}
-}
-
-
-// FIXME: All the test cases do basically the same thing. Instead of having separate scenarios, the input could be read from a configuration file and passed to a parsing function.
-SCENARIO("rewrite_cigar() can handle deletions in source sequence", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with a gap in the source and an aligned segment")
-	{
-		std::string const query("TA");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{2, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, '='_cigar_operation},
-			{1, 'D'_cigar_operation},
-			{1, '='_cigar_operation}
-		}));
-		
-		rewrite_cigar_and_check(query, 2, 2, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle a no-op in the CIGAR", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with no-ops (“H” or “P”)")
-	{
-		std::string const query("TA");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{1, 'H'_cigar_operation},
-			{2, 'M'_cigar_operation},
-			{1, 'P'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, 'H'_cigar_operation},
-			{1, '='_cigar_operation},
-			{1, 'D'_cigar_operation},
-			{1, '='_cigar_operation},
-			{1, 'P'_cigar_operation}
-		}));
-		
-		rewrite_cigar_and_check(query, 2, 2, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle an insertion", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with an insertion")
-	{
-		std::string const query("CC");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{2, 'I'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{2, 'I'_cigar_operation}
-		}));
-		
-		rewrite_cigar_and_check(query, 1, 1, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle an insertion after a gap in the source", "[rewrite_cigar]")
-{	
-	GIVEN("an alignment with an insertion after a gap in the source")
-	{
-		std::string const query("GG");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{2, 'I'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{2, 'I'_cigar_operation}
-		}));
-		
-		rewrite_cigar_and_check(query, 4, 5, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle soft clipping", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with soft clipping")
-	{
-		std::string const query("CTAC");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{1, 'S'_cigar_operation},
-			{2, 'M'_cigar_operation},
-			{1, 'S'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, 'S'_cigar_operation},
-			{1, '='_cigar_operation},
-			{1, 'D'_cigar_operation},
-			{1, '='_cigar_operation},
-			{1, 'S'_cigar_operation}
-		}));
 	
-		rewrite_cigar_and_check(query, 2, 2, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle soft clipping just before a deletion in the source", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with soft clipping")
-	{
-		std::string const query("TC");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{1, 'M'_cigar_operation},
-			{1, 'S'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, '='_cigar_operation},
-			{1, 'S'_cigar_operation}
-		}));
+	template <typename... t_args>
+	using parser = lbp::parser <
+		lbp::traits::delimited <lbp::delimiter <'\t'>, lbp::delimiter <'\n'>>,
+		t_args...
+	>;
 	
-		rewrite_cigar_and_check(query, 2, 2, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle soft clipping just after a deletion in the source", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with soft clipping")
-	{
-		std::string const query("CA");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{1, 'S'_cigar_operation},
-			{1, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, 'S'_cigar_operation},
-			{1, '='_cigar_operation}
-		}));
 	
-		rewrite_cigar_and_check(query, 3, 4, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle deletion in the query", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with a deletion")
+	struct cigar_field
 	{
-		std::string const query("T");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{1, 'D'_cigar_operation},
-			{1, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, 'D'_cigar_operation},
-			{1, '='_cigar_operation}
-		}));
+		template <bool t_should_copy>
+		using value_type = std::vector <seqan3::cigar>;
 		
-		rewrite_cigar_and_check(query, 1, 1, simple_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-namespace {
-	input_fixture const &simple_input_fixture_2()
-	{
-		static input_fixture retval{
-			"GATTACA",
-			"GAT-ACA"
-		};
-		return retval;
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can remap a match to an insertion if the destination has a deletion", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with a match")
-	{
-		std::string const query("TTA");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{3, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, '='_cigar_operation},
-			{1, 'I'_cigar_operation},
-			{1, '='_cigar_operation}
-		}));
 		
-		rewrite_cigar_and_check(query, 2, 2, simple_input_fixture_2(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can remove a deletion if the destination has a deletion", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with a match")
-	{
-		std::string const query("TA");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{1, 'M'_cigar_operation},
-			{1, 'D'_cigar_operation},
-			{1, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{2, '='_cigar_operation}
-		}));
+		template <typename t_range>
+		constexpr inline seqan3::cigar parse_one(t_range &range) const
+		{
+			seqan3::cigar retval{};
+			panvc3::cigar_count_type count{};
+			char cigar_op{};
+			lbp::fields::integer <panvc3::cigar_count_type> integer_field;
+			lbp::fields::character character_field;
+			
+			integer_field.parse_value <lbp::field_position::middle_>(range, count);
+			retval = count;
+			
+			character_field.parse_value <lbp::field_position::middle_>(range, cigar_op);
+			switch (cigar_op)
+			{
+				case 'M':
+					retval = 'M'_cigar_operation;
+					break;
+				case 'I':
+					retval = 'I'_cigar_operation;
+					break;
+				case 'D':
+					retval = 'D'_cigar_operation;
+					break;
+				case 'N':
+					retval = 'N'_cigar_operation;
+					break;
+				case 'S':
+					retval = 'S'_cigar_operation;
+					break;
+				case 'H':
+					retval = 'H'_cigar_operation;
+					break;
+				case 'P':
+					retval = 'P'_cigar_operation;
+					break;
+				case '=':
+					retval = '='_cigar_operation;
+					break;
+				case 'X':
+					retval = 'X'_cigar_operation;
+					break;
+				default:
+					throw lbp::parse_error_tpl(lbp::errors::unexpected_character(cigar_op));
+			}
+			
+			return retval;
+		}
 		
-		rewrite_cigar_and_check(query, 2, 2, simple_input_fixture_2(), cigar, expected_cigar);
-	}
+		
+		template <typename t_delimiter, lbp::field_position t_field_position = lbp::field_position::middle_, typename t_range>
+		constexpr inline bool parse(t_range &range, std::vector <seqan3::cigar> &dst) const
+		{
+			dst.clear();
+			
+			if constexpr (any(lbp::field_position::initial_ & t_field_position))
+			{
+				if (range.is_at_end())
+					return false;
+				goto continue_parsing;
+			}
+			
+			while (!range.is_at_end())
+			{
+			continue_parsing:
+				dst.emplace_back(parse_one(range));
+				
+				auto const cc(*range.it);
+				if (t_delimiter::matches(cc))
+				{
+					++range.it;
+					return true;
+				}
+			}
+			
+			if constexpr (t_field_position == lbp::field_position::final_)
+			{
+				if (range.is_at_end())
+					return true;
+			}
+			else
+			{
+				if (range.is_at_end())
+					throw lbp::parse_error_tpl(lbp::errors::unexpected_eof());
+			}
+			
+			libbio_fail("Should not be reached");
+			return false;
+		}
+	};
 }
 
 
-namespace {
+// Not particularly good scenario name but in Catch2, there does not seem to be a container for scenarios.
+// A better option would be to have the scenario names in the input TSV.
+SCENARIO("rewrite_cigar() can handle predefined inputs", "[rewrite_cigar]")
+{
+	lb::file_istream stream;
+	lb::open_file_for_reading("rewrite_cigar_inputs.tsv", stream);
 	
-	// Everything const.
-	input_fixture const &simple_input_fixture_3()
-	{
-		static input_fixture retval{
-		//	 01234567890123
-			"GATTACAGATTACA",
-			"GAT-ACAG--T-CA"
-		};
-		return retval;
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle an alignment that overlaps with a long, non-contiguous deletion in the destination", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with a match")
-	{
-		std::string const query("TTACAGATTAC");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{11, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, '='_cigar_operation},
-			{1, 'I'_cigar_operation},
-			{4, '='_cigar_operation},
-			{2, 'I'_cigar_operation},
-			{1, '='_cigar_operation},
-			{1, 'I'_cigar_operation},
-			{1, '='_cigar_operation}
-		}));
-		
-		rewrite_cigar_and_check(query, 2, 2, simple_input_fixture_3(), cigar, expected_cigar);
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can convert the co-ordinate after multiple deletions", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with a match")
-	{
-		std::string const query("CA");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{2, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{2, '='_cigar_operation}
-		}));
-		
-		rewrite_cigar_and_check(query, 12, 8, simple_input_fixture_3(), cigar, expected_cigar);
-	}
-}
-
-
-namespace {
+	typedef lbp::parser <
+		lbp::traits::delimited <lbp::delimiter <'\t'>>,
+		lbp::fields::character
+	> record_type_column_parser_type;
 	
-	// Everything const.
-	input_fixture const &badly_aligned_input_fixture_1()
+	typedef parser <lbp::fields::text <>, lbp::fields::text <>, lbp::fields::text <>>	sequence_pair_parser_type;
+	typedef parser <
+		lbp::fields::text <>,
+		lbp::fields::numeric <std::uint16_t>,
+		lbp::fields::numeric <std::uint16_t>,
+		cigar_field,
+		cigar_field,
+		lbp::fields::text <>, 
+		lbp::fields::text <>
+	> query_parser_type;
+	
+	std::istreambuf_iterator it(stream);
+	std::istreambuf_iterator <char> const sentinel;
+	auto range(lbp::make_range(it, sentinel));
+	
+	record_type_column_parser_type record_type_parser;
+	sequence_pair_parser_type sequence_pair_parser;
+	query_parser_type query_parser;
+	
+	record_type_column_parser_type::record_type record_type_tuple;
+	sequence_pair_parser_type::record_type sequence_pair_tuple;
+	query_parser_type::record_type query_tuple;
+	
+	// Initial record.
 	{
-		static input_fixture retval{
-		//   0123456789012345
-			"A-C-G-T-A-C-G-T-",
-			"-G-T-A-C-G-T-A-C"
-		};
-		return retval;
+		auto const status(record_type_parser.parse(range, record_type_tuple));
+		CHECK(status);
+		CHECK(std::get <0>(record_type_tuple) == 'S');
 	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle badly aligned sections", "[rewrite_cigar]")
-{
-	GIVEN("an alignment with a match")
+	
+	while (true)
 	{
-		std::string const query("ACG");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{3, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, 'I'_cigar_operation},
-			{1, 'D'_cigar_operation},
-			{1, 'I'_cigar_operation},
-			{1, 'D'_cigar_operation},
-			{1, 'I'_cigar_operation}
-		}));
+		// Parse the sequence pair record.
+		{
+			auto const status(sequence_pair_parser.parse(range, sequence_pair_tuple));
+			REQUIRE(status);
+		}
 		
-		rewrite_cigar_and_check(query, 4, 4, badly_aligned_input_fixture_1(), cigar, expected_cigar);
-	}
-}
-
-
-namespace {
-	input_fixture const &very_simple_input_fixture_1()
-	{
-		static input_fixture retval(
-			"A-C",
-			"ATC"
-		);
-		return retval;
-	}
-}
-
-
-SCENARIO("rewrite_cigar() can handle padding next to deletion", "[rewrite_cigar]")
-{
-	GIVEN("a simple alignment")
-	{
-		std::string const query("AC");
-		auto const cigar(std::to_array <seqan3::cigar>({
-			{1, 'M'_cigar_operation},
-			{1, 'P'_cigar_operation},
-			{1, 'M'_cigar_operation}
-		}));
-		auto const expected_cigar(std::to_array <seqan3::cigar>({
-			{1, '='_cigar_operation},
-			{1, 'D'_cigar_operation},
-			{1, 'P'_cigar_operation},
-			{1, '='_cigar_operation}
-		}));
+		// Set up the sequence fixture.
+		input_fixture fixture(std::get <1>(sequence_pair_tuple), std::get <2>(sequence_pair_tuple));
 		
-		rewrite_cigar_and_check(query, 0, 0, very_simple_input_fixture_1(), cigar, expected_cigar);
+		while (true)
+		{
+			// Parse the inputs for the fixture.
+			{
+				auto const status(record_type_parser.parse(range, record_type_tuple));
+			
+				// Stop if we got an EOF.
+				if (!status)
+					return;
+			}
+			
+			auto const op(std::get <0>(record_type_tuple));
+			switch (op)
+			{
+				case 'S':
+					goto continue_outer_loop;
+				
+				case 'Q':
+				{
+					{
+						auto const status(query_parser.parse(range, query_tuple));
+						REQUIRE(status);
+					}
+				
+					SECTION(std::get <5>(query_tuple))
+					{
+						GIVEN(std::get <0>(sequence_pair_tuple))
+						{
+							AND_GIVEN(std::get <6>(query_tuple))
+							{
+								std::apply(
+									[&fixture]
+									(auto const &query, auto const src_pos, auto const expected_dst_pos, auto const &cigar, auto const &expected_cigar){
+										rewrite_cigar_and_check(fixture, query, src_pos, expected_dst_pos, cigar, expected_cigar);
+									},
+									lb::tuple_slice <0, 5, true>(query_tuple)
+								);
+							}
+						}
+					}
+				
+					break;
+				}
+			
+				default:
+					FAIL("Unexpected input");
+			}
+		}
+		
+	continue_outer_loop:
+		;
 	}
 }

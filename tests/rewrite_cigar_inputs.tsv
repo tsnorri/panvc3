@@ -1,0 +1,19 @@
+S	a pair of sequences with a deletion in the source	GAT-ACA	GATTACA
+Q	TA	2	2	2M	1=1D1=	rewrite_cigar() can handle deletions in the source sequence	an aligned segment
+Q	TA	2	2	1H2M1P	1H1=1D1=1P	rewrite_cigar() can handle a no-op in the CIGAR	an alignment with no-ops (“H” or “P”)
+Q	CC	1	1	2I	2I	rewrite_cigar() can handle an insertion	an alignment with an insertion
+Q	GG	4	5	2I	2I	rewrite_cigar() can handle an insertion after a gap in the source	an alignment with an insertion after a gap in the source
+Q	CTAC	2	2	1S2M1S	1S1=1D1=1S	rewrite_cigar() can handle soft clipping	an alignment with soft clipping
+Q	TC	2	2	1M1S	1=1S	rewrite_cigar() can handle soft clipping just before a deletion in the source	an alignment with soft clipping
+Q	CA	3	4	1S1M	1S1=	rewrite_cigar() can handle soft clipping just after a deletion in the source	an alignment with soft clipping
+Q	T	1	1	1D1M	1D1=	rewrite_cigar() can handle deletion in the query	an alignment with a deletion
+S	a pair of sequences with a deletion in the destination	GATTACA	GAT-ACA
+Q	TTA	2	2	3M	1=1I1=	rewrite_cigar() can remap a match to an insertion if the destination has a deletion	an alignment with a match
+Q	TA	2	2	1M1D1M	2=	rewrite_cigar() can remove a deletion if the destination has a deletion	an alignment with a match
+S	a pair of sequences with multiple deletions	GATTACAGATTACA	GAT-ACAG--T-CA
+Q	TTACAGATTAC	2	2	11M	1=1I4=2I1=1I1=	rewrite_cigar() can handle an alignment that overlaps with a long, non-contiguous deletion in the destination	an alignment with a match
+Q	CA	12	8	2M	2=	rewrite_cigar() can convert the co-ordinate after multiple deletions	an alignment with a match
+S	a badly aligned pair of sequences	A-C-G-T-A-C-G-T-	-G-T-A-C-G-T-A-C
+Q	ACG	4	4	3M	1I1D1I1D1I	rewrite_cigar() can handle badly aligned sections	an alignment with a match
+S	a pair of sequences with a deletion in the source	A-C	ATC
+Q	AC	0	0	1M1P1M	1=1D1P1=	rewrite_cigar() can handle padding next to deletion	a simple alignment
