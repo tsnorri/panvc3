@@ -17,3 +17,5 @@ S	a badly aligned pair of sequences	A-C-G-T-A-C-G-T-	-G-T-A-C-G-T-A-C
 Q	ACG	4	4	3M	1I1D1I1D1I	rewrite_cigar() can handle badly aligned sections	an alignment with a match
 S	a pair of sequences with a deletion in the source	A-C	ATC
 Q	AC	0	0	1M1P1M	1=1D1P1=	rewrite_cigar() can handle padding next to deletion	a simple alignment
+S	a pair of sequences with a mismatching run	TTTTTACGACG---TTTACGTTTTT	TTTTTACGACGACG---ACGTTTTT
+Q	ACGTTT	8	8	6=	3=3D3I	rewrite_cigar() can rewrite a match as a deletion followed by an insertion	a segment that matches a run in the first sequence and the tail of which does not match the corresponding run in the second sequence
