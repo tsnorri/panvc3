@@ -12,8 +12,7 @@ namespace panvc3 {
 	
 	void indel_run_checker::reset(panvc3::cigar_vector const &cigar_vector, std::size_t const ref_pos)
 	{
-		m_cigar_it = cigar_vector.begin();
-		m_cigar_end = cigar_vector.end();
+		m_cigar_range = {cigar_vector.begin(), cigar_vector.end()};
 		m_ref_pos = ref_pos;
 		m_query_pos = 0;
 		m_ref_range = range(ref_pos, 0);
@@ -35,7 +34,7 @@ namespace panvc3 {
 		// This might be somewhat simpler with coroutines.
 		using seqan3::get;
 		
-		while (m_cigar_it != m_cigar_end)
+		while (m_cigar_range.first != m_cigar_range.second)
 		{
 			// Copies of the existing values for use in report_run.
 			auto const ref_pos(m_ref_pos);
@@ -47,10 +46,10 @@ namespace panvc3 {
 			{
 				m_ref_range.location = m_ref_pos;
 				m_query_range.location = m_query_pos;
-				m_cigar_realigned_range_begin = m_cigar_it;
+				m_cigar_realigned_range.first = m_cigar_range.first;
 			}
 			
-			auto const operation(get <1>(*m_cigar_it).to_char());
+			auto const operation(get <1>(*m_cigar_range.first).to_char());
 			switch (operation)
 			{
 				case 'H':	// Hard clipping, consumes nothing.
@@ -61,24 +60,24 @@ namespace panvc3 {
 					break;
 				
 				case 'I':	// Insertion, consumes query.
-					m_query_pos += get <0>(*m_cigar_it);
+					m_query_pos += get <0>(*m_cigar_range.first);
 					m_run_type |= RUN_HAS_INSERTIONS;
 					break;
 				
 				case 'D':	// Deletion, consumes reference.
-					m_ref_pos += get <0>(*m_cigar_it);
+					m_ref_pos += get <0>(*m_cigar_range.first);
 					m_run_type |= RUN_HAS_DELETIONS;
 					break;
 				
 				case 'S':	// Soft clipping, consumes query.
-					m_query_pos += get <0>(*m_cigar_it);
+					m_query_pos += get <0>(*m_cigar_range.first);
 					m_run_type = RUN_HAS_NEITHER;
 					if (RUN_HAS_BOTH == run_type)
 						goto report_run;
 					break;
 					
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
-					m_ref_pos += get <0>(*m_cigar_it);
+					m_ref_pos += get <0>(*m_cigar_range.first);
 					m_run_type = RUN_HAS_NEITHER;
 					if (RUN_HAS_BOTH == run_type)
 						goto report_run;
@@ -87,8 +86,8 @@ namespace panvc3 {
 				case 'M':	// Match or mismatch, consumes both.
 				case '=':	// Match, consumes both.
 				case 'X':	// Mismatch, consumes both.
-					m_ref_pos += get <0>(*m_cigar_it);
-					m_query_pos += get <0>(*m_cigar_it);
+					m_ref_pos += get <0>(*m_cigar_range.first);
+					m_query_pos += get <0>(*m_cigar_range.first);
 					m_run_type = RUN_HAS_NEITHER;
 					if (RUN_HAS_BOTH == run_type)
 						goto report_run;
@@ -99,12 +98,13 @@ namespace panvc3 {
 					break;
 			}
 			
-			++m_cigar_it;
+			++m_cigar_range.first;
 			continue;
 			
 		report_run:
 			update_ranges(ref_pos, query_pos);
-			++m_cigar_it;
+			m_cigar_realigned_range.second = m_cigar_range.first;
+			++m_cigar_range.first;
 			return true;
 		}
 		
@@ -113,6 +113,7 @@ namespace panvc3 {
 		{
 			m_run_type = RUN_HAS_NEITHER;
 			update_ranges(m_ref_pos, m_query_pos);
+			m_cigar_realigned_range.second = m_cigar_range.first;
 			return true;
 		}
 		

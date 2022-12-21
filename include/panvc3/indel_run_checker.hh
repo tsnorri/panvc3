@@ -6,6 +6,7 @@
 #ifndef PANVC3_INDEL_RUN_CHECKER_HH
 #define PANVC3_INDEL_RUN_CHECKER_HH
 
+#include <ostream>
 #include <panvc3/cigar.hh>
 #include <range/v3/view/slice.hpp>
 #include <vector>
@@ -16,7 +17,12 @@ namespace panvc3 {
 	class indel_run_checker
 	{
 	public:
-		typedef std::vector <char>	sequence_vector;
+		typedef std::vector <char>						sequence_vector;
+		typedef panvc3::cigar_vector::const_iterator	cigar_vector_const_iterator;
+		typedef std::pair <
+			cigar_vector_const_iterator,
+			cigar_vector_const_iterator
+		>												cigar_vector_const_iterator_pair;
 		
 		struct range
 		{
@@ -35,6 +41,8 @@ namespace panvc3 {
 			
 			auto slice() const { return ranges::views::slice(location, location + length); }
 			void update_length(size_type const end_location) { length = end_location - location; }
+			
+			bool operator==(range const &other) const { return location == other.location && length == other.length; }
 		};
 		
 	protected:
@@ -47,26 +55,33 @@ namespace panvc3 {
 		};
 		
 	protected:
-		panvc3::cigar_vector::const_iterator	m_cigar_it{};
-		panvc3::cigar_vector::const_iterator	m_cigar_end{};
-		panvc3::cigar_vector::const_iterator	m_cigar_realigned_range_begin{};
-		range									m_ref_range{};
-		range									m_query_range{};
-		std::size_t								m_ref_pos{};
-		std::size_t								m_query_pos{};
-		std::uint8_t							m_run_type{};
+		cigar_vector_const_iterator_pair	m_cigar_range{};
+		cigar_vector_const_iterator_pair	m_cigar_realigned_range{};
+		range								m_ref_range{};
+		range								m_query_range{};
+		std::size_t							m_ref_pos{};
+		std::size_t							m_query_pos{};
+		std::uint8_t						m_run_type{};
 		
 	public:
 		void reset(panvc3::cigar_vector const &cigar_vector, std::size_t const ref_pos);
 		bool find_next_range_for_realigning();
 		range reference_range() const { return m_ref_range; }
 		range query_range() const { return m_query_range; }
-		panvc3::cigar_vector::const_iterator cigar_current_pos() const { return m_cigar_it; }
-		panvc3::cigar_vector::const_iterator cigar_realigned_range_begin() const { return m_cigar_realigned_range_begin; }
+		std::size_t reference_position() const { return m_ref_pos; }
+		std::size_t query_position() const { return m_query_pos; }
+		cigar_vector_const_iterator_pair cigar_realigned_range() const { return m_cigar_realigned_range; }
 		
 	protected:
 		void update_ranges(std::size_t const ref_pos, std::size_t const query_pos);
 	};
+	
+	
+	inline std::ostream &operator<<(std::ostream &os, indel_run_checker::range const &rr)
+	{ 
+		os << '[' << rr.location << ", " << (rr.location + rr.length) << ')';
+		return os;
+	}
 }
 
 #endif
