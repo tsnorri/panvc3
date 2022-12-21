@@ -37,26 +37,27 @@ namespace panvc3 {
 			ref_seq,
 			m_rewrite_buffer
 		));
-	
+		
 		// Realign where needed, i.e. if there are runs of adjacent insertions and deletions.
 		auto const &cigar_rewritten(m_rewrite_buffer.operations());
 		m_indel_run_checker.reset(cigar_rewritten, dst_pos);
 		m_cigar_realigned.clear();
-	
+		
 		auto cigar_begin(cigar_rewritten.begin());
 		while (m_indel_run_checker.find_next_range_for_realigning())
 		{
 			// Copy the non-realigned part to cigar_realigned.
+			auto const realn_range(m_indel_run_checker.cigar_realigned_range());
 			ranges::copy(
-				ranges::subrange(cigar_begin, m_indel_run_checker.cigar_realigned_range_begin()),
+				ranges::subrange(cigar_begin, realn_range.first),
 				ranges::back_inserter(m_cigar_realigned)
 			);
-			cigar_begin = m_indel_run_checker.cigar_current_pos();
-		
+			cigar_begin = realn_range.second;
+			
 			// Realign the found range.
 			auto const ref_range(m_indel_run_checker.reference_range());
 			auto const query_range(m_indel_run_checker.query_range());
-		
+			
 			if (base_qualities.empty())
 			{
 				auto ref_part(ref_seq | ref_range.slice() | rsv::transform([](auto const cc){
