@@ -1,0 +1,8 @@
+S	a pair of sequences with a mismatching run	TTTTTACGACG---TTTACGTTTTT	TTTTTACGACGACG---ACGTTTTT
+Q	TTT	11	14	3=	3I	alignment_projector can project a matching segment to a run of deletions	a segment that matches a run in the first sequence
+Q	ACGTTT	8	8	6=	3=3D3I	alignment_projector can re-align a matching segment to a run with a mismatching tail	a segment that matches a run in the first sequence and the tail of which does not match the corresponding run in the second sequence
+Q	ACGTTTACG	8	8	9=	3=3D3I3=	alignment_projector can re-align a matching segment to a run with a mismatching middle part	a segment that matches a run in the first sequence and the middle part of which does not match the corresponding run in the second sequence
+Q	GTTTA	10	10	5=	1=3D3I1=	alignment_projector can re-align a short matching segment to a run with a mismatching middle part	a short segment that matches a run in the first sequence and the middle part of which does not match the corresponding run in the second sequence
+S	a pair of sequences with a mostly mismatching run	TTTTTACGACG---TTTACGTTTTT	TTTTTACGACGATG---ACGTTTTT
+Q	ACGTTT	8	8	3=3X	3=1D1=1D2I	alignment_projector can re-align a matching segment to a run with a partially mismatching tail	a segment that matches a run in the first sequence and the tail of which partially matches the corresponding run in the second sequence
+Q	GTTTA	10	10	5=	1=1X1=1X1=	alignment_projector can re-align a short matching segment to a run with a mismatching middle part	a short segment that matches a run in the first sequence and the middle part of which partially matches the corresponding run in the second sequence
