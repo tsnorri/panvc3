@@ -13,8 +13,6 @@ OBJECTS	=	main.o \
 			rewrite_cigar.o \
 			rewrite_cigar_arbitrary.o
 
-CATCH2_HEADERS	= $(shell find ../lib/libbio/lib/Catch2/include)
-
 all: tests
 
 
@@ -24,7 +22,3 @@ tests: $(OBJECTS)
 
 clean:
 	$(RM) $(OBJECTS) tests
-
-
-../lib/Catch2/single_include/catch2/catch.hpp: $(CATCH2_HEADERS)
-	cd ../lib/libbio/lib/Catch2 && $(PYTHON) scripts/generateSingleHeader.py

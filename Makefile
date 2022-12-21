@@ -31,6 +31,8 @@ DIST_TARGET_DIR = panvc3-$(VERSION)
 DIST_NAME_SUFFIX = $(if $(TARGET_TYPE),-$(TARGET_TYPE),)
 DIST_TAR_GZ = panvc3-$(VERSION)-$(OS_NAME)$(DIST_NAME_SUFFIX).tar.gz
 
+CATCH2_HEADERS	= $(shell find lib/libbio/lib/Catch2/include)
+
 
 .PHONY: all clean-all clean clean-dependencies dependencies
 
@@ -61,7 +63,7 @@ dependencies: $(DEPENDENCIES)
 
 dist: $(DIST_TAR_GZ)
 
-tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a
+tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
 	$(MAKE) -C tests
 
 alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a
@@ -107,3 +109,6 @@ lib/rapidcheck/build/librapidcheck.a:
 
 lib/swift-corelibs-libdispatch/build/src/libdispatch.a:
 	$(MAKE) -f make/libdispatch.mk
+
+lib/Catch2/single_include/catch2/catch.hpp: $(CATCH2_HEADERS)
+	cd lib/libbio/lib/Catch2 && $(PYTHON) scripts/generateSingleHeader.py
