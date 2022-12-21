@@ -41,6 +41,8 @@ namespace panvc3 {
 			std::int32_t const gap_opening_cost,
 			std::int32_t const gap_extension_cost
 		);
+		
+		panvc3::cigar_vector const &alignment() const { return m_cigar_realigned; }
 	};
 }
 
