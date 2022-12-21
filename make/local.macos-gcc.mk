@@ -5,9 +5,9 @@ GCC_ROOT			= /opt/homebrew/opt/gcc
 
 CC					= $(GCC_ROOT)/bin/gcc-12
 CXX					= $(GCC_ROOT)/bin/g++-12
-OPT_FLAGS			= -O0 -g
-#OPT_FLAGS			= -Og -g
-#OPT_FLAGS			= -O2 -g
+OPT_FLAGS			= -O0 -gdwarf-5
+#OPT_FLAGS			= -Og -gdwarf-5
+#OPT_FLAGS			= -O2 -gdwarf-5
 
 ISYSROOT			= -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
 

@@ -6,7 +6,7 @@ WARNING_FLAGS_		?=
 WARNING_CXXFLAGS_	?=
 WARNING_FLAGS		?= -Wall -Werror -Wno-deprecated-declarations -Wno-unused $(WARNING_FLAGS_)
 WARNING_CXXFLAGS	?= $(WARNING_CXXFLAGS_)
-OPT_FLAGS			?= -O2 -g
+OPT_FLAGS			?= -O2 -gdwarf-5
 
 CMAKE			?= cmake
 CP				?= cp
