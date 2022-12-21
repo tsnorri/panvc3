@@ -1,0 +1,16 @@
+N	3I
+C	3I	F	T	3	0	Insertions only
+N	3M
+C	3M	F	T	3	3	Alignment matches only
+N	3M4I5M
+C	3M4I5M	F	T	12	8	Insertions surrounded by alignment matches
+N	3M
+I	2I3D	3	5	3	6
+N	5M
+C	3M2I3D5M	T	T	10	11	Indel run surrounded by alignment matches
+N	2M
+I	3I2D	2	5	2	4
+N	2M
+I	3D4I	7	11	6	9
+N	1M
+C	2M3I2D2M3D4I1M	T	T	12	10	Two indel runs surrounded by alignment matches
