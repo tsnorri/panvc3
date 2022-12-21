@@ -84,7 +84,7 @@ namespace panvc3 {
 						scc.assign_char(cc);
 						qualified_alphabet retval;
 						retval = scc;
-						retval = max_letter <qualified_alphabet>();	// Assign maximum qualities to the reference.
+						retval = max_letter <quality_alphabet>();	// Assign maximum qualities to the reference.
 						return retval;								// (We could take the variant likelihoods into account, though.)
 					})
 				);
