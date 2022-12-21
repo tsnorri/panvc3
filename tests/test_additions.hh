@@ -38,13 +38,33 @@ namespace panvc3::tests {
 			return {op};
 		});
 	}
+	
+	inline auto to_readable(std::vector <seqan3::cigar> const &vec)
+	{
+		std::span <seqan3::cigar const> span(vec.begin(), vec.end());
+		return to_readable(span);
+	}
 
 
-	inline std::string copy_without_gaps(std::string_view const src)
+	template <typename t_type>
+	inline t_type copy_without_gaps(std::string_view const src)
 	{
 		auto rng(src | ranges::views::filter([](auto const cc){ return '-' != cc; }));
 		return {ranges::begin(rng), ranges::end(rng)};
 	}
+	
+	
+	template <typename... t_base>
+	struct overloaded : public t_base...
+	{
+		using t_base::operator()...;
+	};
+	
+	
+	template <typename t_type, typename t_tuple, std::size_t t_idx = 0>
+	constexpr static auto const type_matches_tuple_element_v{
+		std::is_same_v <t_type, std::tuple_element_t <t_idx, t_tuple>>
+	};
 }
 
 #endif
