@@ -65,8 +65,6 @@ namespace panvc3 {
 		
 		auto const config{
 			seqan3::align_cfg::method_global{}
-			| seqan3::align_cfg::output_alignment{}
-			| seqan3::align_cfg::output_score{}										// FIXME: remove.
 			| seqan3::align_cfg::scoring_scheme{std::conditional_t <
 				t_should_use_base_probabilities,
 				base_probability_scorer <t_sequence_alphabet, t_quality_alphabet>,
