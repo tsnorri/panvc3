@@ -10,6 +10,7 @@ OBJECTS	=	main.o \
 			alignment_projector.o \
 			cigar_eq.o \
 			indel_run_checker.o \
+			indel_run_checker_arbitrary.o \
 			rewrite_cigar.o \
 			rewrite_cigar_arbitrary.o
 
