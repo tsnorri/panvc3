@@ -877,7 +877,7 @@ TEST_CASE("indel_run_checker can process an arbitrary runs of CIGAR operations",
 			
 			panvc3::cigar_vector cigar_seq;
 			input.copy_operations(cigar_seq);
-			INFO("Runs: "  << input.runs);
+			INFO("Runs:  " << input.runs);
 			INFO("CIGAR: " << tests::to_readable(cigar_seq));
 			
 			panvc3::indel_run_checker checker;
