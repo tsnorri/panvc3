@@ -27,7 +27,7 @@ namespace panvc3::tests {
 	inline std::ostream &operator<<(std::ostream &os, cigar const cc)
 	{
 		using seqan3::get;
-		os << '(' << get <0>(cc.op) << ", " << get <1>(cc.op).to_char() << ')';
+		os << get <0>(cc.op) << get <1>(cc.op).to_char();
 		return os;
 	}
 	
