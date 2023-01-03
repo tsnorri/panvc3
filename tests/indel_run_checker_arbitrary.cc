@@ -146,14 +146,27 @@ namespace markov_chains::detail {
 		t_updated_transition::probability										// Store the new probability.
 	>;
 	
+	// Check that the sum of transition probabilities is 1.0.
+	template <typename t_transitions>
+	struct transition_probability_cs_check
+	{
+		// FIXME: compare with some epsilon since we calculate a sum of floating point values?
+		static_assert(1.0 == tuples::last_t <t_transitions>::probability);
+		typedef t_transitions transitions_type;
+	};
+	
 	// Map each equivalence class of transitions s.t. the probabilities are changed to their cumulative sum.
 	// The equivalence class representatives are discarded.
-	template <typename t_eq_class>
-	using transition_probability_cs_map_fn = typename tuples::foldl_t <
-		transition_probability_cs_fold_fn,
-		transition_probability_cs_acc <>,
-		tuples::second_t <t_eq_class>
-	>::transitions;
+	template <
+		typename t_eq_class,
+		typename t_transitions = typename tuples::foldl_t <
+			transition_probability_cs_fold_fn,
+			transition_probability_cs_acc <>,
+			tuples::second_t <t_eq_class>
+		>::transitions,
+		typename t_check = transition_probability_cs_check <t_transitions>
+	>
+	using transition_probability_cs_map_fn = typename t_check::transitions_type;
 	
 	struct transition_key
 	{
@@ -208,7 +221,7 @@ namespace markov_chains {
 		typedef typename t_transitions::transitions_type	transitions_type;
 		typedef detail::node_type							node_type;
 		
-		constexpr static auto const NODE_MAX{std::numeric_limits <node_type>::max()}; // Max. value of ndoe_type.
+		constexpr static auto const NODE_MAX{std::numeric_limits <node_type>::max()}; // Max. value of node_type.
 		
 		// Number the nodes.
 		// This can be done easily by determining the unique types over the concatenation of the lists
@@ -227,33 +240,12 @@ namespace markov_chains {
 		static_assert(!uses_runtime_polymorphism || detail::transition_states_have_base_v <t_base, transitions_type>);
 		
 	private:
+		// FIXME: since some of the following types are only used in detail::make_transition_map(), they could be moved there.
 		// Group the transitions by the source node.
 		typedef typename tuples::group_by_type <
 			transitions_type,
 			transition_src_t
 		>::keyed_type										transitions_by_source_type;
-		
-		// Check that the sum of the transition probabilities for each node is at most 1.0.
-		template <typename t_type, double t_probability>
-		struct probability_sum
-		{
-			typedef t_type									type;
-			constexpr static inline double const			probability{t_probability};
-			
-			// FIXME: add epsilon since we calculate a sum?
-			static_assert(probability <= 1.0, "The sum of the probabilities must be at most 1.0");
-		};
-		
-		// Perform the aforementioned check.
-		template <typename t_item>
-		using map_fn_t = probability_sum <
-			tuples::head_t <t_item>,	// Representative, i.e. source node.
-			tuples::visit_parameters <tuples::second_t <t_item>>(
-				[]<typename... t_transition>() consteval {
-					return (t_transition::probability + ...);
-				}
-			)
-		>;
 		
 		// Build the transition table.
 		typedef detail::transition_key						transition_key;
@@ -264,7 +256,7 @@ namespace markov_chains {
 				detail::transition_probability_cs_map_fn
 			>
 		>													transitions_with_probability_cs_type;
-				
+		
 		// Intermediate type for creating transition_map_value_type.
 		template <std::size_t t_src, std::size_t t_dst, double t_probability>
 		struct transition_
