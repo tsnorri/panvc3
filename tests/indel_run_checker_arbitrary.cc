@@ -104,6 +104,8 @@ namespace markov_chains::detail {
 	
 	typedef std::size_t	node_type;
 	
+	template <typename t_transition> using transition_src_t = typename t_transition::source_type;
+	template <typename t_transition> using transition_dst_t = typename t_transition::destination_type;
 	
 	template <typename, typename>
 	struct transition_states_have_base {};
@@ -178,26 +180,67 @@ namespace markov_chains::detail {
 		constexpr bool operator==(transition_key const &other) const { return as_tuple() == other.as_tuple(); }
 	};
 	
-	template <typename t_transitions>
-	constexpr auto make_transition_map()
+	template <typename t_nodes, typename t_transitions>
+	struct transition_map_builder
 	{
-		constexpr t_transitions intermediates{};
-		auto retval(lb::map_to_array(
-			std::make_index_sequence <std::tuple_size_v <t_transitions>>{},
-			[&intermediates](auto const idx) {
-				return std::get <idx()>(intermediates).to_map_value();
-			}
-		));
+		typedef t_nodes										nodes_type;
+		typedef std::pair <transition_key, node_type>		map_value_type;
 		
-		std::sort(retval.begin(), retval.end());
+		// Intermediate type for creating map_value_type.
+		template <std::size_t t_src, std::size_t t_dst, double t_probability>
+		struct transition_
+		{
+			constexpr map_value_type to_map_value() const { return {{t_probability, t_src}, t_dst}; }
+			constexpr /* implicit */ operator map_value_type() const { return to_map_value(); }
+		};
+	
+		// FIXME: this is really inefficient. Come up with another solution, e.g. store the indices in sorted vectors.
+		template <typename t_transition>
+		using to_transition__t = transition_ <
+			tuples::first_index_of_v <nodes_type, typename t_transition::source_type>,
+			tuples::first_index_of_v <nodes_type, typename t_transition::destination_type>,
+			t_transition::probability
+		>;
+	
+		constexpr static auto make_transition_map()
+		{
+			// Group the transitions by the source node.
+			typedef typename tuples::group_by_type <
+				t_transitions,
+				transition_src_t
+			>::keyed_type										transitions_by_source_type;
 		
-		// Make sure that the keys are distinct.
-		libbio_assert_eq(retval.cend(), std::adjacent_find(retval.cbegin(), retval.cend(), [](auto const &lhs, auto const &rhs){
-			return lhs.first == rhs.first;
-		}));
+			// Build the transition table.
+			typedef tuples::cat_with_t <
+				tuples::map_t <
+					transitions_by_source_type,
+					detail::transition_probability_cs_map_fn
+				>
+			>													transitions_with_probability_cs_type;
 		
-		return retval;
-	}
+			typedef tuples::map_t <
+				transitions_with_probability_cs_type,
+				to_transition__t
+			>													intermediate_transitions_type;
+		
+			constexpr intermediate_transitions_type intermediates{};
+			auto retval(lb::map_to_array(
+				std::make_index_sequence <std::tuple_size_v <t_transitions>>{},
+				[&intermediates](auto const idx) {
+					return std::get <idx()>(intermediates).to_map_value();
+				}
+			));
+		
+			std::sort(retval.begin(), retval.end());
+		
+			// Make sure that the keys are distinct.
+			libbio_assert_eq(retval.cend(), std::adjacent_find(retval.cbegin(), retval.cend(), [](auto const &lhs, auto const &rhs){
+				return lhs.first == rhs.first;
+			}));
+		
+			return retval;
+		}
+	};
 }
 
 
@@ -211,9 +254,6 @@ namespace markov_chains {
 	struct chain : public t_traits...
 	{
 	private:
-		template <typename t_transition> using transition_src_t = typename t_transition::source_type;
-		template <typename t_transition> using transition_dst_t = typename t_transition::destination_type;
-		
 		typedef aggregate <t_traits...>						traits_type;
 		
 	public:
@@ -229,8 +269,8 @@ namespace markov_chains {
 		typedef tuples::unique_t <
 			tuples::cat_t <
 				std::tuple <t_initial_state>,
-				tuples::map_t <transitions_type, transition_src_t>,
-				tuples::map_t <transitions_type, transition_dst_t>
+				tuples::map_t <transitions_type, detail::transition_src_t>,
+				tuples::map_t <transitions_type, detail::transition_dst_t>
 			>
 		>													nodes_type;
 		
@@ -239,44 +279,16 @@ namespace markov_chains {
 		static_assert(!uses_runtime_polymorphism || std::is_base_of_v <t_base, t_initial_state>);
 		static_assert(!uses_runtime_polymorphism || detail::transition_states_have_base_v <t_base, transitions_type>);
 		
+		typedef detail::transition_map_builder <
+			nodes_type,
+			transitions_type
+		>													transition_map_builder_type;
+		typedef transition_map_builder_type::map_value_type	transition_map_value_type;
+		
 	private:
-		// FIXME: since some of the following types are only used in detail::make_transition_map(), they could be moved there.
-		// Group the transitions by the source node.
-		typedef typename tuples::group_by_type <
-			transitions_type,
-			transition_src_t
-		>::keyed_type										transitions_by_source_type;
-		
-		// Build the transition table.
-		typedef detail::transition_key						transition_key;
-		typedef std::pair <transition_key, node_type>		transition_map_value_type;
-		typedef tuples::cat_with_t <
-			tuples::map_t <
-				transitions_by_source_type,
-				detail::transition_probability_cs_map_fn
-			>
-		>													transitions_with_probability_cs_type;
-		
-		// Intermediate type for creating transition_map_value_type.
-		template <std::size_t t_src, std::size_t t_dst, double t_probability>
-		struct transition_
-		{
-			typedef transition_map_value_type	map_value_type;
-			constexpr map_value_type to_map_value() const { return {{t_probability, t_src}, t_dst}; }
-			constexpr /* implicit */ operator map_value_type() const { return to_map_value(); }
-		};
-		
-		// FIXME: this is really inefficient. Come up with another solution, e.g. store the indices in sorted vectors.
-		template <typename t_transition>
-		using to_transition__t = transition_ <
-			tuples::first_index_of_v <nodes_type, typename t_transition::source_type>,
-			tuples::first_index_of_v <nodes_type, typename t_transition::destination_type>,
-			t_transition::probability
-		>;
-		
 		// The actual chain.
 		constexpr static auto const			initial_state{tuples::first_index_of_v <nodes_type, t_initial_state>};
-		constexpr static auto const			transitions{detail::make_transition_map <tuples::map_t <transitions_with_probability_cs_type, to_transition__t>>()};
+		constexpr static auto const			transitions{transition_map_builder_type::make_transition_map()};
 		
 	public:
 		typedef std::vector <
@@ -292,6 +304,8 @@ namespace markov_chains {
 		template <typename t_probabilities, typename t_visitor>
 		static void visit_node_types(t_probabilities &&probabilities, t_visitor &&visitor)
 		{
+			typedef detail::transition_key transition_key;
+			
 			auto const &fns(callback_table_builder <t_visitor, nodes_type>::fns);
 			node_type current_node{initial_state};
 			
