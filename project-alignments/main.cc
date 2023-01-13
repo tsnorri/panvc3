@@ -218,7 +218,7 @@ namespace {
 		static_assert(0 < QUEUE_SIZE);
 		
 		lb::dispatch_ptr <dispatch_group_t> dispatch_group(dispatch_group_create());
-		auto parallel_dispatch_queue(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0));
+		auto parallel_dispatch_queue(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
 		
 		auto task_idx(m_task_queue.pop_index()); // Reserve one task.
 		for (auto &&[rec_idx, aln_rec] : rsv::enumerate(m_aln_input))
