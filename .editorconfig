@@ -1,4 +1,4 @@
-[*.{hh,cc,ggo}]
+[*.{hh,cc,ggo,mk}]
 charset = utf-8
 indent_style = tab
 indent_size = 4
