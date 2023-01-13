@@ -60,3 +60,4 @@ subset-alignments/cmdline.c
 subset-alignments/cmdline.h
 subset-alignments/config.h
 subset-alignments/subset_alignments
+tests/tests
