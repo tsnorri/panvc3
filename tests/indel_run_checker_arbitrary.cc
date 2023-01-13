@@ -29,6 +29,7 @@ namespace tuples	= libbio::tuples;
 using seqan3::operator""_cigar_operation;
 
 
+// FIXME: move these to some namespace.
 namespace {
 	
 	template <typename, typename> struct callback_table_builder {};
