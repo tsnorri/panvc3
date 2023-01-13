@@ -1,6 +1,6 @@
 PANVC3_PROJECT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 include  $(PANVC3_PROJECT_DIR)/make/os-name.mk
--include $(PANVC3_PROJECT_DIR)/make/local.mk
+-include $(PANVC3_PROJECT_DIR)/local.mk
 include  $(PANVC3_PROJECT_DIR)/make/common.mk
 
 # Some of the tools require Clang for building while others require GCC.
@@ -102,7 +102,7 @@ $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 
 lib/libbio/build-%/libbio.a:
 	$(MKDIR) -p lib/libbio/build-$*
-	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../make/local.$(OS_NAME)-$*.mk -f ../src/Makefile
+	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../local.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../src/Makefile
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
