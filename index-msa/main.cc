@@ -424,7 +424,7 @@ namespace {
 			list_index_contents(args_info.msa_index_input_arg);
 			std::exit(EXIT_SUCCESS);
 		}
-		else
+		else if (args_info.build_index_given)
 		{
 			static input_processor processor(
 				args_info.sequence_inputs_arg,
@@ -437,6 +437,11 @@ namespace {
 			
 			auto caller(lb::dispatch(processor));
 			caller.async <>(dispatch_get_main_queue());
+		}
+		else
+		{
+			std::cerr << "ERROR: Unknown mode.\n";
+			std::exit(EXIT_FAILURE);
 		}
 	}
 }
