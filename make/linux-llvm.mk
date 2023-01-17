@@ -12,6 +12,7 @@ CPPFLAGS				?= -DBOOST_NO_CXX98_FUNCTION_BASE
 CFLAGS					?= -fblocks -U__STDC_HOSTED__ $(CLANG_INCLUDES)
 CXXFLAGS				?= -fblocks -nostdinc++ -U__STDC_HOSTED__ $(CLANG_INCLUDES)
 WARNING_FLAGS_			= -Wno-deprecated-builtins
-LDFLAGS					?= -stdlib=libc++ -nodefaultlibs $(LIBCXX_ROOT)/lib/libc++.a $(LIBCXX_ROOT)/lib/libc++abi.a -lpthread -lbsd -lz -ldl -lm -lc -lgcc_s -lgcc -lrt
+CLANG_LIBGCC_LDFLAGS	?= -lgcc_s -lgcc
+LDFLAGS					?= -stdlib=libc++ -nodefaultlibs $(LIBCXX_ROOT)/lib/libc++.a $(LIBCXX_ROOT)/lib/libc++abi.a -lpthread -lbsd -lz -ldl -lm -lc -lrt $(CLANG_LIBGCC_LDFLAGS) $(CLANG_LDFLAGS)
 
 BOOST_LIBS				?= $(BOOST_ROOT)/lib/libboost_iostreams.a

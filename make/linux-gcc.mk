@@ -7,7 +7,7 @@ CPPFLAGS			?= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_STACKTRACE_USE_NOOP -DLIBBI
 WARNING_FLAGS_		= -Wno-deprecated-builtins
 WARNING_CXXFLAGS_	= -Wno-interference-size
 
-LDFLAGS				?= -lpthread -lrt
+LDFLAGS				?= -lpthread -lrt $(GCC_LDFLAGS)
 SYSTEM_CFLAGS		?= $(GCC_INCLUDES)
 SYSTEM_CXXFLAGS		?= -nostdinc++ $(GCC_INCLUDES)
 SYSTEM_LDFLAGS		?= -L$(GCC_ROOT)/lib -Wl,-rpath,$(GCC_ROOT)/lib
