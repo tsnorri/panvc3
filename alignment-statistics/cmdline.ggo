@@ -1,11 +1,11 @@
-# Copyright (c) 2022 Tuukka Norri
+# Copyright (c) 2022-2023 Tuukka Norri
 # This code is licensed under MIT license (see LICENSE for details).
 
 package		"alignment-statistics"
 version		"0.1"
 purpose		"Calculate statistics from the given alignments"
-usage		"alignment_statistics --alignments=alignments.bam [ ... ] > counts.txt"
-description	"Currently only coverage per position is reported."
+usage		"alignment_statistics --alignments=alignments.bam [ ... ] --coverage|--count-alignments > summary.tsv"
+description	"Currently coverage per position and the number of alignments for each contig are reported."
 
 option		"alignments"		a	"Alignment file path"														string	typestr = "filename"	optional
 option		"contig-prefix"		p	"Contig prefix in the alignment file"										string							optional
@@ -13,5 +13,8 @@ option		"primary-only"		m	"Consider primary alignments only"											flag	off
 option		"same-ref"			s	"Consider alignments with the same contig prefix only"						flag	off
 option		"include-clipping"	l	"Include soft clipping"														flag	off
 
-defmode		"Coverage"	modedesc = "Calculate coverage per position"
-modeoption	"coverage"			C	"Calculate coverage per position"											mode = "Coverage"		required
+defmode		"Coverage"			modedesc = "Calculate coverage per position"
+modeoption	"coverage"			C	"Calculate coverage per position"											mode = "Coverage"				required
+
+defmode		"Count alignments"	modedesc = "Count the alignments by reference"
+modeoption	"count-alignments"	O	"Count the alignments by reference"											mode = "Count alignments"		required

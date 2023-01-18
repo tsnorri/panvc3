@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -142,7 +142,7 @@ namespace {
 		{
 			++reads_processed;
 			if (0 == reads_processed % 10000000)
-				lb::log_time(std::cerr) << "Processed " << reads_processed << " reads…\n";
+				lb::log_time(std::cerr) << "Processed " << reads_processed << " alignments…\n";
 			
 			// If POS is zero, skip the record.
 			auto const flags(aln_rec.flag());
@@ -166,9 +166,10 @@ namespace {
 			}
 			
 			// Check the contig name if requested.
-			auto const ref_id(aln_rec.reference_id());
 			if (contig_prefix)
 			{
+				auto const ref_id(aln_rec.reference_id());
+
 				// Check the contig prefix for the current alignment.
 				if (!ref_id.has_value())
 				{
@@ -215,14 +216,14 @@ namespace {
 	
 	
 	template <typename t_aln_input>
-	void calculate_coverage_(
+	void calculate_coverage(
 		t_aln_input &aln_input,
+		alignment_statistics &stats,
 		gengetopt_args_info const &args_info
 	)
 	{
 		bool const should_include_clipping(args_info.include_clipping_flag);
 
-		alignment_statistics stats;
 		std::size_t prev_record_pos{};
 		std::multiset <interval, interval_end_pos_cmp> coverage_left;
 		std::multiset <interval, interval_end_pos_cmp> coverage_right;
@@ -236,7 +237,7 @@ namespace {
 				&prev_record_pos,
 				&coverage_left,
 				&coverage_right
-			](auto &aln_rec){
+			](auto const &aln_rec){
 				auto const rec_ref_pos_(aln_rec.reference_position());
 				
 				// The following assertion checks that rec_ref_pos is non-negative, too.
@@ -294,24 +295,54 @@ namespace {
 			std::cout << prev_record_pos << '\t' << coverage_left.size() << '\n';
 			++prev_record_pos;
 		}
+	}
 
-		lb::log_time(std::cerr) << "Done.\n";
+
+	template <typename t_aln_input>
+	void count_alignments_by_contig(
+		t_aln_input &aln_input,
+		alignment_statistics &stats,
+		gengetopt_args_info const &args_info
+	)
+	{
+		lb::log_time(std::cerr) << "Counting alignments…\n";
+		std::cout << "CONTIG\tCOUNT\n";
+
+		auto const &ref_names_by_id(aln_input.header().ref_ids());
+		std::vector <std::size_t> counts_by_ref_id(ref_names_by_id.size(), 0);
+
+		process_alignments(aln_input, args_info, stats,
+			[
+				&counts_by_ref_id
+			](auto const &aln_rec){
+				auto const &ref_id(aln_rec.reference_id());
+				if (!ref_id.has_value())
+					return;
+
+				auto const ref_id_(*ref_id);
+				++counts_by_ref_id[ref_id_];
+			}
+		);
+
+		for (auto const &[idx, name] : rsv::enumerate(ref_names_by_id))
+			std::cout << name << '\t' << counts_by_ref_id[idx] << '\n';
 	}
 	
 	
-	void calculate_coverage(gengetopt_args_info const &args_info)
+	template <typename t_cb>
+	void read_input(gengetopt_args_info const &args_info, t_cb &&cb)
 	{
 		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
 		if (args_info.alignments_arg)
 		{
 			fs::path const alignments_path(args_info.alignments_arg);
 			auto aln_input(open_alignment_input_file(alignments_path));
-			calculate_coverage_(aln_input, args_info);
+			cb(aln_input);
 		}
 		else
 		{
 			auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_sam{}));
-			calculate_coverage_(aln_input, args_info);
+			cb(aln_input);
 		}
 	}
 }
@@ -340,13 +371,24 @@ int main(int argc, char **argv)
 		}
 	}
 	
-	if (args_info.coverage_given)
-		calculate_coverage(args_info);
-	else
 	{
-		std::cerr << "ERROR: No mode given." << std::endl;
-		return EXIT_FAILURE;
+		alignment_statistics stats;
+		if (args_info.coverage_given)
+			read_input(args_info, [&stats, &args_info](auto &aln_input){ calculate_coverage(aln_input, stats, args_info); });
+		else if (args_info.count_alignments_given)
+			read_input(args_info, [&stats, &args_info](auto &aln_input){ count_alignments_by_contig(aln_input, stats, args_info); });
+		else
+		{
+			std::cerr << "ERROR: No mode given." << std::endl;
+			return EXIT_FAILURE;
+		}
+
+		std::cerr << "Flags not matched:       " << stats.flags_not_matched << '\n';
+		std::cerr << "Ref. ID mismatches:      " << stats.ref_id_mismatches << '\n';
+		std::cerr << "Mate ref. ID mismatches: " << stats.mate_ref_id_mismatches << '\n';
 	}
+
+	lb::log_time(std::cerr) << "Done.\n";
 	
 	return EXIT_SUCCESS;
 }
