@@ -419,11 +419,23 @@ namespace {
 				gap_extension_cost
 			));
 
-			aln_rec.reference_position() = dst_pos;
-			aln_rec.cigar_sequence() = alignment_projector.alignment();
-
-			// Check the tags.
+			// Update the tags.
+			// SeqAn 3 does not yet have a type definition for the OA tag which replaces OC,
+			// so we use the latter instead.
 			auto &tags(aln_rec.tags());
+			
+			{
+				using seqan3::get;
+				using seqan3::operator""_tag;
+
+				auto &oc_tag(tags.template get <"OC"_tag>());
+				oc_tag.clear();
+				for (auto const cc : cigar_seq)
+				{
+					oc_tag.push_back(get <0>(cc));
+					oc_tag.push_back(get <1>(cc).to_char());
+				}
+			}
 			
 			{
 				auto it(tags.begin());
@@ -446,6 +458,10 @@ namespace {
 					++m_removed_tag_counts[tag];
 				}
 			}
+
+			// Finally (esp. after setting OA/OC) update the CIGAR and the reference position.
+			aln_rec.reference_position() = dst_pos;
+			aln_rec.cigar_sequence() = alignment_projector.alignment();
 		}
 		
 		// Continue in the output queue.
