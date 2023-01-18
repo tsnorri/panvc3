@@ -7,7 +7,11 @@ purpose		"Calculate statistics from the given alignments"
 usage		"alignment_statistics --alignments=alignments.bam [ ... ] --coverage|--count-alignments > summary.tsv"
 description	"Currently coverage per position and the number of alignments for each contig are reported."
 
+section "Input options"
 option		"alignments"		a	"Alignment file path"														string	typestr = "filename"	optional
+option		"bam-input"			b	"Input read from stdin is in BAM format"									flag	off
+
+section "Alignment options"
 option		"contig-prefix"		p	"Contig prefix in the alignment file"										string							optional
 option		"primary-only"		m	"Consider primary alignments only"											flag	off
 option		"same-ref"			s	"Consider alignments with the same contig prefix only"						flag	off

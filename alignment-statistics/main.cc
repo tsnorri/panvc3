@@ -335,14 +335,25 @@ namespace {
 		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
 		if (args_info.alignments_arg)
 		{
+			if (args_info.bam_input_flag)
+				std::cerr << "WARNING: --bam-input has no effect when reading from file.\n";
+
 			fs::path const alignments_path(args_info.alignments_arg);
 			auto aln_input(open_alignment_input_file(alignments_path));
 			cb(aln_input);
 		}
 		else
 		{
-			auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_sam{}));
-			cb(aln_input);
+			if (args_info.bam_input_flag)
+			{
+				auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_bam{}));
+				cb(aln_input);
+			}
+			else
+			{
+				auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_sam{}));
+				cb(aln_input);
+			}
 		}
 	}
 }
