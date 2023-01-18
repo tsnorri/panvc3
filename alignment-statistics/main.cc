@@ -43,6 +43,14 @@ namespace {
 		bool operator()(std::size_t const lhs, interval const &rhs) const { return lhs < rhs.end_pos; }
 		bool operator()(interval const &lhs, std::size_t const rhs) const { return lhs.end_pos < rhs; }
 	};
+
+
+	struct alignment_statistics
+	{
+		std::size_t flags_not_matched{};
+		std::size_t ref_id_mismatches{};
+		std::size_t mate_ref_id_mismatches{};
+	};
 	
 	
 	template <typename t_aln_record>
@@ -114,36 +122,22 @@ namespace {
 	{
 		return seqan3::sam_file_input(stream, std::forward <t_format>(format), sam_reader_fields());
 	}
-	
-	
-	template <typename t_aln_input>
-	void calculate_coverage_(
-		t_aln_input &aln_input,
-		gengetopt_args_info const &args_info
-	)
+
+
+	template <typename t_aln_input, typename t_cb>
+	void process_alignments(t_aln_input &&aln_input, gengetopt_args_info const &args_info, alignment_statistics &stats, t_cb &&cb)
 	{
-		typedef typename t_aln_input::traits_type				alignment_input_traits_type;
-		typedef typename alignment_input_traits_type::ref_ids	reference_ids_type;
+		typedef typename std::remove_cvref_t <t_aln_input>::traits_type	alignment_input_traits_type;
+		typedef typename alignment_input_traits_type::ref_ids			reference_ids_type;
 		
 		auto const contig_prefix(args_info.contig_prefix_arg);
-		bool const should_include_clipping(args_info.include_clipping_flag);
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
 		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
 		
 		reference_ids_type const &reference_ids(aln_input.header().ref_ids());
-		
+
 		std::size_t reads_processed{};
-		std::size_t flags_not_matched{};
-		std::size_t ref_id_mismatches{};
-		std::size_t mate_ref_id_mismatches{};
-		
-		std::multiset <interval, interval_end_pos_cmp> coverage_left;
-		std::multiset <interval, interval_end_pos_cmp> coverage_right;
-		
-		lb::log_time(std::cerr) << "Calculating coverage…\n";
-		std::cout << "POSITION\tCOVERAGE\n";
-		
-		std::size_t prev_record_pos{};
+
 		for (auto const &aln_rec : aln_input)
 		{
 			++reads_processed;
@@ -160,14 +154,14 @@ namespace {
 				seqan3::sam_flag::supplementary_alignment
 			))) // Ignore unmapped, filtered, duplicate and supplementary.
 			{
-				++flags_not_matched;
+				++stats.flags_not_matched;
 				continue;
 			}
 			
 			// Ignore secondary if requested.
 			if (should_consider_primary_alignments_only && lb::to_underlying(flags & seqan3::sam_flag::secondary_alignment))
 			{
-				++flags_not_matched;
+				++stats.flags_not_matched;
 				continue;
 			}
 			
@@ -178,13 +172,13 @@ namespace {
 				// Check the contig prefix for the current alignment.
 				if (!ref_id.has_value())
 				{
-					++ref_id_mismatches;
+					++stats.ref_id_mismatches;
 					continue;
 				}
 				
 				if (!reference_ids[*ref_id].starts_with(contig_prefix))
 				{
-					++ref_id_mismatches;
+					++stats.ref_id_mismatches;
 					continue;
 				}
 				
@@ -196,13 +190,13 @@ namespace {
 					auto const mate_ref_id(aln_rec.mate_reference_id());
 					if (!mate_ref_id.has_value())
 					{
-						++mate_ref_id_mismatches;
+						++stats.mate_ref_id_mismatches;
 						continue;
 					}
 					
 					if (!reference_ids[*mate_ref_id].starts_with(contig_prefix))
 					{
-						++mate_ref_id_mismatches;
+						++stats.mate_ref_id_mismatches;
 						continue;
 					}
 				}
@@ -211,56 +205,87 @@ namespace {
 			auto const rec_ref_pos_(aln_rec.reference_position());
 			if (!rec_ref_pos_.has_value())
 			{
-				++flags_not_matched;
+				++stats.flags_not_matched;
 				continue;
 			}
-			
-			// The following assertion checks that rec_ref_pos is non-negative, too.
-			libbio_always_assert_lte(prev_record_pos, *rec_ref_pos_); // FIXME: error message: alignments need to be sorted by position.
-			std::size_t const rec_ref_pos(*rec_ref_pos_);
-			auto const ref_length(calculate_record_length(aln_rec, should_include_clipping));
-			auto const rec_ref_end(rec_ref_pos + ref_length);
-			
-			// Check if the position was incremented and there are intervals to report.
-			if (prev_record_pos < rec_ref_pos)
-			{
-				// Move the intervals from the right to the left.
-				// This is done first b.c. the left bound of every such record is equal to prev_record_pos and hence
-				// they need to be counted when calculating the coverage.
+
+			cb(aln_rec);
+		}
+	}
+	
+	
+	template <typename t_aln_input>
+	void calculate_coverage_(
+		t_aln_input &aln_input,
+		gengetopt_args_info const &args_info
+	)
+	{
+		bool const should_include_clipping(args_info.include_clipping_flag);
+
+		alignment_statistics stats;
+		std::size_t prev_record_pos{};
+		std::multiset <interval, interval_end_pos_cmp> coverage_left;
+		std::multiset <interval, interval_end_pos_cmp> coverage_right;
+		
+		lb::log_time(std::cerr) << "Calculating coverage…\n";
+		std::cout << "POSITION\tCOVERAGE\n";
+		
+		process_alignments(aln_input, args_info, stats,
+			[
+				should_include_clipping,
+				&prev_record_pos,
+				&coverage_left,
+				&coverage_right
+			](auto &aln_rec){
+				auto const rec_ref_pos_(aln_rec.reference_position());
+				
+				// The following assertion checks that rec_ref_pos is non-negative, too.
+				libbio_always_assert_lte(prev_record_pos, *rec_ref_pos_); // FIXME: error message: alignments need to be sorted by position.
+				std::size_t const rec_ref_pos(*rec_ref_pos_);
+				auto const ref_length(calculate_record_length(aln_rec, should_include_clipping));
+				auto const rec_ref_end(rec_ref_pos + ref_length);
+				
+				// Check if the position was incremented and there are intervals to report.
+				if (prev_record_pos < rec_ref_pos)
 				{
-					auto it(coverage_right.begin());
-					auto const end(coverage_right.end()); // extract() only invalidates iterators to the extracted element.
-					while (it != end)
+					// Move the intervals from the right to the left.
+					// This is done first b.c. the left bound of every such record is equal to prev_record_pos and hence
+					// they need to be counted when calculating the coverage.
 					{
-						libbio_assert_lt(it->pos, rec_ref_pos);
-						auto const it_(it);
-						++it;
-						coverage_left.insert(coverage_left.end(), coverage_right.extract(it_));
+						auto it(coverage_right.begin());
+						auto const end(coverage_right.end()); // extract() only invalidates iterators to the extracted element.
+						while (it != end)
+						{
+							libbio_assert_lt(it->pos, rec_ref_pos);
+							auto const it_(it);
+							++it;
+							coverage_left.insert(coverage_left.end(), coverage_right.extract(it_));
+						}
+					}
+
+					while (!coverage_left.empty() && prev_record_pos < rec_ref_pos)
+					{
+						// Remove from the left.
+						// Find the intervals where the end position is greater than the current position,
+						// i.e. ones that cover the current position.
+						auto it(coverage_left.upper_bound(prev_record_pos));
+					
+						// Erase the complement.
+						coverage_left.erase(coverage_left.begin(), it);
+
+						std::cout << prev_record_pos << '\t' << coverage_left.size() << '\n';
+
+						++prev_record_pos;
 					}
 				}
-
-				while (!coverage_left.empty() && prev_record_pos < rec_ref_pos)
-				{
-					// Remove from the left.
-					// Find the intervals where the end position is greater than the current position,
-					// i.e. ones that cover the current position.
-					auto it(coverage_left.upper_bound(prev_record_pos));
 				
-					// Erase the complement.
-					coverage_left.erase(coverage_left.begin(), it);
-
-					std::cout << prev_record_pos << '\t' << coverage_left.size() << '\n';
-
-					++prev_record_pos;
-				}
+				// Add to the right.
+				if (ref_length)
+					coverage_right.emplace(rec_ref_pos, rec_ref_end);
+				
+				prev_record_pos = rec_ref_pos; // We could also consider some of the filtered reads’ positions for prev_record_pos, but I think this will suffice.
 			}
-			
-			// Add to the right.
-			if (ref_length)
-				coverage_right.emplace(rec_ref_pos, rec_ref_end);
-			
-			prev_record_pos = rec_ref_pos; // We could also consider some of the filtered reads’ positions for prev_record_pos, but I think this will suffice.
-		}
+		);
 		
 		while (!coverage_left.empty())
 		{
