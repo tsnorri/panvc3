@@ -507,7 +507,7 @@ namespace {
 
 		// Output the statistics.
 		std::cerr << "Matched reads:     " << m_statistics.matched_reads << '\n';
-		std::cerr << "REF ID missing:    " << m_statistics.ref_id_missing << '\n';
+		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
 
 		if (m_removed_tag_counts.empty())
