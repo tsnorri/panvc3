@@ -9,7 +9,7 @@ description	"The input file should contain the chromosome identifiers and input 
 
 option		"msa-index-input"	d	"MSA index input"							string									typestr = "filename"									optional
 
-defmode		"Build index"		modedesc = "Build a MSA index"
+defmode		"Build index"			modedesc = "Build a MSA index"
 modeoption	"build-index"		B	"Build a MSA index"									mode = "Build index"																	required
 modeoption	"sequence-inputs"	i	"Input as tabulated text (chr_id, path)"	string	mode = "Build index"			typestr = "filename"									required
 modeoption	"msa-index-output"	m	"MSA index output"							string	mode = "Build index"			typestr = "filename"									required
@@ -18,4 +18,9 @@ modeoption	"output-fasta"		f	"Output the unaligned sequences as FASTA"	flag	mode
 modeoption	"fasta-line-width"	w	"Wrap the FASTA output to the given length"	long	mode = "Build index"			default = "0"			dependon = "output-fasta"		optional
 
 defmode		"List index contents"	modedesc = "List MSA index contents"
-modeoption	"list-contents"		L	"List index contents"						mode = "List index contents"							dependon = "msa-index-input"	required
+modeoption	"list-contents"		L	"List index contents"								mode = "List index contents"							dependon = "msa-index-input"	required
+
+defmode		"Query"					modedesc = "Query the index. (Currently only co-ordinate conversion to MSA is supported.)"
+modeoption	"query"				Q	"Query the index"									mode = "Query"											dependon = "msa-index-input"	required
+modeoption	"chr-id"			-	"Chromosome ID"								string	mode = "Query"																			required
+modeoption	"src-seq-id"		-	"Source sequence ID"						string	mode = "Query"																			required

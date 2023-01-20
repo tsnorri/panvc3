@@ -160,6 +160,50 @@ namespace {
 	}
 
 
+	void query_index(char const *path, char const *chr_id, char const *src_seq_id)
+	{
+		panvc3::msa_index msa_index;
+		load_msa_index(path, msa_index);
+
+		panvc3::msa_index::chr_entry_cmp chr_cmp;
+		panvc3::msa_index::sequence_entry_cmp seq_cmp;
+
+		auto const &chr_entries(msa_index.chr_entries);
+		auto const chr_rng(std::equal_range(chr_entries.begin(), chr_entries.end(), chr_id, chr_cmp));
+		if (chr_rng.first == chr_rng.second)
+		{
+			std::cerr << "ERROR: No entry for chromosome '" <<  chr_id << "'.\n";
+			std::exit(EXIT_FAILURE);
+		}
+
+		auto const &chr_entry(*chr_rng.first);
+		auto const &seq_entries(chr_entry.sequence_entries);
+		auto const seq_rng(std::equal_range(seq_entries.begin(), seq_entries.end(), src_seq_id, seq_cmp));
+		if (seq_rng.first == seq_rng.second)
+		{
+			std::cerr << "ERROR: No entry for sequence '" << src_seq_id << "'.\n";
+			std::exit(EXIT_FAILURE);
+		}
+
+		auto const &seq_entry(*seq_rng.first);
+		auto const aln_limit(seq_entry.gap_positions.size());
+		auto const pos_limit(seq_entry.gap_positions_rank0_support(aln_limit));
+
+		while (!std::cin.eof())
+		{
+			std::cout << "Source co-ordinate? ([0, " << pos_limit << ")) " << std::flush;
+			
+			std::size_t pos{};
+			std::cin >> pos;
+
+			if (! (pos < pos_limit))
+				continue;
+
+			std::cout << seq_entry.gap_positions_select0_support(1 + pos) << '\n';
+		}
+	}
+
+
 	template <bool t_should_output_seq>
 	void build_index(
 		std::string const &chr_id,
@@ -422,6 +466,11 @@ namespace {
 		if (args_info.list_contents_given)
 		{
 			list_index_contents(args_info.msa_index_input_arg);
+			std::exit(EXIT_SUCCESS);
+		}
+		else if (args_info.query_given)
+		{
+			query_index(args_info.msa_index_input_arg, args_info.chr_id_arg, args_info.src_seq_id_arg);
 			std::exit(EXIT_SUCCESS);
 		}
 		else if (args_info.build_index_given)
