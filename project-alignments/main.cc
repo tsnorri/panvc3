@@ -13,6 +13,7 @@
 #include <range/v3/algorithm/copy.hpp>
 #include <range/v3/iterator/insert_iterators.hpp>
 #include <range/v3/view/enumerate.hpp>
+#include <range/v3/view/single.hpp>
 #include <range/v3/view/take_exactly.hpp>
 #include <range/v3/view/transform.hpp>
 #include <seqan3/io/sam_file/all.hpp>
@@ -187,7 +188,6 @@ namespace {
 		
 	protected:
 		panvc3::msa_index			m_msa_index;
-		output_reference_ids_type	m_output_reference_ids;	// Has to be before m_aln_output since the latter can have a reference to it.
 		input_type					m_aln_input;
 		output_type					m_aln_output;
 		sequence_vector				m_ref_sequence;
@@ -219,7 +219,6 @@ namespace {
 			t_aln_input					&&aln_input,
 			t_aln_output				&&aln_output,
 			sequence_vector				&&ref_sequence,
-			output_reference_ids_type	&&output_reference_ids,
 			t_ref_id 					&&ref_id,
 			t_msa_ref_id				&&msa_ref_id,
 			t_output_ref_id				&&output_ref_id,
@@ -230,7 +229,6 @@ namespace {
 			bool						should_use_read_base_qualities
 		):
 			m_msa_index(std::move(msa_index)),
-			m_output_reference_ids(std::move(output_reference_ids)),
 			m_aln_input(std::move(aln_input)),
 			m_aln_output(std::move(aln_output)),
 			m_ref_sequence(std::move(ref_sequence)),
@@ -256,6 +254,8 @@ namespace {
 		panvc3::msa_index const &msa_index() const { return m_msa_index; }
 		input_type &alignment_input() { return m_aln_input; }
 		input_type const &alignment_input() const { return m_aln_input; }
+		output_type &alignment_output() { return m_aln_output; }
+		output_type const &alignment_output() const { return m_aln_output; }
 		dispatch_queue_t output_dispatch_queue() { return *m_output_dispatch_queue; }
 		std::string const &reference_id_separator() const { return m_ref_id_separator; }
 		std::string const &output_reference_id() const { return m_output_ref_id; }
@@ -361,6 +361,7 @@ namespace {
 		typedef typename input_type::traits_type				input_traits_type;
 		typedef typename input_traits_type::sequence_alphabet	sequence_alphabet;
 		
+		auto &output_header(m_input_processor->alignment_output().header());
 		auto const &msa_index(m_input_processor->msa_index());
 		auto const &ref_ids(m_input_processor->alignment_input().header().ref_ids()); // ref_ids() not const.
 		auto const &ref_id_separator(m_input_processor->reference_id_separator());
@@ -443,7 +444,7 @@ namespace {
 			{
 				auto it(tags.begin());
 				auto const end(tags.end());
-
+				
 				while (it != end)
 				{
 					// Check if the current tag should be preserved.
@@ -453,7 +454,7 @@ namespace {
 						++it;
 						continue;
 					}
-
+					
 					// Remove and increment the count.
 					auto const it_(it);
 					++it; // Not invalidated when std::map::erase() is called.
@@ -461,10 +462,11 @@ namespace {
 					++m_removed_tag_counts[tag];
 				}
 			}
-
-			// Finally (esp. after setting OA/OC) update the CIGAR and the reference position.
+			
+			// Finally (esp. after setting OA/OC) update the CIGAR, the reference position, and the header pointer.
 			aln_rec.reference_position() = dst_pos;
 			aln_rec.cigar_sequence() = alignment_projector.alignment();
+			aln_rec.header_ptr() = &output_header;
 		}
 		
 		// Continue in the output queue.
@@ -504,12 +506,12 @@ namespace {
 	{
 		std::cout << std::flush;
 		lb::log_time(std::cerr) << "Done." << std::endl;
-
+		
 		// Output the statistics.
 		std::cerr << "Matched reads:     " << m_statistics.matched_reads << '\n';
 		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
-
+		
 		if (m_removed_tag_counts.empty())
 			std::cerr << "No tags removed.\n";
 		else
@@ -522,7 +524,7 @@ namespace {
 				std::cerr << '\t' << buffer.data() << ": " << kv.second << '\n';
 			}
 		}
-
+		
 		std::exit(EXIT_SUCCESS);
 	}
 	
@@ -560,19 +562,55 @@ namespace {
 			ref_ids_type
 		>																output_type;
 		
-		// Set up the reference name.
-		ref_ids_type output_ref_ids(input_ref_ids.size());
-		auto const *output_ref_id(args_info.output_ref_id_arg ?: args_info.reference_id_arg);
-		for (auto &ref_id : output_ref_ids)
-			ref_id = output_ref_id;
+		// Find the reference ID.
+		auto const input_ref_seq_idx{[&args_info, &aln_input_header]() -> std::size_t {
+			auto const &ref_dict(aln_input_header.ref_dict);
+			auto const *ref_id(args_info.reference_msa_id_arg ?: args_info.reference_id_arg);
+			
+			// At least now ref_dict’s equality comparison operator and hasher are not transparent.
+			std::span const key(ref_id, std::strlen(ref_id));
+			auto const it(ref_dict.find(key));
+			
+			if (ref_dict.cend() == it)
+			{
+				std::cerr << "ERROR: Reference with ID ‘" << ref_id << "’ not found in input alignment header.\n";
+				std::exit(EXIT_FAILURE);
+			}
+			
+			auto const retval(it->second);
+			libbio_always_assert_lte(0, retval);
+			return retval;
+		}()};
+		auto const expected_ref_length([&]() -> std::size_t {
+			auto const retval(std::get <0>(aln_input_header.ref_id_info[input_ref_seq_idx]));
+			libbio_always_assert_lte(0, retval);
+			return retval;
+		}());
 		
 		// Open the alignment output file.
-		output_type aln_output(
-			std::cout,
-			output_ref_ids,
-			aln_input_header.ref_id_info | rsv::transform([](auto const &tup){ return std::get <0>(tup); }), // Reference lengths.
-			seqan3::format_bam{}
-		);
+		auto aln_output{[&](){
+			// Make sure that aln_output has some header information.
+			ref_ids_type empty_ref_ids;
+			return output_type(
+				std::cout,
+				std::move(empty_ref_ids),
+				rsv::empty <std::size_t>(), // Reference lengths; the constructor expects a forward range.
+				seqan3::format_bam{}
+			);
+		}()};
+		
+		// Copy the relevant headers to the output.
+		auto const *output_ref_id(args_info.output_ref_id_arg ?: args_info.reference_id_arg);
+		{
+			auto &aln_output_header(aln_output.header());
+			aln_output_header.comments = aln_input_header.comments;
+			aln_output_header.read_groups = aln_input_header.read_groups;
+			aln_output_header.ref_id_info = aln_input_header.ref_id_info;
+			aln_output_header.ref_dict = aln_input_header.ref_dict;
+			
+			aln_output_header.ref_ids() = aln_input_header.ref_ids(); // Copy.
+			aln_output_header.ref_ids()[input_ref_seq_idx] = output_ref_id;
+		}
 		
 		// Load the MSA index.
 		panvc3::msa_index msa_index;
@@ -589,13 +627,18 @@ namespace {
 		std::vector <char> ref_sequence;
 		lb::read_single_fasta_sequence(args_info.reference_arg, ref_sequence, args_info.reference_id_arg);
 		
+		if (expected_ref_length != ref_sequence.size())
+		{
+			std::cerr << "ERROR: Reference sequence length does not match that in the input alignment header (" << ref_sequence.size() << " vs. " << expected_ref_length << ").\n";
+			std::exit(EXIT_FAILURE);
+		}
+		
 		// Process the input.
 		static input_processor <input_type, output_type> processor(
 			std::move(msa_index),
 			std::move(aln_input),
 			std::move(aln_output),
 			std::move(ref_sequence),
-			std::move(output_ref_ids),
 			args_info.reference_id_arg,
 			args_info.reference_msa_id_arg ?: args_info.reference_id_arg,
 			output_ref_id,
