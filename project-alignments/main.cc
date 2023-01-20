@@ -197,7 +197,7 @@ namespace {
 		tag_count_map				m_removed_tag_counts;
 		std::string					m_ref_id;
 		std::string					m_msa_ref_id;
-		std::string					m_output_seq_id;
+		std::string					m_output_ref_id;
 		std::string					m_ref_id_separator;
 		std::int32_t				m_gap_opening_cost{};
 		std::int32_t				m_gap_extension_cost{};
@@ -208,7 +208,7 @@ namespace {
 		template <
 			typename t_ref_id,
 			typename t_msa_ref_id,
-			typename t_output_seq_id,
+			typename t_output_ref_id,
 			typename t_ref_id_separator
 		>
 		input_processor(
@@ -219,7 +219,7 @@ namespace {
 			output_reference_ids_type	&&output_reference_ids,
 			t_ref_id 					&&ref_id,
 			t_msa_ref_id				&&msa_ref_id,
-			t_output_seq_id				&&output_seq_id,
+			t_output_ref_id				&&output_ref_id,
 			t_ref_id_separator			&&ref_id_separator,
 			std::int32_t				gap_opening_cost,
 			std::int32_t				gap_extension_cost,
@@ -234,7 +234,7 @@ namespace {
 			m_output_dispatch_queue(dispatch_queue_create("fi.iki.tsnorri.panvc3.project-alignments.output-queue", DISPATCH_QUEUE_SERIAL)),
 			m_ref_id(std::forward <t_ref_id>(ref_id)),
 			m_msa_ref_id(std::forward <t_msa_ref_id>(msa_ref_id)),
-			m_output_seq_id(std::forward <t_output_seq_id>(output_seq_id)),
+			m_output_ref_id(std::forward <t_output_ref_id>(output_ref_id)),
 			m_ref_id_separator(std::forward <t_ref_id_separator>(ref_id_separator)),
 			m_gap_opening_cost(gap_opening_cost),
 			m_gap_extension_cost(gap_extension_cost),
@@ -255,7 +255,7 @@ namespace {
 		input_type const &alignment_input() const { return m_aln_input; }
 		dispatch_queue_t output_dispatch_queue() { return *m_output_dispatch_queue; }
 		std::string const &reference_id_separator() const { return m_ref_id_separator; }
-		std::string const &output_sequence_id() const { return m_output_seq_id; }
+		std::string const &output_reference_id() const { return m_output_ref_id; }
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
 		sequence_vector const &reference_sequence() const { return m_ref_sequence; }
@@ -396,7 +396,7 @@ namespace {
 				
 				auto const &chr_entry(find_chr_entry(msa_index.chr_entries, chr_id));
 				src_seq_entry_it = find_sequence_entry_(chr_entry.sequence_entries, src_seq_id);
-				dst_seq_entry_it = find_sequence_entry_(chr_entry.sequence_entries, m_input_processor->output_sequence_id());
+				dst_seq_entry_it = find_sequence_entry_(chr_entry.sequence_entries, m_input_processor->output_reference_id());
 			}
 			
 			auto const &src_seq_entry(*src_seq_entry_it);
@@ -555,9 +555,9 @@ namespace {
 		
 		// Set up the reference name.
 		ref_ids_type output_ref_ids(input_ref_ids.size());
-		auto const *output_seq_id(args_info.output_seq_id_arg ?: args_info.reference_id_arg);
+		auto const *output_ref_id(args_info.output_ref_id_arg ?: args_info.reference_id_arg);
 		for (auto &ref_id : output_ref_ids)
-			ref_id = output_seq_id;
+			ref_id = output_ref_id;
 		
 		// Open the alignment output file.
 		output_type aln_output(
@@ -591,7 +591,7 @@ namespace {
 			std::move(output_ref_ids),
 			args_info.reference_id_arg,
 			args_info.reference_msa_id_arg ?: args_info.reference_id_arg,
-			output_seq_id,
+			output_ref_id,
 			args_info.ref_id_separator_arg,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
