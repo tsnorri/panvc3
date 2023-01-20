@@ -599,6 +599,7 @@ namespace {
 			args_info.use_read_base_qualities_flag
 		);
 		
+		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		processor.process_input();
 	}
 	
