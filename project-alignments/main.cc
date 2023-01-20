@@ -68,11 +68,14 @@ namespace {
 
 	// I don't think SeqAn 3 has this utility function.
 	// Compare to operator""_tag() in <seqan3/io/sam_file/sam_tag_dictionary.hpp>.
-	constexpr seqan3::small_string <2> to_tag(std::uint16_t const val)
+	template <std::size_t t_size>
+	constexpr void to_tag(std::uint16_t const val, std::array <char, t_size> &buffer)
+	requires (2 <= t_size)
 	{
 		char const char0(val / 256); // Narrowed automatically when () (not {}) are used.
 		char const char1(val % 256);
-		return {{char0, char1}};
+		std::get <0>(buffer) = char0;
+		std::get <1>(buffer) = char1;
 	}
 	
 	
@@ -512,8 +515,12 @@ namespace {
 		else
 		{
 			std::cerr << "Removed tags:\n";
+			std::array <char, 3> buffer{'\0', '\0', '\0'};
 			for (auto const &kv : m_removed_tag_counts)
-				std::cerr << '\n' << to_tag(kv.first) << ": " << kv.second << '\n';
+			{
+				to_tag(kv.first, buffer);
+				std::cerr << '\t' << buffer.data() << ": " << kv.second << '\n';
+			}
 		}
 
 		std::exit(EXIT_SUCCESS);
