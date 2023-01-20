@@ -636,6 +636,14 @@ int main(int argc, char **argv)
 		std::exit(EXIT_FAILURE);
 	
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
+
+	if (args_info.print_invocation_given)
+	{
+		std::cerr << "Invocation:";
+		for (int i(0); i < argc; ++i)
+			std::cerr << ' ' << argv[i];
+		std::cerr << '\n';
+	}
 	
 	process(args_info);
 	dispatch_main();
