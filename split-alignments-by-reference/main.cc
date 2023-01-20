@@ -205,7 +205,12 @@ namespace {
 			for (auto &ref_id : output_ref_ids)
 			{
 				auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
-				assert(it != reference_names.end()); // if consteval used by libbio/assert.hh but not available on some compilers.
+				if (reference_names.end() == it)
+				{
+					std::cerr << "ERROR: No entry for reference ID '" << ref_id << "'.\n";
+					std::exit(EXIT_FAILURE);
+				}
+
 				ref_id = it->new_reference_name;
 			}
 
