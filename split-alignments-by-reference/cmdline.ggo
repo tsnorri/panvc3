@@ -19,3 +19,4 @@ modeoption		"basename"					b	"Output file base name"								mode = "Split alignm
 
 defmode			"Read reference names"			modedesc = "Output the reference names in the given alignment file"
 modeoption		"read-reference-names"		R	"Only output the reference names"				    mode = "Read reference names"									required
+modeoption		"only-used"					-	"Check the alignments for each ref. name (slow)"	mode = "Read reference names"

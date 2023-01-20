@@ -347,25 +347,35 @@ namespace {
 	}
 
 
-	void read_reference_names(char const *aln_path)
+	void read_reference_names(char const *aln_path, bool const should_check_alignments)
 	{
 		fs::path const alignments_path(aln_path);
 		seqan3::fields <seqan3::field::ref_id> fields{};
 		seqan3::sam_file_input aln_input(alignments_path, fields);
 
-		std::set <std::string> refs;
 		auto const &ref_ids(aln_input.header().ref_ids());
-		for (auto const &aln_rec : aln_input)
-		{
-			auto const &ref_id_(aln_rec.reference_id());
-			if (!ref_id_.has_value())
-				continue;
-			auto const &ref_id(ref_ids[*ref_id_]);
-			refs.emplace(ref_id);
-		}
 
-		for (auto const &rr : refs)
-			std::cout << rr << '\n';
+		if (should_check_alignments)
+		{
+			// Check if any of the alignments actually refer to the reference name.
+			std::set <std::string> refs;
+			for (auto const &aln_rec : aln_input)
+			{
+				auto const &ref_id_(aln_rec.reference_id());
+				if (!ref_id_.has_value())
+					continue;
+				auto const &ref_id(ref_ids[*ref_id_]);
+				refs.emplace(ref_id);
+			}
+
+			for (auto const &rr : refs)
+				std::cout << rr << '\n';
+		}
+		else
+		{
+			for (auto const &rn : ref_ids)
+				std::cout << rn << '\n';
+		}
 	}
 }
 
@@ -379,7 +389,7 @@ int main(int argc, char **argv)
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 
 	if (args_info.read_reference_names_given)
-		read_reference_names(args_info.alignments_arg);
+		read_reference_names(args_info.alignments_arg, args_info.only_used_given);
 	else
 	{
 		process(
