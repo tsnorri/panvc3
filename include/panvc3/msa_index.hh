@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -71,6 +71,7 @@ namespace panvc3 {
 		{
 			template <typename t_string> inline bool operator()(sequence_entry const &lhs, t_string const &rhs) const;
 			template <typename t_string> inline bool operator()(t_string const &lhs, sequence_entry const &rhs) const;
+			inline bool operator()(sequence_entry const &lhs, sequence_entry const &rhs) const;
 		};
 		
 		typedef std::vector <sequence_entry>	sequence_entry_vector;
@@ -95,6 +96,7 @@ namespace panvc3 {
 		{
 			template <typename t_string> inline bool operator()(chr_entry const &lhs, t_string const &rhs) const;
 			template <typename t_string> inline bool operator()(t_string const &lhs, chr_entry const &rhs) const;
+			inline bool operator()(chr_entry const &lhs, chr_entry const &rhs) const;
 		};
 		
 		typedef std::vector <chr_entry>			chr_entry_vector;
@@ -120,6 +122,11 @@ namespace panvc3 {
 		libbio::compare_strings_transparent cmp;
 		return cmp(lhs, rhs.seq_id);
 	}
+
+	bool msa_index::sequence_entry_cmp::operator()(sequence_entry const &lhs, sequence_entry const &rhs) const
+	{
+		return lhs.seq_id < rhs.seq_id;
+	}
 	
 	
 	template <typename t_string>
@@ -134,6 +141,11 @@ namespace panvc3 {
 	{
 		libbio::compare_strings_transparent cmp;
 		return cmp(lhs, rhs.chr_id);
+	}
+
+	bool msa_index::chr_entry_cmp::operator()(chr_entry const &lhs, chr_entry const &rhs) const
+	{
+		return lhs.chr_id < rhs.chr_id;
 	}
 	
 	
