@@ -6,6 +6,7 @@
 #include <iostream>
 #include <libbio/dispatch/dispatch_caller.hh>
 #include <libbio/fasta_reader.hh>
+#include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/spsc_queue.hh>
@@ -21,6 +22,7 @@
 
 namespace fs	= std::filesystem;
 namespace lb	= libbio;
+namespace ios	= boost::iostreams;
 namespace rsv	= ranges::views;
 
 
@@ -191,6 +193,7 @@ namespace {
 		panvc3::msa_index			m_msa_index;
 		input_type					m_aln_input;
 		output_type					m_aln_output;
+		lb::file_handle				m_realn_range_handle; // Needs to be before m_realn_range_output due to deallocation order.
 		lb::file_ostream			m_realn_range_output;
 		sequence_vector				m_ref_sequence;
 		
@@ -222,7 +225,7 @@ namespace {
 			t_aln_input					&&aln_input,
 			t_aln_output				&&aln_output,
 			sequence_vector				&&ref_sequence,
-			lb::file_ostream			&&realn_range_output,
+			lb::file_handle				&&realn_range_handle,
 			t_ref_id 					&&ref_id,
 			t_msa_ref_id				&&msa_ref_id,
 			t_output_ref_id				&&output_ref_id,
@@ -235,6 +238,8 @@ namespace {
 			m_msa_index(std::move(msa_index)),
 			m_aln_input(std::move(aln_input)),
 			m_aln_output(std::move(aln_output)),
+			m_realn_range_handle(std::move(realn_range_handle)),
+			m_realn_range_output(m_realn_range_handle.get(), ios::never_close_handle),
 			m_ref_sequence(std::move(ref_sequence)),
 			m_output_dispatch_queue(dispatch_queue_create("fi.iki.tsnorri.panvc3.project-alignments.output-queue", DISPATCH_QUEUE_SERIAL)),
 			m_ref_id(std::forward <t_ref_id>(ref_id)),
@@ -248,9 +253,6 @@ namespace {
 		{
 			for (auto &task : m_task_queue.values())
 				task.m_input_processor = this;
-			
-			using std::swap;
-			swap(m_realn_range_output, realn_range_output);
 		}
 		
 		void process_input();
@@ -637,9 +639,9 @@ namespace {
 		}
 		
 		// Open the realigned range output file if needed.
-		lb::file_ostream realigned_range_ostream;
+		lb::file_handle realigned_range_handle;
 		if (args_info.output_realigned_ranges_arg)
-			lb::open_file_for_writing(args_info.output_realigned_ranges_arg, lb::writing_open_mode::CREATE);
+			realigned_range_handle = lb::file_handle(lb::open_file_for_writing(args_info.output_realigned_ranges_arg, lb::writing_open_mode::CREATE));
 		
 		// Load the MSA index.
 		panvc3::msa_index msa_index;
@@ -668,7 +670,7 @@ namespace {
 			std::move(aln_input),
 			std::move(aln_output),
 			std::move(ref_sequence),
-			std::move(realigned_range_ostream),
+			std::move(realigned_range_handle),
 			args_info.reference_id_arg,
 			args_info.reference_msa_id_arg ?: args_info.reference_id_arg,
 			output_ref_id,
