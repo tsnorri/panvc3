@@ -16,6 +16,15 @@ namespace rsv	= ranges::views;
 
 namespace panvc3 {
 	
+	void alignment_projector::reset()
+	{
+		// indel_run_checker::reset() called in project_alignment().
+		m_cigar_realigned.clear();
+		m_rewrite_buffer.clear();
+		m_realign_buffer.clear();
+	}
+	
+	
 	std::size_t alignment_projector::project_alignment(
 		std::size_t const src_pos,
 		msa_index::sequence_entry const &src_seq_entry,
@@ -103,7 +112,7 @@ namespace panvc3 {
 					})
 				);
 			
-				panvc3::align_global <true, sequence_alphabet, quality_alphabet>(
+				align_global <true, sequence_alphabet, quality_alphabet>(
 					ref_part,
 					query_part,
 					gap_opening_cost,

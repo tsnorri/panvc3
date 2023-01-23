@@ -25,11 +25,13 @@ namespace panvc3 {
 		
 	protected:
 		indel_run_checker		m_indel_run_checker;
-		panvc3::cigar_vector	m_cigar_realigned;
+		cigar_vector			m_cigar_realigned;
 		cigar_buffer			m_rewrite_buffer;
 		cigar_buffer			m_realign_buffer;
 	
 	public:
+		void reset();
+		
 		std::size_t project_alignment(
 			std::size_t const src_pos,
 			msa_index::sequence_entry const &src_seq_entry,
@@ -42,7 +44,7 @@ namespace panvc3 {
 			std::int32_t const gap_extension_cost
 		);
 		
-		panvc3::cigar_vector const &alignment() const { return m_cigar_realigned; }
+		cigar_vector const &alignment() const { return m_cigar_realigned; }
 	};
 }
 
