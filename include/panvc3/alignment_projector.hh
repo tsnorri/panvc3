@@ -20,14 +20,23 @@ namespace panvc3 {
 	class alignment_projector
 	{
 	public:
-		typedef seqan3::dna5	sequence_alphabet;
-		typedef seqan3::phred42	quality_alphabet;
+		typedef seqan3::dna5		sequence_alphabet;
+		typedef seqan3::phred42		quality_alphabet;
+		
+		struct range
+		{
+			std::size_t location{};
+			std::size_t length{};
+		};
+		
+		typedef std::vector <range>	range_vector;
 		
 	protected:
-		indel_run_checker		m_indel_run_checker;
-		cigar_vector			m_cigar_realigned;
-		cigar_buffer			m_rewrite_buffer;
-		cigar_buffer			m_realign_buffer;
+		indel_run_checker			m_indel_run_checker;
+		cigar_vector				m_cigar_realigned;
+		cigar_buffer				m_rewrite_buffer;
+		cigar_buffer				m_realign_buffer;
+		range_vector				m_realigned_ranges; // In reference co-ordinates.
 	
 	public:
 		void reset();
@@ -45,6 +54,7 @@ namespace panvc3 {
 		);
 		
 		cigar_vector const &alignment() const { return m_cigar_realigned; }
+		range_vector const &realigned_ranges() const { return m_realigned_ranges; }
 	};
 }
 
