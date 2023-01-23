@@ -147,13 +147,35 @@ namespace {
 		typedef typename t_input_processor::input_record_type	record_type;
 		typedef std::array <record_type, CHUNK_SIZE>			record_array;
 		typedef typename t_input_processor::tag_count_map		tag_count_map;
+
+		struct realigned_range
+		{
+			std::string							qname{};
+			panvc3::alignment_projector::range	range{};
+
+			realigned_range(panvc3::alignment_projector::range const &range_):
+				range(range_)
+			{
+			}
+
+			realigned_range(std::string const &qname_, panvc3::alignment_projector::range const &range_):
+				qname(qname_),
+				range(range_)
+			{
+			}
+		};
+
+		typedef std::vector <realigned_range>	realigned_range_vector;
 		
 	protected:
 		t_input_processor			*m_input_processor{};
 		record_array				m_records;
 		panvc3::alignment_projector	m_alignment_projector;
 		tag_count_map				m_removed_tag_counts;
+		realigned_range_vector		m_realigned_ranges;
 		std::size_t					m_valid_records{};
+		std::size_t					m_task_id{};
+		bool						m_should_store_realigned_range_qnames{};
 		
 	public:
 		bool is_full() const { return CHUNK_SIZE == m_valid_records; }
@@ -164,7 +186,7 @@ namespace {
 		
 		void process();
 		void output();
-		void reset() { m_valid_records = 0; m_alignment_projector.reset(); m_removed_tag_counts.clear(); }
+		void reset() { m_valid_records = 0; m_removed_tag_counts.clear(); m_realigned_ranges.clear(); }
 	};
 	
 	
@@ -212,6 +234,7 @@ namespace {
 		std::int32_t				m_gap_extension_cost{};
 		bool						m_should_consider_primary_alignments_only{};
 		bool						m_should_use_read_base_qualities{};
+		bool						m_should_output_debugging_information{};
 		
 	public:
 		template <
@@ -233,7 +256,8 @@ namespace {
 			std::int32_t				gap_opening_cost,
 			std::int32_t				gap_extension_cost,
 			bool						should_consider_primary_alignments_only,
-			bool						should_use_read_base_qualities
+			bool						should_use_read_base_qualities,
+			bool						should_output_debugging_information
 		):
 			m_msa_index(std::move(msa_index)),
 			m_aln_input(std::move(aln_input)),
@@ -249,10 +273,14 @@ namespace {
 			m_gap_opening_cost(gap_opening_cost),
 			m_gap_extension_cost(gap_extension_cost),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
-			m_should_use_read_base_qualities(should_use_read_base_qualities)
+			m_should_use_read_base_qualities(should_use_read_base_qualities),
+			m_should_output_debugging_information(should_output_debugging_information)
 		{
 			for (auto &task : m_task_queue.values())
+			{
 				task.m_input_processor = this;
+				task.m_should_store_realigned_range_qnames = m_should_output_debugging_information;
+			}
 		}
 		
 		void process_input();
@@ -279,7 +307,12 @@ namespace {
 	void input_processor <t_aln_input, t_aln_output>::process_input()
 	{
 		if (m_realn_range_output)
-			m_realn_range_output << "Location\tLength\n";
+		{
+			if (m_should_output_debugging_information)
+				m_realn_range_output << "Location\tLength\tTask\tQNAME\n";
+			else
+				m_realn_range_output << "Location\tLength\n";
+		}
 		
 		static_assert(0 < QUEUE_SIZE);
 		
@@ -287,11 +320,12 @@ namespace {
 		auto parallel_dispatch_queue(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
 		
 		auto task_idx(m_task_queue.pop_index()); // Reserve one task.
+		std::size_t task_id{};
 		for (auto &&[rec_idx, aln_rec] : rsv::enumerate(m_aln_input))
 		{
 			if (0 == (1 + rec_idx) % 10'000'000)
 				lb::log_time(std::cerr) << "Processed " << (1 + rec_idx) << " alignments…\n";
-			
+
 			auto const flags(aln_rec.flag());
 			if (lb::to_underlying(flags & (
 				seqan3::sam_flag::unmapped					|
@@ -337,7 +371,9 @@ namespace {
 			if (m_task_queue[task_idx].is_full())
 			{
 				// Process the current task.
+				++task_id;
 				auto &current_task(m_task_queue[task_idx]);
+				current_task.m_task_id = task_id;
 				lb::dispatch(current_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
 				
 				// Get an empty task.
@@ -357,7 +393,11 @@ namespace {
 		{
 			auto &last_task(m_task_queue[task_idx]);
 			if (!last_task.empty())
+			{
+				++task_id;
+				last_task.m_task_id = task_id;
 				lb::dispatch(last_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
+			}
 		}
 		
 		// When all the work in the group has been completed,
@@ -422,6 +462,7 @@ namespace {
 			auto const &query_seq(aln_rec.sequence());
 			auto const &cigar_seq(aln_rec.cigar_sequence());
 			
+			m_alignment_projector.reset();
 			auto const dst_pos(m_alignment_projector.project_alignment(
 				src_pos,
 				src_seq_entry,
@@ -433,6 +474,27 @@ namespace {
 				gap_opening_cost,
 				gap_extension_cost
 			));
+
+			// Copy the realigned ranges.
+			{
+				auto const &realn_ranges(m_alignment_projector.realigned_ranges());
+				auto const range_count(realn_ranges.size());
+				if (range_count)
+				{
+					m_realigned_ranges.reserve(m_realigned_ranges.size() + range_count);
+
+					if (m_should_store_realigned_range_qnames)
+					{
+						for (auto const &range : realn_ranges)
+							m_realigned_ranges.emplace_back(aln_rec.id(), range);
+					}
+					else
+					{
+						for (auto const &range : realn_ranges)
+							m_realigned_ranges.emplace_back(range);
+					}
+				}
+			}
 
 			// Update the tags.
 			// SeqAn 3 does not yet have a type definition for the OA tag which replaces OC,
@@ -508,12 +570,20 @@ namespace {
 			m_removed_tag_counts[kv.first] += kv.second;
 		
 		// Handle the realigned ranges.
-		auto const &task_realigned_ranges(task.m_alignment_projector.realigned_ranges());
+		auto const &task_realigned_ranges(task.m_realigned_ranges);
 		m_realigned_ranges += task_realigned_ranges.size();
 		if (m_realn_range_output)
 		{
-			for (auto const &range : task_realigned_ranges)
-				m_realn_range_output << range.location << '\t' << range.length << '\n';
+			if (m_should_output_debugging_information)
+			{
+				for (auto const &rr : task_realigned_ranges)
+					m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\t' << task.m_task_id << '\t' << rr.qname << '\n';
+			}
+			else
+			{
+				for (auto const &rr : task_realigned_ranges)
+					m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\n';
+			}
 		}
 		
 		// Clean up.
@@ -678,7 +748,8 @@ namespace {
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
 			args_info.primary_only_flag,
-			args_info.use_read_base_qualities_flag
+			args_info.use_read_base_qualities_flag,
+			args_info.debugging_output_flag
 		);
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";

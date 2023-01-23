@@ -19,3 +19,4 @@ option		"gap-extension-cost"		e	"Gap extension cost when re-aligning runs of ins
 option		"primary-only"				p	"Consider primary alignments only"											flag	off
 option		"use-read-base-qualities"	q	"Take base qualities into account when realigning"							flag	off
 option		"print-invocation"			-	"Output the invocation"														flag	off									hidden
+option		"debugging-output"			-	"Include debugging information in the output"								flag	off									hidden
