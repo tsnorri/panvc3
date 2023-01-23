@@ -12,6 +12,7 @@ option		"reference"					r	"Reference sequence FASTA path"												string	type
 option		"reference-id"				i	"Reference sequence ID"														string							required
 option		"reference-msa-id"			d	"Reference sequence ID in MSA index (same as reference ID by default)"		string							optional
 option		"output-ref-id"				o	"Output reference sequence ID (same as reference sequence ID by default)"	string							optional
+option		"output-realigned-ranges"	l	"Output realigned ranges as TSV to the given path"							string	typestr = "filename"	optional
 option		"ref-id-separator"			s	"Reference ID separator in input"											string	default = "_"			optional
 option		"gap-opening-cost"			g	"Gap opening cost when re-aligning runs of insertions and deletions"		int		default = "0"			optional
 option		"gap-extension-cost"		e	"Gap extension cost when re-aligning runs of insertions and deletions"		int		default = "-1"			optional

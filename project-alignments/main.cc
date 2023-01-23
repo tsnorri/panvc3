@@ -191,6 +191,7 @@ namespace {
 		panvc3::msa_index			m_msa_index;
 		input_type					m_aln_input;
 		output_type					m_aln_output;
+		lb::file_ostream			m_realn_range_output;
 		sequence_vector				m_ref_sequence;
 		
 		dispatch_queue_ptr			m_output_dispatch_queue;
@@ -203,6 +204,7 @@ namespace {
 		std::string					m_msa_ref_id;
 		std::string					m_output_ref_id;
 		std::string					m_ref_id_separator;
+		std::size_t					m_realigned_ranges{};
 		std::int32_t				m_gap_opening_cost{};
 		std::int32_t				m_gap_extension_cost{};
 		bool						m_should_consider_primary_alignments_only{};
@@ -220,6 +222,7 @@ namespace {
 			t_aln_input					&&aln_input,
 			t_aln_output				&&aln_output,
 			sequence_vector				&&ref_sequence,
+			lb::file_ostream			&&realn_range_output,
 			t_ref_id 					&&ref_id,
 			t_msa_ref_id				&&msa_ref_id,
 			t_output_ref_id				&&output_ref_id,
@@ -245,6 +248,9 @@ namespace {
 		{
 			for (auto &task : m_task_queue.values())
 				task.m_input_processor = this;
+			
+			using std::swap;
+			swap(m_realn_range_output, realn_range_output);
 		}
 		
 		void process_input();
@@ -270,6 +276,9 @@ namespace {
 	template <typename t_aln_input, typename t_aln_output>
 	void input_processor <t_aln_input, t_aln_output>::process_input()
 	{
+		if (m_realn_range_output)
+			m_realn_range_output << "Location\tLength\n";
+		
 		static_assert(0 < QUEUE_SIZE);
 		
 		lb::dispatch_ptr <dispatch_group_t> dispatch_group(dispatch_group_create());
@@ -489,11 +498,21 @@ namespace {
 		// Not thread-safe; needs to be executed in a serial queue.
 		for (auto &aln_rec : task.alignment_records())
 			m_aln_output.push_back(aln_rec); // Needs non-const aln_rec. (Not sure why.)
-
+		
+		// Update the removed tag counts.
 		// Could be done in O(m + n) time with a specialised merge instead of O(m log n) that we currently have.
 		// (I don't think this is significant in any way.)
 		for (auto const &kv : task.m_removed_tag_counts)
 			m_removed_tag_counts[kv.first] += kv.second;
+		
+		// Handle the realigned ranges.
+		auto const &task_realigned_ranges(task.m_alignment_projector.realigned_ranges());
+		m_realigned_ranges += task_realigned_ranges.size();
+		if (m_realn_range_output)
+		{
+			for (auto const &range : task_realigned_ranges)
+				m_realn_range_output << range.location << '\t' << range.length << '\n';
+		}
 		
 		// Clean up.
 		task.reset();
@@ -505,12 +524,17 @@ namespace {
 	void input_processor <t_aln_input, t_aln_output>::finish()
 	{
 		std::cout << std::flush;
+		
+		if (m_realn_range_output)
+			m_realn_range_output << std::flush;
+		
 		lb::log_time(std::cerr) << "Done." << std::endl;
 		
 		// Output the statistics.
 		std::cerr << "Matched reads:     " << m_statistics.matched_reads << '\n';
 		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
+		std::cerr << "Re-aligned ranges: " << m_realigned_ranges << '\n';
 		
 		if (m_removed_tag_counts.empty())
 			std::cerr << "No tags removed.\n";
@@ -612,6 +636,11 @@ namespace {
 			aln_output_header.ref_ids()[input_ref_seq_idx] = output_ref_id;
 		}
 		
+		// Open the realigned range output file if needed.
+		lb::file_ostream realigned_range_ostream;
+		if (args_info.output_realigned_ranges_arg)
+			lb::open_file_for_writing(args_info.output_realigned_ranges_arg, lb::writing_open_mode::CREATE);
+		
 		// Load the MSA index.
 		panvc3::msa_index msa_index;
 		lb::log_time(std::cerr) << "Loading the MSA index…\n";
@@ -639,6 +668,7 @@ namespace {
 			std::move(aln_input),
 			std::move(aln_output),
 			std::move(ref_sequence),
+			std::move(realigned_range_ostream),
 			args_info.reference_id_arg,
 			args_info.reference_msa_id_arg ?: args_info.reference_id_arg,
 			output_ref_id,
