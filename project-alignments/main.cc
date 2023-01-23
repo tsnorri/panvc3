@@ -147,10 +147,11 @@ namespace {
 		typedef typename t_input_processor::tag_count_map		tag_count_map;
 		
 	protected:
-		t_input_processor	*m_input_processor{};
-		record_array		m_records;
-		tag_count_map		m_removed_tag_counts;
-		std::size_t			m_valid_records{};
+		t_input_processor			*m_input_processor{};
+		record_array				m_records;
+		panvc3::alignment_projector	m_alignment_projector;
+		tag_count_map				m_removed_tag_counts;
+		std::size_t					m_valid_records{};
 		
 	public:
 		bool is_full() const { return CHUNK_SIZE == m_valid_records; }
@@ -161,7 +162,7 @@ namespace {
 		
 		void process();
 		void output();
-		void reset() { m_valid_records = 0; m_removed_tag_counts.clear(); }
+		void reset() { m_valid_records = 0; m_alignment_projector.reset(); m_removed_tag_counts.clear(); }
 	};
 	
 	
@@ -369,7 +370,6 @@ namespace {
 		auto const gap_opening_cost(m_input_processor->gap_opening_cost());
 		auto const gap_extension_cost(m_input_processor->gap_extension_cost());
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
-		panvc3::alignment_projector alignment_projector;
 
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
@@ -411,7 +411,7 @@ namespace {
 			auto const &query_seq(aln_rec.sequence());
 			auto const &cigar_seq(aln_rec.cigar_sequence());
 			
-			auto const dst_pos(alignment_projector.project_alignment(
+			auto const dst_pos(m_alignment_projector.project_alignment(
 				src_pos,
 				src_seq_entry,
 				dst_seq_entry,
@@ -465,7 +465,7 @@ namespace {
 			
 			// Finally (esp. after setting OA/OC) update the CIGAR, the reference position, and the header pointer.
 			aln_rec.reference_position() = dst_pos;
-			aln_rec.cigar_sequence() = alignment_projector.alignment();
+			aln_rec.cigar_sequence() = m_alignment_projector.alignment();
 			aln_rec.header_ptr() = &output_header;
 		}
 		
