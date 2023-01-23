@@ -34,7 +34,7 @@ DIST_TAR_GZ = panvc3-$(VERSION)-$(OS_NAME)$(DIST_NAME_SUFFIX).tar.gz
 CATCH2_HEADERS	= $(shell find lib/libbio/lib/Catch2/include)
 
 
-.PHONY: all clean-all clean clean-dependencies dependencies
+.PHONY: all clean-all clean clean-dependencies dependencies libbio-tests
 
 all: $(BUILD_PRODUCTS)
 
@@ -65,6 +65,8 @@ dist: $(DIST_TAR_GZ)
 
 tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
 	$(MAKE) -C tests
+
+libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm
 
 alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C alignment-statistics
@@ -103,6 +105,10 @@ $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 lib/libbio/build-%/libbio.a:
 	$(MKDIR) -p lib/libbio/build-$*
 	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../src/Makefile
+
+lib/libbio/build-tests-%/tests: lib/libbio/build-%/libbio.a
+	$(MKDIR) -p lib/libbio/build-tests-$*
+	VPATH=../tests LIBBIO_PATH=../build-$*/libbio.a $(MAKE) -C lib/libbio/build-tests-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../tests/Makefile
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
