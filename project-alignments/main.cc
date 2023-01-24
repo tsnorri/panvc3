@@ -4,6 +4,7 @@
  */
 
 #include <iostream>
+#include <libbio/algorithm/sorted_set_union.hh>
 #include <libbio/dispatch/dispatch_caller.hh>
 #include <libbio/fasta_reader.hh>
 #include <libbio/file_handle.hh>
@@ -138,6 +139,29 @@ namespace {
 	};
 	
 	
+	struct realigned_range
+	{
+		std::string							qname{};
+		panvc3::alignment_projector::range	range{};
+
+		realigned_range(panvc3::alignment_projector::range const &range_):
+			range(range_)
+		{
+		}
+
+		realigned_range(std::string const &qname_, panvc3::alignment_projector::range const &range_):
+			qname(qname_),
+			range(range_)
+		{
+		}
+		
+		bool operator<(realigned_range const &other) const { return range.to_tuple() < other.range.to_tuple(); }
+		bool operator==(realigned_range const &other) const { return range.to_tuple() == other.range.to_tuple(); }
+	};
+
+	typedef std::vector <realigned_range>	realigned_range_vector;
+	
+	
 	template <typename t_input_processor>
 	class project_task
 	{
@@ -147,25 +171,6 @@ namespace {
 		typedef typename t_input_processor::input_record_type	record_type;
 		typedef std::array <record_type, CHUNK_SIZE>			record_array;
 		typedef typename t_input_processor::tag_count_map		tag_count_map;
-
-		struct realigned_range
-		{
-			std::string							qname{};
-			panvc3::alignment_projector::range	range{};
-
-			realigned_range(panvc3::alignment_projector::range const &range_):
-				range(range_)
-			{
-			}
-
-			realigned_range(std::string const &qname_, panvc3::alignment_projector::range const &range_):
-				qname(qname_),
-				range(range_)
-			{
-			}
-		};
-
-		typedef std::vector <realigned_range>	realigned_range_vector;
 		
 	protected:
 		t_input_processor			*m_input_processor{};
@@ -225,15 +230,17 @@ namespace {
 		
 		alignment_statistics		m_statistics;
 		tag_count_map				m_removed_tag_counts;
+		realigned_range_vector		m_realigned_ranges;
+		realigned_range_vector		m_realigned_range_buffer;
 		std::string					m_ref_id;
 		std::string					m_msa_ref_id;
 		std::string					m_output_ref_id;
 		std::string					m_ref_id_separator;
-		std::size_t					m_realigned_ranges{};
 		std::int32_t				m_gap_opening_cost{};
 		std::int32_t				m_gap_extension_cost{};
 		bool						m_should_consider_primary_alignments_only{};
 		bool						m_should_use_read_base_qualities{};
+		bool						m_should_keep_duplicate_realigned_ranges{};
 		bool						m_should_output_debugging_information{};
 		
 	public:
@@ -257,6 +264,7 @@ namespace {
 			std::int32_t				gap_extension_cost,
 			bool						should_consider_primary_alignments_only,
 			bool						should_use_read_base_qualities,
+			bool						should_keep_duplicate_realigned_ranges,
 			bool						should_output_debugging_information
 		):
 			m_msa_index(std::move(msa_index)),
@@ -274,6 +282,7 @@ namespace {
 			m_gap_extension_cost(gap_extension_cost),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_should_use_read_base_qualities(should_use_read_base_qualities),
+			m_should_keep_duplicate_realigned_ranges(should_keep_duplicate_realigned_ranges),
 			m_should_output_debugging_information(should_output_debugging_information)
 		{
 			for (auto &task : m_task_queue.values())
@@ -285,6 +294,7 @@ namespace {
 		
 		void process_input();
 		void output_records(project_task_type &task);
+		void output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id = 0);
 		void finish();
 		
 		panvc3::msa_index &msa_index() { return m_msa_index; }
@@ -300,6 +310,7 @@ namespace {
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
 		sequence_vector const &reference_sequence() const { return m_ref_sequence; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
+		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
 	};
 	
 	
@@ -309,9 +320,16 @@ namespace {
 		if (m_realn_range_output)
 		{
 			if (m_should_output_debugging_information)
-				m_realn_range_output << "Location\tLength\tTask\tQNAME\n";
+			{
+				if (m_should_keep_duplicate_realigned_ranges)
+					m_realn_range_output << "Location\tLength\tTask\tQNAME\n";
+				else
+					m_realn_range_output << "Location\tLength\tQNAME\n";
+			}
 			else
+			{
 				m_realn_range_output << "Location\tLength\n";
+			}
 		}
 		
 		static_assert(0 < QUEUE_SIZE);
@@ -421,6 +439,7 @@ namespace {
 		auto const gap_opening_cost(m_input_processor->gap_opening_cost());
 		auto const gap_extension_cost(m_input_processor->gap_extension_cost());
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
+		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
 
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
@@ -492,6 +511,13 @@ namespace {
 					{
 						for (auto const &range : realn_ranges)
 							m_realigned_ranges.emplace_back(range);
+					}
+					
+					if (!should_keep_duplicate_realigned_ranges)
+					{
+						// Sort by the range and remove duplicates.
+						std::sort(m_realigned_ranges.begin(), m_realigned_ranges.end());
+						m_realigned_ranges.erase(std::unique(m_realigned_ranges.begin(), m_realigned_ranges.end()), m_realigned_ranges.end());
 					}
 				}
 			}
@@ -571,18 +597,19 @@ namespace {
 		
 		// Handle the realigned ranges.
 		auto const &task_realigned_ranges(task.m_realigned_ranges);
-		m_realigned_ranges += task_realigned_ranges.size();
 		if (m_realn_range_output)
 		{
-			if (m_should_output_debugging_information)
-			{
-				for (auto const &rr : task_realigned_ranges)
-					m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\t' << task.m_task_id << '\t' << rr.qname << '\n';
-			}
+			if (m_should_keep_duplicate_realigned_ranges)
+				output_realigned_ranges(task_realigned_ranges, task.m_task_id);
 			else
 			{
-				for (auto const &rr : task_realigned_ranges)
-					m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\n';
+				// Merge in O(n + m) time since both vectors are already sorted.
+				m_realigned_range_buffer.clear();
+				m_realigned_range_buffer.reserve(m_realigned_ranges.size() + task_realigned_ranges.size());
+				lb::sorted_set_union(m_realigned_ranges, task_realigned_ranges, std::back_inserter(m_realigned_range_buffer));
+				
+				using std::swap;
+				swap(m_realigned_ranges, m_realigned_range_buffer);
 			}
 		}
 		
@@ -593,12 +620,42 @@ namespace {
 	
 	
 	template <typename t_aln_input, typename t_aln_output>
+	void input_processor <t_aln_input, t_aln_output>::output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id)
+	{
+		if (m_should_output_debugging_information)
+		{
+			if (m_should_keep_duplicate_realigned_ranges)
+			{
+				for (auto const &rr : ranges)
+					m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\t' << task_id << '\t' << rr.qname << '\n';
+			}
+			else
+			{
+				for (auto const &rr : ranges)
+					m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\t' << rr.qname << '\n';
+			}
+		}
+		else
+		{
+			for (auto const &rr : ranges)
+				m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\n';
+		}
+	}
+	
+	
+	template <typename t_aln_input, typename t_aln_output>
 	void input_processor <t_aln_input, t_aln_output>::finish()
 	{
 		std::cout << std::flush;
 		
+		// Output the sorted realigned ranges if needed.
 		if (m_realn_range_output)
+		{
+			if (!m_should_keep_duplicate_realigned_ranges)
+				output_realigned_ranges(m_realigned_ranges);
+			
 			m_realn_range_output << std::flush;
+		}
 		
 		lb::log_time(std::cerr) << "Done." << std::endl;
 		
@@ -606,7 +663,9 @@ namespace {
 		std::cerr << "Matched reads:     " << m_statistics.matched_reads << '\n';
 		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
-		std::cerr << "Re-aligned ranges: " << m_realigned_ranges << '\n';
+		
+		if (m_realn_range_output && !m_should_keep_duplicate_realigned_ranges)
+			std::cerr << "Re-aligned ranges: " << m_realigned_ranges.size() << '\n';
 		
 		if (m_removed_tag_counts.empty())
 			std::cerr << "No tags removed.\n";
@@ -749,6 +808,7 @@ namespace {
 			args_info.gap_extension_cost_arg,
 			args_info.primary_only_flag,
 			args_info.use_read_base_qualities_flag,
+			args_info.keep_duplicate_ranges_flag,
 			args_info.debugging_output_flag
 		);
 		
