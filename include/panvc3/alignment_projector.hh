@@ -27,6 +27,8 @@ namespace panvc3 {
 		{
 			std::size_t location{};
 			std::size_t length{};
+			
+			auto to_tuple() const { return std::make_tuple(location, length); }
 		};
 		
 		typedef std::vector <range>	range_vector;
