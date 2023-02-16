@@ -4,7 +4,7 @@
 package		"project-alignments"
 version		"0.1"
 purpose		"Project alignments to founder sequences to a given reference sequence"
-usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa > projected.bam"
+usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa > projected.sam"
 
 section		"Input options"
 option		"alignments"				a	"Alignment file path"														string	typestr = "filename"	optional
@@ -17,6 +17,7 @@ option		"ref-id-separator"			s	"Reference ID separator in input"											strin
 section		"Output options"
 option		"output-ref-id"				o	"Output reference sequence ID (same as reference sequence ID by default)"	string							optional
 option		"realigned-ranges-tag"		t	"Use the given SAM tag for the re-aligned ranges (/[XYZ][A-Za-z0-9]/)"		string	default = "XR"			optional
+option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
 option		"print-invocation"			-	"Output the invocation"														flag	off									hidden
 option		"debugging-output"			-	"Include debugging information in the output"								flag	off									hidden
 

@@ -865,13 +865,20 @@ namespace {
 		// Open the alignment output file.
 		auto aln_output{[&](){
 			// Make sure that aln_output has some header information.
-			ref_ids_type empty_ref_ids;
-			return output_type(
-				std::cout,
-				std::move(empty_ref_ids),
-				rsv::empty <std::size_t>(), // Reference lengths; the constructor expects a forward range.
-				seqan3::format_bam{}
-			);
+			auto const make_output_type([&]<typename t_fmt>(t_fmt &&fmt){
+				ref_ids_type empty_ref_ids;
+				return output_type(
+					std::cout,
+					std::move(empty_ref_ids),
+					rsv::empty <std::size_t>(), // Reference lengths; the constructor expects a forward range.
+					std::forward <t_fmt>(fmt)
+				);
+			});
+			
+			if (args_info.output_bam_flag)
+				return make_output_type(seqan3::format_bam{});
+			else
+				return make_output_type(seqan3::format_sam{});
 		}()};
 		
 		// Copy the relevant headers to the output.
