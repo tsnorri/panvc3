@@ -22,7 +22,7 @@ option		"print-invocation"			-	"Output the invocation"														flag	off				
 option		"debugging-output"			-	"Include debugging information in the output"								flag	off									hidden
 
 section		"Re-aligned range output"
-option		"output-realigned-ranges"	l	"Output re-aligned ranges as TSV to the given path"							string	typestr = "filename"	optional
+option		"output-realigned-ranges"	l	"Output the re-aligned ranges as TSV to the given path"						string	typestr = "filename"	optional
 option		"keep-duplicate-ranges"		-	"Keep duplicate ranges (useful with --debugging-output)"					flag	off									hidden
 
 section		"Processing options"
