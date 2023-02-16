@@ -70,16 +70,31 @@ namespace {
 	}()};
 
 
+	// Convert a SeqAn 3 SAM tag to a std::array <char, N> where 2 ≤ N.
 	// I don't think SeqAn 3 has this utility function.
 	// Compare to operator""_tag() in <seqan3/io/sam_file/sam_tag_dictionary.hpp>.
 	template <std::size_t t_size>
-	constexpr void to_tag(std::uint16_t const val, std::array <char, t_size> &buffer)
+	constexpr void from_tag(std::uint16_t const val, std::array <char, t_size> &buffer)
 	requires (2 <= t_size)
 	{
 		char const char0(val / 256); // Narrowed automatically when () (not {}) are used.
 		char const char1(val % 256);
 		std::get <0>(buffer) = char0;
 		std::get <1>(buffer) = char1;
+	}
+	
+	
+	// Convert a std::array <char, 2> to a SeqAn 3 SAM tag.
+	constexpr std::uint16_t to_tag(std::array <char, 2> const &buffer)
+	{
+		// The tag needs to match /|A-Za-z][A-Za-z0-9]/ (SAMv1, Section 1.5 The alignment section: optional fields),
+		// so the values will not be negative.
+		libbio_always_assert_lte(std::get <0>(buffer), 127);
+		libbio_always_assert_lte(std::get <1>(buffer), 127);
+		std::uint16_t retval(std::get <0>(buffer)); // Narrows when () (not {}) are used.
+		retval *= 256;
+		retval += std::get <1>(buffer);
+		return retval;
 	}
 	
 	
@@ -271,6 +286,7 @@ namespace {
 		std::string					m_ref_id_separator;
 		std::int32_t				m_gap_opening_cost{};
 		std::int32_t				m_gap_extension_cost{};
+		std::uint16_t				m_realigned_ranges_tag{};
 		bool						m_should_consider_primary_alignments_only{};
 		bool						m_should_use_read_base_qualities{};
 		bool						m_should_keep_duplicate_realigned_ranges{};
@@ -293,6 +309,7 @@ namespace {
 			t_msa_ref_id				&&msa_ref_id,
 			t_output_ref_id				&&output_ref_id,
 			t_ref_id_separator			&&ref_id_separator,
+			std::array <char, 2> const	&realigned_ranges_tag,
 			std::int32_t				gap_opening_cost,
 			std::int32_t				gap_extension_cost,
 			bool						should_consider_primary_alignments_only,
@@ -315,6 +332,7 @@ namespace {
 			m_ref_id_separator(std::forward <t_ref_id_separator>(ref_id_separator)),
 			m_gap_opening_cost(gap_opening_cost),
 			m_gap_extension_cost(gap_extension_cost),
+			m_realigned_ranges_tag(to_tag(realigned_ranges_tag)),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_should_use_read_base_qualities(should_use_read_base_qualities),
 			m_should_keep_duplicate_realigned_ranges(should_keep_duplicate_realigned_ranges),
@@ -343,6 +361,7 @@ namespace {
 		std::string const &output_reference_id() const { return m_output_ref_id; }
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
+		std::uint16_t realigned_ranges_tag() const { return m_realigned_ranges_tag; }
 		sequence_vector const &reference_sequence() const { return m_ref_sequence; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
@@ -475,7 +494,8 @@ namespace {
 		auto const gap_extension_cost(m_input_processor->gap_extension_cost());
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
 		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
-
+		auto const realn_ranges_tag(m_input_processor->realigned_ranges_tag());
+		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
 		typedef typename input_type::ref_id_type		ref_id_type;
@@ -530,38 +550,37 @@ namespace {
 			));
 
 			// Copy the realigned ranges.
+			auto const &realn_ranges(m_alignment_projector.realigned_ranges());
+			auto const realn_range_count(realn_ranges.size());
+			if (realn_range_count)
 			{
-				auto const &realn_ranges(m_alignment_projector.realigned_ranges());
-				auto const range_count(realn_ranges.size());
-				if (range_count)
-				{
-					m_realigned_ranges.reserve(m_realigned_ranges.size() + range_count);
+				m_realigned_ranges.reserve(m_realigned_ranges.size() + realn_range_count);
 
-					if (m_should_store_realigned_range_qnames)
-					{
-						for (auto const &range : realn_ranges)
-							m_realigned_ranges.emplace_back(aln_rec.id(), range);
-					}
-					else
-					{
-						for (auto const &range : realn_ranges)
-							m_realigned_ranges.emplace_back(range);
-					}
-					
-					if (!should_keep_duplicate_realigned_ranges)
-					{
-						// Sort by the range and remove duplicates.
-						std::sort(m_realigned_ranges.begin(), m_realigned_ranges.end());
-						m_realigned_ranges.erase(std::unique(m_realigned_ranges.begin(), m_realigned_ranges.end()), m_realigned_ranges.end());
-					}
+				if (m_should_store_realigned_range_qnames)
+				{
+					for (auto const &range : realn_ranges)
+						m_realigned_ranges.emplace_back(aln_rec.id(), range);
+				}
+				else
+				{
+					for (auto const &range : realn_ranges)
+						m_realigned_ranges.emplace_back(range);
+				}
+				
+				if (!should_keep_duplicate_realigned_ranges)
+				{
+					// Sort by the range and remove duplicates.
+					std::sort(m_realigned_ranges.begin(), m_realigned_ranges.end());
+					m_realigned_ranges.erase(std::unique(m_realigned_ranges.begin(), m_realigned_ranges.end()), m_realigned_ranges.end());
 				}
 			}
 
 			// Update the tags.
-			// SeqAn 3 does not yet have a type definition for the OA tag which replaces OC,
-			// so we use the latter instead.
 			auto &tags(aln_rec.tags());
 			
+			// Store the original alignment.
+			// SeqAn 3 does not yet have a type definition for the OA tag which replaces OC,
+			// so we use the latter instead.
 			{
 				using seqan3::get;
 				using seqan3::operator""_tag;
@@ -575,6 +594,7 @@ namespace {
 				}
 			}
 			
+			// Remove the non-preserved tags.
 			{
 				auto it(tags.begin());
 				auto const end(tags.end());
@@ -595,6 +615,20 @@ namespace {
 					tags.erase(it_);
 					++m_removed_tag_counts[tag];
 				}
+			}
+			
+			// Store the re-aligned ranges.
+			if (realn_range_count)
+			{
+				std::vector <std::uint32_t> output_ranges(2 * realn_range_count, 0);
+				for (auto const &[idx, range] : rsv::enumerate(realn_ranges))
+				{
+					auto const idx_(2 * idx);
+					output_ranges[idx_] = range.location;
+					output_ranges[idx_ + 1] = range.location + range.length;
+				}
+				
+				tags[realn_ranges_tag] = std::move(output_ranges);
 			}
 			
 			// Finally (esp. after setting OA/OC) update the CIGAR, the reference position, and the header pointer.
@@ -621,6 +655,7 @@ namespace {
 	void input_processor <t_aln_input, t_aln_output>::output_records(project_task_type &task)
 	{
 		// Not thread-safe; needs to be executed in a serial queue.
+		
 		for (auto &aln_rec : task.alignment_records())
 			m_aln_output.push_back(aln_rec); // Needs non-const aln_rec. (Not sure why.)
 		
@@ -724,7 +759,7 @@ namespace {
 			std::array <char, 3> buffer{'\0', '\0', '\0'};
 			for (auto const &kv : m_removed_tag_counts)
 			{
-				to_tag(kv.first, buffer);
+				from_tag(kv.first, buffer);
 				std::cerr << '\t' << buffer.data() << ": " << kv.second << '\n';
 			}
 		}
@@ -782,6 +817,25 @@ namespace {
 			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
 			ref_ids_type
 		>																output_type;
+		
+		// Re-aligned range tag.
+		auto const realn_ranges_tag{[&args_info]() -> std::array <char, 2> {
+			auto const *tag{args_info.realigned_ranges_tag_arg};
+			if (!tag)
+			{
+				std::cerr << "ERROR: Re-aligned ranges tag not given.\n";
+				std::exit(EXIT_FAILURE);
+			}
+			
+			std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
+			if (!std::regex_match(tag, tag_regex))
+			{
+				std::cerr << "ERROR: The given tag for re-aligned ranges does not match the expected format.\n";
+				std::exit(EXIT_FAILURE);
+			}
+			
+			return {tag[0], tag[1]};
+		}()};
 		
 		// Find the reference ID.
 		auto const input_ref_seq_idx{[&args_info, &aln_input_header]() -> std::size_t {
@@ -870,6 +924,7 @@ namespace {
 			args_info.reference_msa_id_arg ?: args_info.reference_id_arg,
 			output_ref_id,
 			args_info.ref_id_separator_arg,
+			realn_ranges_tag,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
 			args_info.primary_only_flag,
