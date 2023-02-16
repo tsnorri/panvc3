@@ -195,8 +195,16 @@ namespace {
 	};
 	
 	
+	// Declare a virtual destructor in order to make assigning input_processor to a std::unique_ptr easier.
+	struct input_processor_base
+	{
+		virtual ~input_processor_base() { std::cerr << "deallocating input_processor_base" << std::endl; }
+		virtual void process_input() = 0;
+	};
+	
+	
 	template <typename t_aln_input, typename t_aln_output>
-	class input_processor
+	class input_processor final : public input_processor_base
 	{
 		static_assert(panvc3::is_power_of_2(QUEUE_SIZE));
 		
@@ -215,6 +223,7 @@ namespace {
 		typedef panvc3::spsc_queue <project_task_type, QUEUE_SIZE>	queue_type;
 		typedef lb::dispatch_ptr <dispatch_queue_t>					dispatch_queue_ptr;
 		typedef lb::dispatch_ptr <dispatch_semaphore_t>				semaphore_ptr;
+		typedef	void												(*exit_callback_type)(void);
 		
 	protected:
 		panvc3::msa_index			m_msa_index;
@@ -225,6 +234,7 @@ namespace {
 		sequence_vector				m_ref_sequence;
 		
 		dispatch_queue_ptr			m_output_dispatch_queue;
+		exit_callback_type			m_exit_cb{};
 		
 		queue_type					m_task_queue{};
 		
@@ -265,7 +275,8 @@ namespace {
 			bool						should_consider_primary_alignments_only,
 			bool						should_use_read_base_qualities,
 			bool						should_keep_duplicate_realigned_ranges,
-			bool						should_output_debugging_information
+			bool						should_output_debugging_information,
+			exit_callback_type			exit_cb
 		):
 			m_msa_index(std::move(msa_index)),
 			m_aln_input(std::move(aln_input)),
@@ -274,6 +285,7 @@ namespace {
 			m_realn_range_output(m_realn_range_handle.get(), ios::never_close_handle),
 			m_ref_sequence(std::move(ref_sequence)),
 			m_output_dispatch_queue(dispatch_queue_create("fi.iki.tsnorri.panvc3.project-alignments.output-queue", DISPATCH_QUEUE_SERIAL)),
+			m_exit_cb(exit_cb),
 			m_ref_id(std::forward <t_ref_id>(ref_id)),
 			m_msa_ref_id(std::forward <t_msa_ref_id>(msa_ref_id)),
 			m_output_ref_id(std::forward <t_output_ref_id>(output_ref_id)),
@@ -292,7 +304,7 @@ namespace {
 			}
 		}
 		
-		void process_input();
+		void process_input() override;
 		void output_records(project_task_type &task);
 		void output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id = 0);
 		void finish();
@@ -312,8 +324,8 @@ namespace {
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
 	};
-	
-	
+
+
 	template <typename t_aln_input, typename t_aln_output>
 	void input_processor <t_aln_input, t_aln_output>::process_input()
 	{
@@ -646,6 +658,7 @@ namespace {
 	template <typename t_aln_input, typename t_aln_output>
 	void input_processor <t_aln_input, t_aln_output>::finish()
 	{
+		m_aln_output.get_stream() << std::flush;
 		std::cout << std::flush;
 		
 		// Output the sorted realigned ranges if needed.
@@ -680,7 +693,8 @@ namespace {
 			}
 		}
 		
-		std::exit(EXIT_SUCCESS);
+		// Clean up.
+		(*m_exit_cb)();
 	}
 	
 	
@@ -695,6 +709,22 @@ namespace {
 	{
 		return seqan3::sam_file_input(stream, std::forward <t_format>(format));
 	}	
+
+
+	std::unique_ptr <input_processor_base> s_input_processor;
+
+
+	void do_exit(void *)
+	{
+		s_input_processor.reset();
+		std::exit(EXIT_SUCCESS);
+	}
+
+
+	void do_exit_async()
+	{
+		dispatch_async_f(dispatch_get_main_queue(), nullptr, &do_exit);
+	}
 
 
 	template <typename t_aln_input>
@@ -794,7 +824,7 @@ namespace {
 		}
 		
 		// Process the input.
-		static input_processor <input_type, output_type> processor(
+		s_input_processor = std::make_unique <input_processor <input_type, output_type>>(
 			std::move(msa_index),
 			std::move(aln_input),
 			std::move(aln_output),
@@ -809,11 +839,12 @@ namespace {
 			args_info.primary_only_flag,
 			args_info.use_read_base_qualities_flag,
 			args_info.keep_duplicate_ranges_flag,
-			args_info.debugging_output_flag
+			args_info.debugging_output_flag,
+			&do_exit_async
 		);
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
-		processor.process_input();
+		s_input_processor->process_input();
 	}
 	
 	
