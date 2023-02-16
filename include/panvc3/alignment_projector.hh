@@ -6,6 +6,7 @@
 #ifndef PANVC3_ALIGNMENT_PROJECTOR_HH
 #define PANVC3_ALIGNMENT_PROJECTOR_HH
 
+#include <ostream>
 #include <panvc3/cigar.hh>
 #include <panvc3/indel_run_checker.hh>
 #include <panvc3/msa_index.hh>
@@ -58,6 +59,13 @@ namespace panvc3 {
 		cigar_vector const &alignment() const { return m_cigar_realigned; }
 		range_vector const &realigned_ranges() const { return m_realigned_ranges; }
 	};
+	
+	
+	inline std::ostream &operator<<(std::ostream &os, alignment_projector::range const range)
+	{
+		os << '[' << range.location << ", " << (range.location + range.length) << ')';
+		return os;
+	}
 }
 
 #endif

@@ -161,6 +161,29 @@ namespace {
 
 	typedef std::vector <realigned_range>	realigned_range_vector;
 	
+	// Precondition: the given range is sorted by range.location.
+	realigned_range_vector::const_iterator find_first_overlapping(
+		realigned_range_vector::const_iterator it,
+		realigned_range_vector::const_iterator const end
+	)
+	{
+		if (it == end)
+			return end;
+		
+		auto it_(it);
+		++it;
+		for (; it != end; ++it)
+		{
+			auto const range_end(it_->range.location + it_->range.length);
+			if (it->range.location < range_end)
+				return it_;
+			else if (range_end < it->range.location + it->range.length)
+				it_ = it;
+		}
+		
+		return end;
+	}
+	
 	
 	template <typename t_input_processor>
 	class project_task
@@ -652,7 +675,20 @@ namespace {
 		if (m_realn_range_output)
 		{
 			if (!m_should_keep_duplicate_realigned_ranges)
+			{
 				output_realigned_ranges(m_realigned_ranges);
+				
+				// Sanity check that can be done if duplicates have been eliminated.
+				{
+					auto const end(m_realigned_ranges.end());
+					auto const it(find_first_overlapping(m_realigned_ranges.begin(), end));
+					if (it != end)
+					{
+						std::cerr << "ERROR: The following range overlaps at least one of the succeeding ranges: " << it->range << ".\n";
+						std::exit(EXIT_FAILURE);
+					}
+				}
+			}
 			
 			m_realn_range_output << std::flush;
 		}
