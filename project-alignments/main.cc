@@ -156,15 +156,15 @@ namespace {
 	
 	struct realigned_range
 	{
-		std::string							qname{};
-		panvc3::alignment_projector::range	range{};
+		std::string		qname{};
+		panvc3::range	range{};
 
-		realigned_range(panvc3::alignment_projector::range const &range_):
+		realigned_range(panvc3::range const &range_):
 			range(range_)
 		{
 		}
 
-		realigned_range(std::string const &qname_, panvc3::alignment_projector::range const &range_):
+		realigned_range(std::string const &qname_, panvc3::range const &range_):
 			qname(qname_),
 			range(range_)
 		{
@@ -550,7 +550,7 @@ namespace {
 			));
 
 			// Copy the realigned ranges.
-			auto const &realn_ranges(m_alignment_projector.realigned_ranges());
+			auto const &realn_ranges(m_alignment_projector.realigned_reference_ranges());
 			auto const realn_range_count(realn_ranges.size());
 			if (realn_range_count)
 			{
@@ -617,11 +617,12 @@ namespace {
 				}
 			}
 			
-			// Store the re-aligned ranges.
+			// Store the re-aligned ranges in query co-ordinates.
 			if (realn_range_count)
 			{
 				std::vector <std::uint32_t> output_ranges(2 * realn_range_count, 0);
-				for (auto const &[idx, range] : rsv::enumerate(realn_ranges))
+				auto const &realn_query_ranges(m_alignment_projector.realigned_query_ranges());
+				for (auto const &[idx, range] : rsv::enumerate(realn_query_ranges))
 				{
 					auto const idx_(2 * idx);
 					output_ranges[idx_] = range.location;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -22,7 +22,8 @@ namespace panvc3 {
 		m_cigar_realigned.clear();
 		m_rewrite_buffer.clear();
 		m_realign_buffer.clear();
-		m_realigned_ranges.clear();
+		m_realigned_reference_ranges.clear();
+		m_realigned_query_ranges.clear();
 	}
 	
 	
@@ -64,14 +65,14 @@ namespace panvc3 {
 			);
 			cigar_begin = realn_range.second;
 			
-			// Store the realigned range in reference co-ordinates.
+			// Store the realigned ranges.
 			auto const ref_pos(m_indel_run_checker.reference_position());
 			auto const ref_range(m_indel_run_checker.reference_range()); // Has segment-relative position.
-			m_realigned_ranges.emplace_back(ref_pos, ref_range.length);
+			auto const query_range(m_indel_run_checker.query_range());
+			m_realigned_reference_ranges.emplace_back(ref_pos, ref_range.length);
+			m_realigned_query_ranges.emplace_back(query_range);
 			
 			// Realign the found range.
-			auto const query_range(m_indel_run_checker.query_range());
-			
 			if (base_qualities.empty())
 			{
 				auto ref_part(ref_seq | ref_range.slice() | rsv::transform([](auto const cc){

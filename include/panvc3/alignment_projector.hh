@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -10,6 +10,7 @@
 #include <panvc3/cigar.hh>
 #include <panvc3/indel_run_checker.hh>
 #include <panvc3/msa_index.hh>
+#include <panvc3/range.hh>
 #include <seqan3/alphabet/cigar/cigar.hpp>
 #include <seqan3/alphabet/nucleotide/dna5.hpp>
 #include <seqan3/alphabet/quality/phred42.hpp>
@@ -24,22 +25,13 @@ namespace panvc3 {
 		typedef seqan3::dna5		sequence_alphabet;
 		typedef seqan3::phred42		quality_alphabet;
 		
-		struct range
-		{
-			std::size_t location{};
-			std::size_t length{};
-			
-			auto to_tuple() const { return std::make_tuple(location, length); }
-		};
-		
-		typedef std::vector <range>	range_vector;
-		
 	protected:
 		indel_run_checker			m_indel_run_checker;
 		cigar_vector				m_cigar_realigned;
 		cigar_buffer				m_rewrite_buffer;
 		cigar_buffer				m_realign_buffer;
-		range_vector				m_realigned_ranges; // In reference co-ordinates.
+		range_vector				m_realigned_reference_ranges;
+		range_vector				m_realigned_query_ranges;		// OK b.c. we project one alignment at a time, i.e. there will not be ranges from multiple alignments.
 	
 	public:
 		void reset();
@@ -57,15 +49,9 @@ namespace panvc3 {
 		);
 		
 		cigar_vector const &alignment() const { return m_cigar_realigned; }
-		range_vector const &realigned_ranges() const { return m_realigned_ranges; }
+		range_vector const &realigned_reference_ranges() const { return m_realigned_reference_ranges; }
+		range_vector const &realigned_query_ranges() const { return m_realigned_query_ranges; }
 	};
-	
-	
-	inline std::ostream &operator<<(std::ostream &os, alignment_projector::range const range)
-	{
-		os << '[' << range.location << ", " << (range.location + range.length) << ')';
-		return os;
-	}
 }
 
 #endif

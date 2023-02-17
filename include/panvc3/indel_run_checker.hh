@@ -8,6 +8,7 @@
 
 #include <ostream>
 #include <panvc3/cigar.hh>
+#include <panvc3/range.hh>
 #include <range/v3/view/slice.hpp>
 #include <vector>
 
@@ -23,27 +24,6 @@ namespace panvc3 {
 			cigar_vector_const_iterator,
 			cigar_vector_const_iterator
 		>												cigar_vector_const_iterator_pair;
-		
-		struct range
-		{
-			typedef std::size_t	size_type;
-			
-			size_type location{};
-			size_type length{};
-			
-			range() = default;
-			
-			range(size_type const location_, size_type const length_):
-				location(location_),
-				length(length_)
-			{
-			}
-			
-			auto slice() const { return ranges::views::slice(location, location + length); }
-			void update_length(size_type const end_location) { length = end_location - location; }
-			
-			bool operator==(range const &other) const { return location == other.location && length == other.length; }
-		};
 		
 	protected:
 		enum
@@ -75,13 +55,6 @@ namespace panvc3 {
 	protected:
 		void update_ranges(std::size_t const ref_pos, std::size_t const query_pos);
 	};
-	
-	
-	inline std::ostream &operator<<(std::ostream &os, indel_run_checker::range const &rr)
-	{ 
-		os << '[' << rr.location << ", " << (rr.location + rr.length) << ')';
-		return os;
-	}
 }
 
 #endif
