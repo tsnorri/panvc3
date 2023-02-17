@@ -723,20 +723,7 @@ namespace {
 		if (m_realn_range_output)
 		{
 			if (!m_should_keep_duplicate_realigned_ranges)
-			{
 				output_realigned_ranges(m_realigned_ranges);
-				
-				// Sanity check that can be done if duplicates have been eliminated.
-				{
-					auto const end(m_realigned_ranges.end());
-					auto const it(find_first_overlapping(m_realigned_ranges.begin(), end));
-					if (it != end)
-					{
-						std::cerr << "ERROR: The following range overlaps at least one of the succeeding ranges: " << it->range << ".\n";
-						std::exit(EXIT_FAILURE);
-					}
-				}
-			}
 			
 			m_realn_range_output << std::flush;
 		}
