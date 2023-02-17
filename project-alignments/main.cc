@@ -236,7 +236,7 @@ namespace {
 	// Declare a virtual destructor in order to make assigning input_processor to a std::unique_ptr easier.
 	struct input_processor_base
 	{
-		virtual ~input_processor_base() { std::cerr << "deallocating input_processor_base" << std::endl; }
+		virtual ~input_processor_base() {}
 		virtual void process_input() = 0;
 	};
 	
