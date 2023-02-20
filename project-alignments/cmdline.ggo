@@ -17,6 +17,7 @@ option		"ref-id-separator"			s	"Reference ID separator in input"											strin
 section		"Output options"
 option		"output-ref-id"				o	"Output reference sequence ID (same as reference sequence ID by default)"	string							optional
 option		"realigned-ranges-tag"		t	"Use the given SAM tag for the re-aligned ranges (/[XYZ][A-Za-z0-9]/)"		string	default = "XR"			optional
+option		"record-index-tag"			n	"Use the given SAM tag for the index (/[XYZ][A-Za-z0-9]/)"					string							optional
 option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
 
 section		"Re-aligned range output"

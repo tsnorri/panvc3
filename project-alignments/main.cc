@@ -226,6 +226,7 @@ namespace {
 		realigned_range_vector				m_realigned_ranges;
 		std::size_t							m_valid_records{};
 		std::size_t							m_task_id{};
+		std::size_t							m_last_rec_idx{};
 		std::atomic <project_task_status>	m_status{}; // FIXME: make this conditional.
 		bool								m_should_store_realigned_range_qnames{};
 		
@@ -296,6 +297,7 @@ namespace {
 		std::int32_t				m_gap_opening_cost{};
 		std::int32_t				m_gap_extension_cost{};
 		std::uint16_t				m_realigned_ranges_tag{};
+		std::uint16_t				m_rec_idx_tag{};
 		bool						m_should_consider_primary_alignments_only{};
 		bool						m_should_use_read_base_qualities{};
 		bool						m_should_keep_duplicate_realigned_ranges{};
@@ -319,6 +321,7 @@ namespace {
 			t_output_ref_id				&&output_ref_id,
 			t_ref_id_separator			&&ref_id_separator,
 			std::array <char, 2> const	&realigned_ranges_tag,
+			std::array <char, 2> const	&rec_idx_tag,
 			std::int32_t				gap_opening_cost,
 			std::int32_t				gap_extension_cost,
 			bool						should_consider_primary_alignments_only,
@@ -342,6 +345,7 @@ namespace {
 			m_gap_opening_cost(gap_opening_cost),
 			m_gap_extension_cost(gap_extension_cost),
 			m_realigned_ranges_tag(to_tag(realigned_ranges_tag)),
+			m_rec_idx_tag(to_tag(rec_idx_tag)),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_should_use_read_base_qualities(should_use_read_base_qualities),
 			m_should_keep_duplicate_realigned_ranges(should_keep_duplicate_realigned_ranges),
@@ -371,6 +375,7 @@ namespace {
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
 		std::uint16_t realigned_ranges_tag() const { return m_realigned_ranges_tag; }
+		std::uint16_t record_index_tag() const { return m_rec_idx_tag; }
 		sequence_vector const &reference_sequence() const { return m_ref_sequence; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
@@ -471,6 +476,8 @@ namespace {
 				swap(aln_rec, current_task.next_record());
 
 				aln_rec.clear();
+
+				current_task.m_last_rec_idx = rec_idx;
 			}
 		}
 		
@@ -508,6 +515,7 @@ namespace {
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
 		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
 		auto const realn_ranges_tag(m_input_processor->realigned_ranges_tag());
+		auto const rec_idx_tag(m_input_processor->record_index_tag());
 		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
@@ -645,6 +653,14 @@ namespace {
 				}
 				
 				tags[realn_ranges_tag] = std::move(output_ranges);
+			}
+
+			// Store the record index if needed.
+			if (rec_idx_tag)
+			{
+				auto const rec_idx(m_last_rec_idx - m_valid_records + 1);
+				if (rec_idx <= INT32_MAX)
+					tags[rec_idx_tag] = std::int32_t(rec_idx);
 			}
 			
 			// Finally (esp. after setting OA/OC) update the CIGAR, the reference position, and the header pointer.
@@ -829,9 +845,11 @@ namespace {
 			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
 			ref_ids_type
 		>																output_type;
+
+		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
 		
 		// Re-aligned range tag.
-		auto const realn_ranges_tag{[&args_info]() -> std::array <char, 2> {
+		auto const realn_ranges_tag{[&args_info, &tag_regex]() -> std::array <char, 2> {
 			auto const *tag{args_info.realigned_ranges_tag_arg};
 			if (!tag)
 			{
@@ -839,13 +857,27 @@ namespace {
 				std::exit(EXIT_FAILURE);
 			}
 			
-			std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
 			if (!std::regex_match(tag, tag_regex))
 			{
 				std::cerr << "ERROR: The given tag for re-aligned ranges does not match the expected format.\n";
 				std::exit(EXIT_FAILURE);
 			}
 			
+			return {tag[0], tag[1]};
+		}()};
+
+		// Record index tag.
+		auto const rec_idx_tag{[&args_info, &tag_regex]() -> std::array <char, 2> {
+			auto const *tag(args_info.record_index_tag_arg);
+			if (!tag)
+				return {0, 0};
+
+			if (!std::regex_match(tag, tag_regex))
+			{
+				std::cerr << "ERROR: The given tag for record index does not match the expected format.\n";
+				std::exit(EXIT_FAILURE);
+			}
+
 			return {tag[0], tag[1]};
 		}()};
 		
@@ -944,6 +976,7 @@ namespace {
 			output_ref_id,
 			args_info.ref_id_separator_arg,
 			realn_ranges_tag,
+			rec_idx_tag,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
 			args_info.primary_only_flag,
