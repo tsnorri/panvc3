@@ -29,8 +29,8 @@ namespace rsv	= ranges::views;
 
 namespace {
 	
-	constexpr inline std::size_t	QUEUE_SIZE{512};
-	constexpr inline std::size_t	CHUNK_SIZE{32};
+	constexpr inline std::size_t	QUEUE_SIZE{16};
+	constexpr inline std::size_t	CHUNK_SIZE{4};
 
 	constexpr static auto const preserved_sam_tags{[]() constexpr {
 		using seqan3::operator""_tag;
@@ -200,6 +200,14 @@ namespace {
 	}
 	
 	
+	enum class project_task_status
+	{
+		inactive,
+		processing,
+		finishing
+	};
+		
+
 	template <typename t_input_processor>
 	class project_task
 	{
@@ -209,23 +217,24 @@ namespace {
 		typedef typename t_input_processor::input_record_type	record_type;
 		typedef std::array <record_type, CHUNK_SIZE>			record_array;
 		typedef typename t_input_processor::tag_count_map		tag_count_map;
-		
+
 	protected:
-		t_input_processor			*m_input_processor{};
-		record_array				m_records;
-		panvc3::alignment_projector	m_alignment_projector;
-		tag_count_map				m_removed_tag_counts;
-		realigned_range_vector		m_realigned_ranges;
-		std::size_t					m_valid_records{};
-		std::size_t					m_task_id{};
-		bool						m_should_store_realigned_range_qnames{};
+		t_input_processor					*m_input_processor{};
+		record_array						m_records;
+		panvc3::alignment_projector			m_alignment_projector;
+		tag_count_map						m_removed_tag_counts;
+		realigned_range_vector				m_realigned_ranges;
+		std::size_t							m_valid_records{};
+		std::size_t							m_task_id{};
+		std::atomic <project_task_status>	m_status{}; // FIXME: make this conditional.
+		bool								m_should_store_realigned_range_qnames{};
 		
 	public:
 		bool is_full() const { return CHUNK_SIZE == m_valid_records; }
 		bool empty() const { return 0 == m_valid_records; }
-		record_type &next_record() { return m_records[m_valid_records++]; }
-		auto alignment_records() { return m_records | rsv::take_exactly(m_valid_records); }
-		auto alignment_records() const { return m_records | rsv::take_exactly(m_valid_records); }
+		record_type &next_record() { libbio_assert(project_task_status::inactive == m_status.load()); libbio_assert_lt(m_valid_records, m_records.size()); return m_records[m_valid_records++]; }
+		auto alignment_records() { auto const st(m_status.load()); libbio_assert(project_task_status::processing == st || project_task_status::finishing == st); return m_records | rsv::take_exactly(m_valid_records); }
+		auto alignment_records() const { auto const st(m_status.load()); libbio_assert(project_task_status::processing == st || project_task_status::finishing == st); return m_records | rsv::take_exactly(m_valid_records); }
 		
 		void process();
 		void output();
@@ -446,6 +455,7 @@ namespace {
 				++task_id;
 				auto &current_task(m_task_queue[task_idx]);
 				current_task.m_task_id = task_id;
+				current_task.m_status = project_task_status::processing;
 				lb::dispatch(current_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
 				
 				// Get an empty task.
@@ -455,9 +465,12 @@ namespace {
 			// Now there is guaranteed to be space in the current task.
 			{
 				auto &current_task(m_task_queue[task_idx]);
+				libbio_assert(project_task_status::inactive == current_task.m_status.load());
 				
 				using std::swap;
 				swap(aln_rec, current_task.next_record());
+
+				aln_rec.clear();
 			}
 		}
 		
@@ -504,6 +517,8 @@ namespace {
 		panvc3::msa_index::sequence_entry_vector::const_iterator dst_seq_entry_it{};
 		for (auto &aln_rec : alignment_records())
 		{
+			libbio_assert(project_task_status::processing == m_status.load());
+
 			auto const &ref_id_(aln_rec.reference_id());
 			libbio_assert(ref_id_.has_value());
 			
@@ -639,6 +654,8 @@ namespace {
 		}
 		
 		// Continue in the output queue.
+		libbio_assert(project_task_status::processing == m_status.load());
+		m_status = project_task_status::finishing;
 		lb::dispatch(*this).template async <&project_task::output>(m_input_processor->output_dispatch_queue());
 	}
 	
@@ -648,6 +665,7 @@ namespace {
 	{
 		// Now we are in the correct thread and also able to pass parameters to functions
 		// without calling malloc, since we do not need to call via libdispatch.
+		libbio_assert(project_task_status::finishing == m_status.load());
 		m_input_processor->output_records(*this);
 	}
 	
@@ -657,8 +675,13 @@ namespace {
 	{
 		// Not thread-safe; needs to be executed in a serial queue.
 		
+		libbio_assert(project_task_status::finishing == task.m_status.load());
+		
 		for (auto &aln_rec : task.alignment_records())
+		{
+			libbio_assert_eq(aln_rec.sequence().size(), aln_rec.base_qualities().size());
 			m_aln_output.push_back(aln_rec); // Needs non-const aln_rec. (Not sure why.)
+		}
 		
 		// Update the removed tag counts.
 		// Could be done in O(m + n) time with a specialised merge instead of O(m log n) that we currently have.
@@ -686,6 +709,7 @@ namespace {
 		
 		// Clean up.
 		task.reset();
+		task.m_status = project_task_status::inactive;
 		m_task_queue.push(task);
 	}
 	
@@ -967,7 +991,7 @@ int main(int argc, char **argv)
 			std::cerr << ' ' << argv[i];
 		std::cerr << '\n';
 	}
-	
+
 	process(args_info);
 	dispatch_main();
 	
