@@ -992,6 +992,9 @@ int main(int argc, char **argv)
 		std::cerr << '\n';
 	}
 
+	if (args_info.print_pid_given)
+		std::cerr << "PID: " << getpid() << '\n';
+	
 	process(args_info);
 	dispatch_main();
 	
