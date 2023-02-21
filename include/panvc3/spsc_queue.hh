@@ -7,6 +7,7 @@
 #define PANVC3_SPSC_QUEUE_HH
 
 #include <array>
+#include <atomic>
 #include <dispatch/dispatch.h>
 #include <libbio/dispatch/dispatch_ptr.hh>
 #include <numeric>							// std::iota
@@ -25,13 +26,17 @@ namespace panvc3 {
 		typedef std::uint16_t	size_type;
 		
 	protected:
-		struct index
+		class index
 		{
-			alignas(std::hardware_destructive_interference_size) size_type value{}; // Not sure if the alignment is needed.
-			
+		private:
+			alignas(std::hardware_destructive_interference_size) std::atomic <size_type> m_value{}; // Not sure if the alignment is needed.
+
+		public:
 			// Assignment operator.
 			template <typename t_value_>
-			index &operator=(t_value_ const value_) { value = value_; return *this; }
+			index &operator=(t_value_ const value_) { m_value.store(value_, std::memory_order_relaxed); return *this; }
+
+			/* implicit */ operator size_type() const { return m_value.load(std::memory_order_relaxed); }
 		};
 		
 		typedef std::array <value_type, t_size>				value_array;
@@ -65,8 +70,8 @@ namespace panvc3 {
 	{
 		// Called from thread 1.
 		dispatch_semaphore_wait(*m_semaphore_ptr, DISPATCH_TIME_FOREVER);
-		
-		auto const val_idx(m_indices[m_read_idx].value);
+
+		size_type const val_idx(m_indices[m_read_idx]);
 		++m_read_idx;
 		m_read_idx %= t_size;
 		
@@ -79,10 +84,10 @@ namespace panvc3 {
 	{
 		// Called from thread 2.
 		auto const val_idx(std::distance(&m_values.front(), &val));
-		m_indices[m_write_idx].value = val_idx;
+		m_indices[m_write_idx] = val_idx;
 		++m_write_idx;
 		m_write_idx %= t_size;
-		
+
 		dispatch_semaphore_signal(*m_semaphore_ptr);
 	}
 }
