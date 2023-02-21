@@ -302,6 +302,7 @@ namespace {
 		bool						m_should_use_read_base_qualities{};
 		bool						m_should_keep_duplicate_realigned_ranges{};
 		bool						m_should_output_debugging_information{};
+		bool						m_should_process_tasks_in_parallel{};
 		
 	public:
 		template <
@@ -379,6 +380,7 @@ namespace {
 		sequence_vector const &reference_sequence() const { return m_ref_sequence; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
+		bool should_process_tasks_in_parallel() const { return m_should_process_tasks_in_parallel; }
 	};
 
 
@@ -461,7 +463,11 @@ namespace {
 				auto &current_task(m_task_queue[task_idx]);
 				current_task.m_task_id = task_id;
 				current_task.m_status = project_task_status::processing;
-				lb::dispatch(current_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
+
+				if (m_should_process_tasks_in_parallel)
+					lb::dispatch(current_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
+				else
+					current_task.process();
 				
 				// Get an empty task.
 				task_idx = m_task_queue.pop_index();
@@ -472,10 +478,13 @@ namespace {
 				auto &current_task(m_task_queue[task_idx]);
 				libbio_assert(project_task_status::inactive == current_task.m_status.load());
 				
+#if 0
 				using std::swap;
 				swap(aln_rec, current_task.next_record());
-
 				aln_rec.clear();
+#else
+				current_task.next_record() = aln_rec; // Copy.
+#endif
 
 				current_task.m_last_rec_idx = rec_idx;
 			}
@@ -488,13 +497,20 @@ namespace {
 			{
 				++task_id;
 				last_task.m_task_id = task_id;
-				lb::dispatch(last_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
+				last_task.m_status = project_task_status::processing;
+				if (m_should_process_tasks_in_parallel)
+					lb::dispatch(last_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
+				else
+					last_task.process();
 			}
 		}
 		
 		// When all the work in the group has been completed,
 		// the record output blocks have already been inserted to the serial queue.
-		lb::dispatch(*this).template group_notify <&input_processor::finish>(*dispatch_group, *m_output_dispatch_queue);
+		if (m_should_process_tasks_in_parallel)
+			lb::dispatch(*this).template group_notify <&input_processor::finish>(*dispatch_group, *m_output_dispatch_queue);
+		else
+			finish();
 	}
 	
 	
@@ -516,6 +532,7 @@ namespace {
 		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
 		auto const realn_ranges_tag(m_input_processor->realigned_ranges_tag());
 		auto const rec_idx_tag(m_input_processor->record_index_tag());
+		auto const should_process_tasks_in_parallel(m_input_processor->should_process_tasks_in_parallel());
 		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
@@ -672,7 +689,10 @@ namespace {
 		// Continue in the output queue.
 		libbio_assert(project_task_status::processing == m_status.load());
 		m_status = project_task_status::finishing;
-		lb::dispatch(*this).template async <&project_task::output>(m_input_processor->output_dispatch_queue());
+		if (should_process_tasks_in_parallel)
+			lb::dispatch(*this).template async <&project_task::output>(m_input_processor->output_dispatch_queue());
+		else
+			output();
 	}
 	
 	
@@ -696,7 +716,8 @@ namespace {
 		for (auto &aln_rec : task.alignment_records())
 		{
 			libbio_assert_eq(aln_rec.sequence().size(), aln_rec.base_qualities().size());
-			m_aln_output.push_back(aln_rec); // Needs non-const aln_rec. (Not sure why.)
+			//m_aln_output.push_back(aln_rec); // Needs non-const aln_rec. (Not sure why.)
+			m_aln_output.push_back(aln_rec);
 		}
 		
 		// Update the removed tag counts.
