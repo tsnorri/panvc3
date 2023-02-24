@@ -46,6 +46,8 @@ namespace panvc3 {
 		
 		struct sequence_entry
 		{
+			typedef std::uint64_t	position_type;
+
 			std::string				seq_id;
 			bit_vector				gap_positions;	// 1 iff. gap
 			rank0_support_type		gap_positions_rank0_support;
@@ -65,6 +67,9 @@ namespace panvc3 {
 			template <typename t_archive> void load(t_archive &ar, cereal_version_type const version);
 			template <typename t_archive> void save(t_archive &ar, cereal_version_type const version) const;
 			inline void fix_rank_select_pointers();
+			inline position_type aligned_position(position_type const pos) const;
+			inline position_type project_aligned_position(position_type const pos) const;
+			inline position_type project_position(position_type const pos, sequence_entry const &dst) const;
 		};
 		
 		struct sequence_entry_cmp
@@ -227,6 +232,28 @@ namespace panvc3 {
 		
 		dst.first.fix_rank_select_pointers();
 		dst.second.fix_rank_select_pointers();
+	}
+
+
+	auto msa_index::sequence_entry::aligned_position(position_type const pos) const -> position_type
+	{
+		auto const aln_pos(gap_positions_select0_support(1 + pos));  // Convert to an aligned position.
+		return aln_pos;
+	}
+
+
+	auto msa_index::sequence_entry::project_aligned_position(position_type const pos) const -> position_type
+	{
+		auto const retval(gap_positions_rank0_support(pos)); // May be zero.
+		return retval;
+	}
+
+
+	auto msa_index::sequence_entry::project_position(position_type const pos, sequence_entry const &dst) const -> position_type
+	{
+		auto const aln_pos(aligned_position(pos));
+		auto const retval(dst.project_aligned_position(aln_pos));
+		return retval;
 	}
 }
 
