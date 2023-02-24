@@ -25,8 +25,8 @@ namespace panvc3 {
 		m_realigned_reference_ranges.clear();
 		m_realigned_query_ranges.clear();
 	}
-	
-	
+
+
 	std::size_t alignment_projector::project_alignment(
 		std::size_t const src_pos,
 		msa_index::sequence_entry const &src_seq_entry,
