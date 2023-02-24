@@ -9,13 +9,11 @@ usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat
 section		"Input options"
 option		"alignments"				a	"Alignment file path"														string	typestr = "filename"	optional
 option		"msa-index"					m	"MSA index path"															string	typestr = "filename"	required
-option		"reference"					r	"Reference sequence FASTA path"												string	typestr = "filename"	required
-option		"reference-id"				i	"Reference sequence ID"														string							required
-option		"reference-msa-id"			d	"Reference sequence ID in MSA index (same as reference ID by default)"		string							optional
+option		"reference"					r	"Reference sequences FASTA path"											string	typestr = "filename"	required
+option		"reference-msa-id"			d	"Reference sequence ID in MSA index"										string							required
 option		"ref-id-separator"			s	"Reference ID separator in input"											string	default = "_"			optional
 
 section		"Output options"
-option		"output-ref-id"				o	"Output reference sequence ID (same as reference sequence ID by default)"	string							optional
 option		"realigned-ranges-tag"		t	"Use the given SAM tag for the re-aligned ranges (/[XYZ][A-Za-z0-9]/)"		string	default = "XR"			optional
 option		"record-index-tag"			n	"Use the given SAM tag for the index (/[XYZ][A-Za-z0-9]/)"					string							optional
 option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
