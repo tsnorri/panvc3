@@ -47,9 +47,9 @@ namespace panvc3 {
 		
 		using seqan3::operator""_cigar_operation;
 		
-		std::size_t query_pos{};															// Position in the query (read).
-		auto const aln_pos(src_entry.gap_positions_select0_support(1 + src_pos));			// Convert to an aligned position.
-		auto prev_excess(dst_entry.gap_positions_rank0_support(aln_pos));					// May be zero.
+		std::size_t query_pos{};										// Position in the query (read).
+		auto const aln_pos(src_entry.aligned_position(src_pos));		// Convert to an aligned position.
+		auto prev_excess(dst_entry.project_aligned_position(aln_pos));	// May be zero.
 		
 		// prev_excess has the number of non-gaps in the target sequence up to and excluding the current position.
 		// Hence it is also the zero-based index of the first non-gap character beginning from the current position.
