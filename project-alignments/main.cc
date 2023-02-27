@@ -562,7 +562,8 @@ namespace {
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
 		typedef typename input_type::ref_id_type		ref_id_type;
-		typedef typename input_type::ref_offset_type	ref_offset_type;
+		typedef typename input_type::ref_offset_type	ref_offset_type_;	// std::optional <...>
+		typedef typename ref_offset_type_::value_type	ref_offset_type;
 		ref_id_type prev_ref_id{}; // std::optional.
 		panvc3::msa_index::sequence_entry_vector::const_iterator src_seq_entry_it{};
 		panvc3::msa_index::sequence_entry_vector::const_iterator dst_seq_entry_it{};
@@ -619,7 +620,7 @@ namespace {
 				gap_opening_cost,
 				gap_extension_cost
 			));
-			libbio_always_assert_lte(dst_pos, std::numeric_limits <ref_offset_type>::max());
+			libbio_always_assert_lte_(dst_pos, std::numeric_limits <ref_offset_type>::max());
 
 			// Copy the realigned ranges.
 			auto const &realn_ranges(m_alignment_projector.realigned_reference_ranges());
