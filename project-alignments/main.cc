@@ -652,22 +652,6 @@ namespace {
 			// Update the tags.
 			auto &tags(aln_rec.tags());
 			
-			// Store the original alignment.
-			// SeqAn 3 does not yet have a type definition for the OA tag which replaces OC,
-			// so we use the latter instead.
-			{
-				using seqan3::get;
-				using seqan3::operator""_tag;
-
-				auto &oc_tag(tags.template get <"OC"_tag>());
-				oc_tag.clear();
-				for (auto const cc : cigar_seq)
-				{
-					oc_tag.push_back(get <0>(cc));
-					oc_tag.push_back(get <1>(cc).to_char());
-				}
-			}
-			
 			// Remove the non-preserved tags.
 			{
 				auto it(tags.begin());
@@ -688,6 +672,22 @@ namespace {
 					++it; // Not invalidated when std::map::erase() is called.
 					tags.erase(it_);
 					++m_removed_tag_counts[tag];
+				}
+			}
+
+			// Store the original alignment.
+			// SeqAn 3 does not yet have a type definition for the OA tag which replaces OC,
+			// so we use the latter instead.
+			{
+				using seqan3::get;
+				using seqan3::operator""_tag;
+
+				auto &oc_tag(tags.template get <"OC"_tag>());
+				oc_tag.clear();
+				for (auto const cc : cigar_seq)
+				{
+					oc_tag.push_back(get <0>(cc));
+					oc_tag.push_back(get <1>(cc).to_char());
 				}
 			}
 			
