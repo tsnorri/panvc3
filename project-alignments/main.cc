@@ -926,6 +926,7 @@ namespace {
 
 		{
 			std::map <std::string, std::size_t, lb::compare_strings_transparent> unique_ref_ids;
+			std::vector <std::size_t> ref_seq_idxs;
 
 			// Determine the unique reference identifiers by splitting by the separator and taking the left parts,
 			// also number them.
@@ -960,18 +961,25 @@ namespace {
 
 					ref_id_mapping[input_ref_idx] = output_ref_idx;
 
-					// Copy to ref_id_info in case we found the projection target sequence.
+					// Store the index for copying ref_id_info in case we found the projection target sequence.
 					if (ref_seq_id == seq_id)
-						output_ref_id_info[output_ref_idx] = input_ref_id_info[input_ref_idx];
+						ref_seq_idxs.push_back(input_ref_idx);
 				}
 			}
 			
-			// Copy the output reference identifiers to the header.
+			// Copy the output reference identifiers to the header, handle ref_id_info.
 			{
 				t_output_ref_ids output_ref_ids;
 				output_ref_ids.resize(unique_ref_ids.size());
+				output_ref_id_info.resize(unique_ref_ids.size());
 				for (auto const &kv : unique_ref_ids)
 					output_ref_ids[kv.second] = std::move(kv.first);
+
+				for (auto const &input_idx : ref_seq_idxs)
+				{
+					auto const output_idx(ref_id_mapping[input_idx]);
+					output_ref_id_info[output_idx] = input_ref_id_info[input_idx];
+				}
 
 				aln_output_header.ref_ids() = std::move(output_ref_ids);
 			}
