@@ -474,6 +474,7 @@ namespace {
 				{
 					lb::log_time(std::cerr) << "(Re-)loading reference sequence '" << ref_name << "'…\n";
 					m_fasta_reader.read_sequence(ref_name, buffer);
+					lb::log_time(std::cerr) << "Loading complete.\n";
 				}
 			}
 			
