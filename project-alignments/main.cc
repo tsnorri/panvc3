@@ -312,6 +312,7 @@ namespace {
 		std::string						m_ref_id_separator;
 		std::int32_t					m_gap_opening_cost{};
 		std::int32_t					m_gap_extension_cost{};
+		std::uint16_t					m_original_pnext_tag{};	// FIXME: typedef?
 		std::uint16_t					m_realigned_ranges_tag{};
 		std::uint16_t					m_rec_idx_tag{};
 		bool							m_should_consider_primary_alignments_only{};
@@ -334,6 +335,7 @@ namespace {
 			t_msa_ref_id				&&msa_ref_id,
 			t_ref_id_separator			&&ref_id_separator,
 			reference_id_mapping_type	&&ref_id_mapping,
+			std::array <char, 2> const	&original_pnext_tag,
 			std::array <char, 2> const	&realigned_ranges_tag,
 			std::array <char, 2> const	&rec_idx_tag,
 			std::int32_t				gap_opening_cost,
@@ -358,6 +360,7 @@ namespace {
 			m_ref_id_separator(std::forward <t_ref_id_separator>(ref_id_separator)),
 			m_gap_opening_cost(gap_opening_cost),
 			m_gap_extension_cost(gap_extension_cost),
+			m_original_pnext_tag(to_tag(original_pnext_tag)),
 			m_realigned_ranges_tag(to_tag(realigned_ranges_tag)),
 			m_rec_idx_tag(to_tag(rec_idx_tag)),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
@@ -390,6 +393,7 @@ namespace {
 		sequence_vector const &output_reference_sequence(std::size_t const idx) const { return m_reference_buffer_store.buffer(idx).get(); }
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
+		std::uint16_t original_pnext_tag() const { return m_original_pnext_tag; }
 		std::uint16_t realigned_ranges_tag() const { return m_realigned_ranges_tag; }
 		std::uint16_t record_index_tag() const { return m_rec_idx_tag; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
@@ -565,6 +569,7 @@ namespace {
 		auto const gap_extension_cost(m_input_processor->gap_extension_cost());
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
 		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
+		auto const original_pnext_tag(m_input_processor->original_pnext_tag());
 		auto const realn_ranges_tag(m_input_processor->realigned_ranges_tag());
 		auto const rec_idx_tag(m_input_processor->record_index_tag());
 		auto const should_process_tasks_in_parallel(m_input_processor->should_process_tasks_in_parallel());
@@ -739,7 +744,7 @@ namespace {
 			}
 			
 			// Store the re-aligned ranges in query co-ordinates.
-			if (realn_range_count)
+			if (realn_ranges_tag && realn_range_count)
 			{
 				std::vector <std::uint32_t> output_ranges(2 * realn_range_count, 0);
 				auto const &realn_query_ranges(m_alignment_projector.realigned_query_ranges());
@@ -774,6 +779,9 @@ namespace {
 				libbio_always_assert_lte(mate_position, std::numeric_limits <ref_offset_type>::max());
 				auto const dst_mate_position(src_seq_entry.project_position(mate_position, dst_seq_entry));
 				aln_rec.mate_position() = dst_mate_position;
+
+				if (original_pnext_tag)
+					tags[original_pnext_tag] = mate_position;
 			}
 
 			// Finally (esp. after setting OA/OC) update the CIGAR, the positions, the header pointer,
@@ -1058,15 +1066,28 @@ namespace {
 
 		std::string ref_id_separator(args_info.ref_id_separator_arg);
 		std::string reference_msa_id(args_info.reference_msa_id_arg);
+
+		// Original PNEXT tag.
+		// FIXME: make a function for these.
+		auto const original_pnext_tag{[&args_info, &tag_regex]() -> std::array <char, 2> {
+			auto const *tag{args_info.original_pnext_tag_arg};
+			if (!tag)
+				return {0, 0};
+
+			if (!std::regex_match(tag, tag_regex))
+			{
+				std::cerr << "ERROR: The given tag for the original PNEXT value does not match the expected format.\n";
+				std::exit(EXIT_FAILURE);
+			}
+			
+			return {tag[0], tag[1]};
+		}()};
 		
 		// Re-aligned range tag.
 		auto const realn_ranges_tag{[&args_info, &tag_regex]() -> std::array <char, 2> {
 			auto const *tag{args_info.realigned_ranges_tag_arg};
 			if (!tag)
-			{
-				std::cerr << "ERROR: Re-aligned ranges tag not given.\n";
-				std::exit(EXIT_FAILURE);
-			}
+				return {0, 0};
 			
 			if (!std::regex_match(tag, tag_regex))
 			{
@@ -1145,6 +1166,7 @@ namespace {
 			std::move(reference_msa_id),
 			std::move(ref_id_separator),
 			std::move(ref_id_mapping),
+			original_pnext_tag,
 			realn_ranges_tag,
 			rec_idx_tag,
 			args_info.gap_opening_cost_arg,
