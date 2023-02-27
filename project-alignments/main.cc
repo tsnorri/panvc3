@@ -29,14 +29,22 @@ namespace ios	= boost::iostreams;
 namespace rsv	= ranges::views;
 
 
+using seqan3::operator""_tag;
+
+
+// SeqAn 3 does not yet have a definition for the OA tag.
+// (Check when updating, though.)
+namespace seqan3 {
+	template <> struct sam_tag_type <"OA"_tag> { typedef std::string type; };
+}
+
+
 namespace {
 	
 	constexpr inline std::size_t	QUEUE_SIZE{16};
 	constexpr inline std::size_t	CHUNK_SIZE{4};
 
 	constexpr static auto const preserved_sam_tags{[]() constexpr {
-		using seqan3::operator""_tag;
-
 		// Consider saving UQ.
 		std::array retval{
 			"AM"_tag,	// The smallest template-independent mapping quality in the template
@@ -55,6 +63,7 @@ namespace {
 			"MI"_tag,	// Molecular identifier; a string that uniquely identifies the molecule from which the record was derived
 			"ML"_tag,	// Base modification problems
 			"MM"_tag,	// Base modifications / methylation
+			"OA"_tag,	// Original alignment
 			"OQ"_tag,	// Original base quality
 			"OX"_tag,	// Original unique molecular barcode bases
 			"PG"_tag,	// Program
@@ -568,6 +577,7 @@ namespace {
 		ref_id_type prev_ref_id{}; // std::optional.
 		panvc3::msa_index::sequence_entry_vector::const_iterator src_seq_entry_it{};
 		panvc3::msa_index::sequence_entry_vector::const_iterator dst_seq_entry_it{};
+		std::stringstream oa_buffer;
 		for (auto &aln_rec : alignment_records())
 		{
 			libbio_assert(project_task_status::processing == m_status.load());
@@ -651,43 +661,80 @@ namespace {
 
 			// Update the tags.
 			auto &tags(aln_rec.tags());
-			
-			// Remove the non-preserved tags.
+
 			{
-				auto it(tags.begin());
-				auto const end(tags.end());
+				typedef seqan3::sam_tag_type_t <"NM"_tag>	nm_type;
+				std::optional <nm_type> original_nm;
 				
-				while (it != end)
+				// Store the original NM value.
 				{
-					// Check if the current tag should be preserved.
-					auto const tag(it->first);
-					if (std::binary_search(preserved_sam_tags.begin(), preserved_sam_tags.end(), tag))
-					{
-						++it;
-						continue;
-					}
-					
-					// Remove and increment the count.
-					auto const it_(it);
-					++it; // Not invalidated when std::map::erase() is called.
-					tags.erase(it_);
-					++m_removed_tag_counts[tag];
+					auto const it(tags.find("NM"_tag));
+					if (tags.end() != it)
+						original_nm = std::get <nm_type>(it->second);
 				}
-			}
 
-			// Store the original alignment.
-			// SeqAn 3 does not yet have a type definition for the OA tag which replaces OC,
-			// so we use the latter instead.
-			{
-				using seqan3::get;
-				using seqan3::operator""_tag;
-
-				auto &oc_tag(tags.template get <"OC"_tag>());
-				oc_tag.clear();
-				for (auto const cc : cigar_seq)
+				// Remove the non-preserved tags.
 				{
-					oc_tag.push_back(get <0>(cc));
-					oc_tag.push_back(get <1>(cc).to_char());
+					auto it(tags.begin());
+					auto const end(tags.end());
+					
+					while (it != end)
+					{
+						// Check if the current tag should be preserved.
+						auto const tag(it->first);
+						if (std::binary_search(preserved_sam_tags.begin(), preserved_sam_tags.end(), tag))
+						{
+							++it;
+							continue;
+						}
+						
+						// Remove and increment the count.
+						auto const it_(it);
+						++it; // Not invalidated when std::map::erase() is called.
+						tags.erase(it_);
+						++m_removed_tag_counts[tag];
+					}
+				}
+
+				// Store the original alignment.
+				{
+					using seqan3::get;
+
+					// Clear the buffer.
+					oa_buffer.str(std::string());
+					oa_buffer.clear();
+
+					// RNAME
+					oa_buffer << ref_ids[ref_id] << ',';
+
+					// POS
+					oa_buffer << src_pos << ',';
+
+					// Strand
+					oa_buffer << (std::to_underlying(seqan3::sam_flag::on_reverse_strand & aln_rec.flag()) ? '-' : '+') << ',';
+
+					// CIGAR
+					for (auto const cc : cigar_seq)
+					{
+						oa_buffer << get <0>(cc);
+						oa_buffer << get <1>(cc).to_char();
+					}
+					oa_buffer << ',';
+
+					// MAPQ
+					oa_buffer << aln_rec.mapping_quality() << ',';
+
+					// NM
+					// The preceding comma is required even if the value is empty.
+					if (original_nm)
+						oa_buffer << *original_nm;
+
+					// Trailing semicolon.
+					oa_buffer << ';' << std::flush;
+
+					// Copy to the end of OA.
+					auto &oa_tag(tags.template get <"OA"_tag>());
+					oa_tag += oa_buffer.view();
 				}
 			}
 			
