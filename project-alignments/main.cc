@@ -11,7 +11,7 @@
 #include <libbio/file_handling.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
-#include <panvc3/reference_buffer_store.hh>
+#include <panvc3/sequence_buffer_store.hh>
 #include <panvc3/spsc_queue.hh>
 #include <panvc3/utility.hh>
 #include <range/v3/algorithm/copy.hpp>
@@ -287,7 +287,7 @@ namespace {
 		lb::file_ostream				m_realn_range_output;
 
 		fasta_reader					m_fasta_reader;
-		panvc3::reference_buffer_store	m_reference_buffer_store;
+		panvc3::sequence_buffer_store	m_reference_buffer_store;
 		
 		dispatch_queue_ptr				m_output_dispatch_queue;
 		exit_callback_type				m_exit_cb{};
