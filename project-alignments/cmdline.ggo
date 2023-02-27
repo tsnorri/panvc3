@@ -14,9 +14,10 @@ option		"reference-msa-id"			d	"Reference sequence ID in MSA index"										str
 option		"ref-id-separator"			s	"Reference ID separator in input"											string	default = "_"			optional
 
 section		"Output options"
-option		"realigned-ranges-tag"		t	"Use the given SAM tag for the re-aligned ranges (/[XYZ][A-Za-z0-9]/)"		string	default = "XR"			optional
-option		"record-index-tag"			n	"Use the given SAM tag for the index (/[XYZ][A-Za-z0-9]/)"					string							optional
+option		"realigned-ranges-tag"		t	"SAM tag for the re-aligned ranges"											string	default = "XR"			optional
+option		"record-index-tag"			n	"SAM tag for the original record index"										string							optional
 option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
+text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
 section		"Re-aligned range output"
 option		"output-realigned-ranges"	l	"Output the re-aligned ranges as TSV to the given path"						string	typestr = "filename"	optional
