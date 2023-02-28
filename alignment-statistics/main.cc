@@ -104,6 +104,7 @@ namespace {
 		return seqan3::fields <
 			seqan3::field::ref_id,
 			seqan3::field::ref_offset,
+			seqan3::field::mapq,
 			seqan3::field::mate,
 			seqan3::field::flag,
 			seqan3::field::cigar
@@ -327,6 +328,40 @@ namespace {
 		for (auto const &[idx, name] : rsv::enumerate(ref_names_by_id))
 			std::cout << name << '\t' << counts_by_ref_id[idx] << '\n';
 	}
+
+
+	template <typename t_aln_input>
+	void mapq_histogram(
+		t_aln_input &aln_input,
+		alignment_statistics &stats,
+		gengetopt_args_info const &args_info
+	)
+	{
+		lb::log_time(std::cerr) << "Calculating the histogram of the MAPQ values…\n";
+		std::cout << "VALUE\tCOUNT\n";
+
+		constexpr std::size_t const MAPQ_LIMIT(256);
+		std::vector <std::size_t> histogram(256, 0);
+
+		process_alignments(aln_input, args_info, stats,
+			[
+				&histogram
+			](auto const &aln_rec){
+				auto const mapq(aln_rec.mapping_quality());
+				typedef decltype(mapq) mapq_type;
+				static_assert(std::numeric_limits <mapq_type>::max() < MAPQ_LIMIT);
+				++histogram[mapq];
+			}
+		);
+
+		for (auto const &[val, count] : rsv::enumerate(histogram))
+		{
+			if (0 == count)
+				continue;
+
+			std::cout << val << '\t' << count << '\n';
+		}
+	}
 	
 	
 	template <typename t_cb>
@@ -388,6 +423,8 @@ int main(int argc, char **argv)
 			read_input(args_info, [&stats, &args_info](auto &aln_input){ calculate_coverage(aln_input, stats, args_info); });
 		else if (args_info.count_alignments_given)
 			read_input(args_info, [&stats, &args_info](auto &aln_input){ count_alignments_by_contig(aln_input, stats, args_info); });
+		else if (args_info.mapq_histogram_given)
+			read_input(args_info, [&stats, &args_info](auto &aln_input){ mapq_histogram(aln_input, stats, args_info); });
 		else
 		{
 			std::cerr << "ERROR: No mode given." << std::endl;

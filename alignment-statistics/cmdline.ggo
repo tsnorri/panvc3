@@ -22,3 +22,6 @@ modeoption	"coverage"			C	"Calculate coverage per position"											mode = "Co
 
 defmode		"Count alignments"	modedesc = "Count the alignments by reference"
 modeoption	"count-alignments"	O	"Count the alignments by reference"											mode = "Count alignments"		required
+
+defmode		"MAPQ histogram"	modedesc = "Calculate the histogram of the MAPQ values"
+modeoption	"mapq-histogram"	M	"Calculate the histogram of the MAPQ values"								mode = "MAPQ histogram"
