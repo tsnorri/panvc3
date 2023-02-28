@@ -727,7 +727,7 @@ namespace {
 					oa_buffer << ',';
 
 					// MAPQ
-					oa_buffer << aln_rec.mapping_quality() << ',';
+					oa_buffer << +(aln_rec.mapping_quality()) << ',';
 
 					// NM
 					// The preceding comma is required even if the value is empty.
