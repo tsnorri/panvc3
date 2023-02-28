@@ -131,11 +131,30 @@ namespace {
 		typedef typename std::remove_cvref_t <t_aln_input>::traits_type	alignment_input_traits_type;
 		typedef typename alignment_input_traits_type::ref_ids			reference_ids_type;
 		
-		auto const contig_prefix(args_info.contig_prefix_arg);
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
 		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
 		
 		reference_ids_type const &reference_ids(aln_input.header().ref_ids());
+		std::vector <std::size_t> filtered_ref_ids; // Filter == keep.
+		std::vector <std::size_t> ref_id_eq_classes(reference_ids.size(), SIZE_MAX);
+
+		// Check if any RNAME prefixes were given.
+		for (unsigned int i(0); i < args_info.rname_prefix_given; ++i)
+		{
+			auto const *prefix(args_info.rname_prefix_arg[i]);
+			std::string_view const prefix_sv(prefix);
+			
+			for (auto const &[ref_id, ref_name] : rsv::enumerate(reference_ids))
+			{
+				if (ref_name.starts_with(prefix_sv))
+				{
+					std::cerr << "Filtering by reference '" << ref_name << "' (" << ref_id << ").\n";
+					filtered_ref_ids.push_back(ref_id);
+					ref_id_eq_classes[ref_id] = i;
+				}
+			}
+		}
+		std::sort(filtered_ref_ids.begin(), filtered_ref_ids.end());
 
 		std::size_t reads_processed{};
 
@@ -167,7 +186,7 @@ namespace {
 			}
 			
 			// Check the contig name if requested.
-			if (contig_prefix)
+			if (!filtered_ref_ids.empty())
 			{
 				auto const ref_id(aln_rec.reference_id());
 
@@ -178,7 +197,7 @@ namespace {
 					continue;
 				}
 				
-				if (!reference_ids[*ref_id].starts_with(contig_prefix))
+				if (!std::binary_search(filtered_ref_ids.begin(), filtered_ref_ids.end(), *ref_id))
 				{
 					++stats.ref_id_mismatches;
 					continue;
@@ -196,7 +215,7 @@ namespace {
 						continue;
 					}
 					
-					if (!reference_ids[*mate_ref_id].starts_with(contig_prefix))
+					if (ref_id_eq_classes[*ref_id] != ref_id_eq_classes[*mate_ref_id])
 					{
 						++stats.mate_ref_id_mismatches;
 						continue;
@@ -404,9 +423,9 @@ int main(int argc, char **argv)
 	
 	if (args_info.same_ref_flag)
 	{
-		if (!args_info.contig_prefix_arg)
+		if (!args_info.rname_prefix_given)
 		{
-			std::cerr << "ERROR: --same-ref requires --contig-prefix." << std::endl;
+			std::cerr << "ERROR: --same-ref requires --rname-prefix." << std::endl;
 			return EXIT_FAILURE;
 		}
 		

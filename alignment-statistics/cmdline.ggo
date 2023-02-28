@@ -10,9 +10,8 @@ description	"Currently coverage per position and the number of alignments for ea
 section "Input options"
 option		"alignments"		a	"Alignment file path"														string	typestr = "filename"	optional
 option		"bam-input"			b	"Input read from stdin is in BAM format"									flag	off
-
 section "Alignment options"
-option		"contig-prefix"		p	"Contig prefix in the alignment file"										string							optional
+option		"rname-prefix"		p	"Filter alignments by the given RNAME prefix"								string	typestr = "prefix"		optional	multiple
 option		"primary-only"		m	"Consider primary alignments only"											flag	off
 option		"same-ref"			s	"Consider alignments with the same contig prefix only"						flag	off
 option		"include-clipping"	l	"Include soft clipping"														flag	off
