@@ -9,6 +9,7 @@
 #include <libbio/fasta_reader.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
+#include <libbio/utility.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
 #include <panvc3/sequence_buffer_store.hh>
@@ -963,30 +964,56 @@ namespace {
 		t_aln_input_header &aln_input_header,		// ref_ids() is non-const.
 		std::string const &ref_id_separator,
 		std::string const &ref_seq_id,				// Projection target.
+		char const * const ref_order_path,
 		t_aln_output_header &aln_output_header,
 		reference_id_mapping_type &ref_id_mapping	// From input to output.
 	)
 	{
 		ref_id_mapping.clear();
-
+		
 		aln_output_header.comments = aln_input_header.comments;
 		aln_output_header.read_groups = aln_input_header.read_groups;
-
+		
 		auto const &input_ref_ids(aln_input_header.ref_ids()); // By default std::deque <std::string>.
 		ref_id_mapping.resize(input_ref_ids.size(), SIZE_MAX);
-
+		
 		auto const &input_ref_id_info(aln_input_header.ref_id_info);
 		auto &output_ref_id_info(aln_output_header.ref_id_info);
 		auto &output_ref_dict(aln_output_header.ref_dict);
-
+		
 		{
 			std::map <std::string, std::size_t, lb::compare_strings_transparent> unique_ref_ids;
-			std::vector <std::size_t> ref_seq_idxs;
-
+			std::vector <std::size_t> ref_seq_idxs; // Indices of the projection target sequences in the input.
+			
+			typedef std::pair <std::size_t, bool> output_ref_name_value;
+			std::unordered_map <
+				std::string,
+				output_ref_name_value,
+				lb::string_hash_transparent,
+				lb::string_equal_to_transparent
+			> output_ref_name_order;
+			
+			if (ref_order_path)
+			{
+				// Read the reference names.
+				lb::file_istream stream;
+				std::string buffer;
+				
+				lb::open_file_for_reading(ref_order_path, stream);
+				std::size_t idx{};
+				while (std::getline(stream, buffer))
+				{
+					auto const res(output_ref_name_order.emplace(buffer, output_ref_name_value(idx, false)));
+					if (!res.second)
+						std::cerr << "WARNING: Identifier ‘" << buffer << "’ specified in reference name order more than once.\n";
+					++idx;
+				}
+			}
+			
 			// Determine the unique reference identifiers by splitting by the separator and taking the left parts,
 			// also number them.
 			{
-				std::size_t next_output_ref_idx{};
+				std::size_t next_output_ref_idx{output_ref_name_order.size()};
 				for (auto const &[input_ref_idx, input_ref_id_] : rsv::enumerate(input_ref_ids))
 				{
 					std::string_view const input_ref_id(input_ref_id_);
@@ -996,26 +1023,41 @@ namespace {
 						std::cerr << "ERROR: Separator '" << ref_id_separator << "' not found in reference ID '" << input_ref_id << "'.\n";
 						std::exit(EXIT_FAILURE);
 					}
-
+					
 					auto const chr_id(input_ref_id.substr(0, separator_pos));
 					auto const seq_id(input_ref_id.substr(1 + separator_pos));
 					auto const it(unique_ref_ids.find(chr_id));
 					std::size_t output_ref_idx{};
 					if (unique_ref_ids.end() == it)
 					{
-						output_ref_idx = next_output_ref_idx;
-						++next_output_ref_idx;
+						// Try to find chr_id in the user-specified order.
+						auto const it(output_ref_name_order.find(chr_id));
+						if (output_ref_name_order.end() == it)
+						{
+							output_ref_idx = next_output_ref_idx;
+							++next_output_ref_idx;
+							
+							if (!output_ref_name_order.empty())
+								std::cerr << "WARNING: Output reference ID ‘" << chr_id << "’ not found in the output order, placing in the end.\n";
+						}
+						else
+						{
+							auto &val(it->second);
+							output_ref_idx = val.first;
+							val.second = true; // Mark used.
+						}
+						
 						unique_ref_ids.emplace(chr_id, output_ref_idx);
-
 						output_ref_dict.emplace(chr_id, output_ref_idx); // We could use this in place of unique_ref_ids but I'm not sure if it has a transparent key comparator.
 					}
 					else
 					{
+						// chr_id already known.
 						output_ref_idx = it->second;
 					}
-
+					
 					ref_id_mapping[input_ref_idx] = output_ref_idx;
-
+					
 					// Store the index for copying ref_id_info in case we found the projection target sequence.
 					if (ref_seq_id == seq_id)
 						ref_seq_idxs.push_back(input_ref_idx);
@@ -1029,14 +1071,22 @@ namespace {
 				output_ref_id_info.resize(unique_ref_ids.size());
 				for (auto const &kv : unique_ref_ids)
 					output_ref_ids[kv.second] = std::move(kv.first);
-
+				
 				for (auto const &input_idx : ref_seq_idxs)
 				{
 					auto const output_idx(ref_id_mapping[input_idx]);
 					output_ref_id_info[output_idx] = input_ref_id_info[input_idx];
 				}
-
+				
 				aln_output_header.ref_ids() = std::move(output_ref_ids);
+			}
+			
+			// Check if there were any identifiers in the input that were not used.
+			for (auto const &kv : output_ref_name_order)
+			{
+				auto const &val(kv.second);
+				if (!val.second)
+					std::cerr << "WARNING: Identifier ‘" << kv.first << "’ was given in the output reference name order but was not found in the input.\n";
 			}
 		}
 	}
@@ -1134,7 +1184,14 @@ namespace {
 
 		// Headers.
 		reference_id_mapping_type ref_id_mapping;
-		process_headers <ref_ids_type>(aln_input_header, ref_id_separator, reference_msa_id, aln_output.header(), ref_id_mapping);
+		process_headers <ref_ids_type>(
+			aln_input_header,
+			ref_id_separator,
+			reference_msa_id,
+			args_info.reference_order_input_arg,
+			aln_output.header(),
+			ref_id_mapping
+		);
 
 		// Open the realigned range output file if needed.
 		lb::file_handle realigned_range_handle;

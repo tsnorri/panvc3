@@ -12,6 +12,7 @@ option		"msa-index"					m	"MSA index path"															string	typestr = "filen
 option		"reference"					r	"Reference sequences FASTA path"											string	typestr = "filename"	required
 option		"reference-msa-id"			d	"Reference sequence ID in MSA index"										string							required
 option		"ref-id-separator"			s	"Reference ID separator in input"											string	default = "_"			optional
+option		"reference-order-input"		u	"Read output reference order from the given path, one identifier per line"	string	typestr = "filename"	optional
 
 section		"Output options"
 option		"original-pnext-tag"		o	"SAM tag for the original value of the PNEXT field"							string	default = "XP"			optional
