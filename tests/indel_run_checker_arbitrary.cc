@@ -5,6 +5,7 @@
 
 #include <catch2/catch.hpp>
 #include <libbio/markov_chain.hh>
+#include <libbio/markov_chain_rapidcheck.hh>
 #include <libbio/utility/is_equal.hh>
 #include <libbio/utility/is_lt.hh>
 #include <panvc3/indel_run_checker.hh>
@@ -23,68 +24,6 @@ namespace rsv		= ranges::views;
 namespace tests		= panvc3::tests;
 
 using seqan3::operator""_cigar_operation;
-
-
-namespace rc {
-	
-	template <typename t_base, typename t_initial_state, typename t_transitions>
-	struct Arbitrary <mcs::chain <t_base, t_initial_state, t_transitions>>
-	{
-		typedef mcs::chain <t_base, t_initial_state, t_transitions>	chain_type;
-		
-		static Gen <chain_type> arbitrary()
-		{
-			return gen::withSize([](int const size){
-				// I don’t think RapidCheck knows how to shrink the chain, so we’ll use gen::shrink.
-				// Also it seems to be quite difficult to functionally map a collection (of generators to a generator
-				// that produces a collection), so we’ll resort to gen::exec. (We could use gen::mapCat to produce the
-				// vector of probabilities but then using gen::arbitrary with the nodes / states would not be possible.)
-				return gen::shrink(
-					gen::exec([size](){
-						auto const probabilities(
-							*gen::container <std::vector <double>>(
-								size,
-								gen::map(
-									// We need to use the half-open range here b.c. std::upper_bound is applied to find
-									// the correct transition.
-									gen::inRange <std::uint32_t>(0.0, UINT32_MAX),
-									[](auto const val){
-										return 1.0 * val / UINT32_MAX;
-									}
-								)
-							)
-						);
-						
-						chain_type retval;
-						retval.values.reserve(1 + size);
-						chain_type::visit_node_types(probabilities, [&retval]<typename t_type> {
-							if constexpr (chain_type::uses_runtime_polymorphism)
-							{
-								// It seems that there is no other way to combine gen::arbitrary and operator new.
-								retval.values.emplace_back(
-									std::make_unique <t_type>(
-										*gen::arbitrary <t_type>()
-									)
-								);
-							}
-							else
-							{
-								retval.values.emplace_back(*gen::arbitrary <t_type>()); // Needs a converting constructor.
-							}
-						});
-						return retval;
-					}),
-					[](chain_type &&mc){
-						return seq::takeWhile(
-							seq::iterate(std::move(mc), [](chain_type &&mc){ mc.values.pop_back(); return std::move(mc); }),
-							[](chain_type const &mc){ return !mc.values.empty(); }
-						);
-					}
-				);
-			});
-		}
-	};
-}
 
 
 namespace {
