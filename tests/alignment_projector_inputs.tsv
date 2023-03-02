@@ -1,3 +1,5 @@
+S	a pair of sequences with an insertion	TTT---TTT	TTTACGTTT
+Q	TTTACGTTT	0	0	3=3I3=	9=	alignment_projector can rewrite a run of insertions as a continuous run of matches	a segment that contains an insertion w.r.t. the original reference
 S	a pair of sequences with a mismatching run	TTTTTACGACG---TTTACGTTTTT	TTTTTACGACGACG---ACGTTTTT
 Q	TTT	11	14	3=	3I	alignment_projector can project a matching segment to a run of deletions	a segment that matches a run in the first sequence
 Q	ACGTTT	8	8	6=	3=3D3I	alignment_projector can re-align a matching segment to a run with a mismatching tail	a segment that matches a run in the first sequence and the tail of which does not match the corresponding run in the second sequence

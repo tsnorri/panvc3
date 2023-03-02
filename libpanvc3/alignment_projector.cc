@@ -137,6 +137,9 @@ namespace panvc3 {
 			ranges::subrange(cigar_begin, cigar_rewritten.end()),
 			ranges::back_inserter(m_cigar_realigned)
 		);
+
+		// Collapse the operations.
+		collapse_cigar_operations(m_cigar_realigned);
 		
 		return dst_pos;
 	}

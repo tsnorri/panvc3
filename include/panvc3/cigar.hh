@@ -19,6 +19,10 @@ namespace panvc3 {
 	
 	typedef type_list_to_tuple_t <seqan3::cigar::seqan3_required_types>	cigar_component_types;
 	typedef std::tuple_element_t <0, cigar_component_types>				cigar_count_type;
+
+
+	// Combine adjacent matching CIGAR operations.
+	void collapse_cigar_operations(/* inout */ cigar_vector &ops);
 	
 	
 	class cigar_buffer
