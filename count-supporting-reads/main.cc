@@ -815,6 +815,7 @@ namespace {
 				vcf_end_field,					// Pointer
 				vcf_co_field,					// Pointer
 				vcf_usra_field,					// Pointer
+				vcf_path,						// Pointer
 				expected_zygosity,				// short
 				should_include_clipping,		// bool
 				should_anchor_reads_left_only,	// bool
@@ -823,120 +824,128 @@ namespace {
 				&buffer,
 				&var_statistics
 			](vcf::transient_variant const &var){
-				++var_statistics.variants_processed;
-				if (0 == var_statistics.variants_processed % 100000)
-					lb::log_time(std::cerr) << "Processed " << var_statistics.variants_processed << " variants…\n";
-				
-				auto const var_pos(var.zero_based_pos());
-				
-				auto const gt_field_ptr(get_variant_format(var).gt_field);
-				libbio_always_assert(gt_field_ptr); // The variants should always have the GT field.
-				auto const &gt_field(*gt_field_ptr);
-				
-				auto const &samples(var.samples());
-				libbio_always_assert_eq(1, samples.size()); // FIXME: handle more than one sample, e.g by allowing the user to specify the sample identifier.
-				
-				// Check the chromosome identifier.
-				if (chr_id && (chr_id != var.chrom_id()))
+				try
 				{
-					++var_statistics.chr_id_mismatches;
-					return true;
-				}
-				
-				// Get the sample genotype.
-				auto const &sample(samples.front());
-				auto const &gt(gt_field(sample)); // vector of sample_genotype
-				libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT (", gt.size(), ")"); // FIXME: error message, or handle other zygosities.
-				
-				// Check the zygosity. (Generalised for polyploid.)
-				static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
-				auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::int16_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
-					return acc + (sample_gt.alt ? 1 : 0);
-				}));
-				
-				if (0 <= expected_zygosity && zygosity != expected_zygosity)
-				{
-					++var_statistics.zygosity_mismatches;
-					return true;
-				}
-				
-				// A suitable variant was found.
-				auto const var_end_pos(vcf::variant_end_pos(var, *vcf_end_field));
-				libbio_assert_lte(var_pos, var_end_pos);
-				
-				// Update the set of matching alignments.
-				aln_reader.update_candidate_records(var_pos);
-				auto const &candidate_records(aln_reader.candidate_records());
-				if (candidate_records.empty())
-				{
-					++var_statistics.zero_coverage;
-					return true;
-				}
-				
-				// Output “V” chrom pos id(s) ref alts zygosity is_reversed, separated by tabs.
-				std::cout << "V\t" << var.chrom_id() << '\t' << var_pos << '\t';
-				ranges::copy(var.id(), ranges::make_ostream_joiner(std::cout, ","));
-				std::cout << '\t' << var.ref() << '\t';
-				output_alts(var, std::cout);
-				std::cout << '\t' << zygosity;
-				std::cout << '\t' << +((vcf_co_field && vcf_co_field->has_value(var)) || (vcf_usra_field && vcf_usra_field->has_value(var))) << '\n';
-				
-				// FIXME: While we output all ALTs above, considering each for counting supporting reads would be quite difficult. Since we only handle heterozygous variants of diploid donors (for now), this is not needed.
-				libbio_always_assert_eq(1, var.alts().size());
-				auto const &alt(var.alts().front());
-				auto const var_alt_len(alt.alt.size());
-				
-				auto const var_ref_len(var_end_pos - var_pos);
-				
-				supported_sequences.clear();
-				for (auto const &rec : candidate_records)
-				{
-					auto const rec_pos(rec.reference_position());
+					++var_statistics.variants_processed;
+					if (0 == var_statistics.variants_processed % 100000)
+						lb::log_time(std::cerr) << "Processed " << var_statistics.variants_processed << " variants…\n";
 					
-					try
+					auto const var_pos(var.zero_based_pos());
+					
+					auto const gt_field_ptr(get_variant_format(var).gt_field);
+					libbio_always_assert(gt_field_ptr); // The variants should always have the GT field.
+					auto const &gt_field(*gt_field_ptr);
+					
+					auto const &samples(var.samples());
+					libbio_always_assert_eq(1, samples.size()); // FIXME: handle more than one sample, e.g by allowing the user to specify the sample identifier.
+					
+					// Check the chromosome identifier.
+					if (chr_id && (chr_id != var.chrom_id()))
 					{
-						libbio_assert_lte(rec_pos, var_pos);
+						++var_statistics.chr_id_mismatches;
+						return true;
+					}
+					
+					// Get the sample genotype.
+					auto const &sample(samples.front());
+					auto const &gt(gt_field(sample)); // vector of sample_genotype
+					libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT (", gt.size(), ")"); // FIXME: error message, or handle other zygosities.
+					
+					// Check the zygosity. (Generalised for polyploid.)
+					static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
+					auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::int16_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
+						return acc + (sample_gt.alt ? 1 : 0);
+					}));
+					
+					if (0 <= expected_zygosity && zygosity != expected_zygosity)
+					{
+						++var_statistics.zygosity_mismatches;
+						return true;
+					}
+					
+					// A suitable variant was found.
+					auto const var_end_pos(vcf::variant_end_pos(var, *vcf_end_field));
+					libbio_assert_lte(var_pos, var_end_pos);
+					
+					// Update the set of matching alignments.
+					aln_reader.update_candidate_records(var_pos);
+					auto const &candidate_records(aln_reader.candidate_records());
+					if (candidate_records.empty())
+					{
+						++var_statistics.zero_coverage;
+						return true;
+					}
+					
+					// Output “V” chrom pos id(s) ref alts zygosity is_reversed, separated by tabs.
+					std::cout << "V\t" << var.chrom_id() << '\t' << var_pos << '\t';
+					ranges::copy(var.id(), ranges::make_ostream_joiner(std::cout, ","));
+					std::cout << '\t' << var.ref() << '\t';
+					output_alts(var, std::cout);
+					std::cout << '\t' << zygosity;
+					std::cout << '\t' << +((vcf_co_field && vcf_co_field->has_value(var)) || (vcf_usra_field && vcf_usra_field->has_value(var))) << '\n';
+					
+					// FIXME: While we output all ALTs above, considering each for counting supporting reads would be quite difficult. Since we only handle heterozygous variants of diploid donors (for now), this is not needed.
+					libbio_always_assert_eq(1, var.alts().size());
+					auto const &alt(var.alts().front());
+					auto const var_alt_len(alt.alt.size());
+					
+					auto const var_ref_len(var_end_pos - var_pos);
+					
+					supported_sequences.clear();
+					for (auto const &rec : candidate_records)
+					{
+						auto const rec_pos(rec.reference_position());
 						
-						// Add to the supported sequences if possible.
-						// Check first that at least the reference sequence is present in the current read.
-						// FIXME: Do we need to count the mismatch? By variant?
-						if ((
-								should_anchor_reads_left_only
-								? var_end_pos <= rec_pos + rec.reference_length()
-								: var_end_pos <  rec_pos + rec.right_anchored_length()
-							) && rec.try_read_aligned_sequence(var_pos, var_ref_len, var_alt_len, buffer, should_include_clipping)
-						)
+						try
 						{
-							auto &&[it, did_emplace] = supported_sequences.try_emplace(buffer, 0);
-							++(it->second);
+							libbio_assert_lte(rec_pos, var_pos);
+							
+							// Add to the supported sequences if possible.
+							// Check first that at least the reference sequence is present in the current read.
+							// FIXME: Do we need to count the mismatch? By variant?
+							if ((
+									should_anchor_reads_left_only
+									? var_end_pos <= rec_pos + rec.reference_length()
+									: var_end_pos <  rec_pos + rec.right_anchored_length()
+								) && rec.try_read_aligned_sequence(var_pos, var_ref_len, var_alt_len, buffer, should_include_clipping)
+							)
+							{
+								auto &&[it, did_emplace] = supported_sequences.try_emplace(buffer, 0);
+								++(it->second);
+							}
+						}
+						catch (lb::assertion_failure_exception const &exc)
+						{
+							// For debugging.
+							std::cerr << "rec_ref_len: " << rec.reference_length() << '\n';
+							std::cerr << "rec_pos:     " << rec_pos << '\n';
+							std::cerr << "var_pos:     " << var_pos << '\n';
+							std::cerr << "var_end_pos: " << var_end_pos << '\n';
+							std::cerr << "var_ref_len: " << var_ref_len << '\n';
+							std::cerr << "var_alt_len: " << var_alt_len << '\n';
+							std::cerr << "ALT:         " << alt.alt << '\n';
+							throw;
 						}
 					}
-					catch (lb::assertion_failure_exception const &exc)
+					
+					// Output “R” coverage sequence, separated by tabs for each distinct subsequence.
+					for (auto const &kv : supported_sequences)
 					{
-						// For debugging.
-						std::cerr << "rec_ref_len: " << rec.reference_length() << '\n';
-						std::cerr << "rec_pos:     " << rec_pos << '\n';
-						std::cerr << "var_pos:     " << var_pos << '\n';
-						std::cerr << "var_end_pos: " << var_end_pos << '\n';
-						std::cerr << "var_ref_len: " << var_ref_len << '\n';
-						std::cerr << "var_alt_len: " << var_alt_len << '\n';
-						std::cerr << "ALT:         " << alt.alt << '\n';
-						throw;
+						std::cout << "R\t" << kv.second << '\t';
+						if (kv.first.empty())
+							std::cout << "<DEL>";
+						else
+							std::copy(kv.first.begin(), kv.first.end(), std::ostream_iterator <panvc3::dna11>(std::cout));
+						std::cout << '\n';
 					}
+					
+					return true;
 				}
-				
-				// Output “R” coverage sequence, separated by tabs for each distinct subsequence.
-				for (auto const &kv : supported_sequences)
+				catch (...)
 				{
-					std::cout << "R\t" << kv.second << '\t';
-					if (kv.first.empty())
-						std::cout << "<DEL>";
-					else
-						std::copy(kv.first.begin(), kv.first.end(), std::ostream_iterator <panvc3::dna11>(std::cout));
-					std::cout << '\n';
+					std::cerr << "ERROR: " << vcf_path << ':' << var.lineno() << ":\n";
+					throw;
 				}
-				
-				return true;
 			}
 		);
 		
