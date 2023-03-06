@@ -760,6 +760,7 @@ namespace {
 		auto const chr_id(args_info.chr_arg);
 		auto const vcf_path(args_info.vcf_arg);
 		auto const regions_path(args_info.regions_arg);
+		auto const expected_zygosity(args_info.zygosity_arg);
 		bool const should_include_clipping(args_info.include_clipping_flag);
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
 		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
@@ -814,6 +815,7 @@ namespace {
 				vcf_end_field,					// Pointer
 				vcf_co_field,					// Pointer
 				vcf_usra_field,					// Pointer
+				expected_zygosity,				// short
 				should_include_clipping,		// bool
 				should_anchor_reads_left_only,	// bool
 				&aln_reader,
@@ -846,13 +848,13 @@ namespace {
 				auto const &gt(gt_field(sample)); // vector of sample_genotype
 				libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT (", gt.size(), ")"); // FIXME: error message, or handle other zygosities.
 				
-				// Check the zygosity. (Generalized for polyploid.)
+				// Check the zygosity. (Generalised for polyploid.)
 				static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
-				auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::uint64_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
+				auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::int16_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
 					return acc + (sample_gt.alt ? 1 : 0);
 				}));
 				
-				if (1 != zygosity)
+				if (0 <= expected_zygosity && zygosity != expected_zygosity)
 				{
 					++var_statistics.zygosity_mismatches;
 					return true;
@@ -871,11 +873,12 @@ namespace {
 					return true;
 				}
 				
-				// Output “V” chrom pos id(s) ref alts is_reversed, separated by tabs.
+				// Output “V” chrom pos id(s) ref alts zygosity is_reversed, separated by tabs.
 				std::cout << "V\t" << var.chrom_id() << '\t' << var_pos << '\t';
 				ranges::copy(var.id(), ranges::make_ostream_joiner(std::cout, ","));
 				std::cout << '\t' << var.ref() << '\t';
 				output_alts(var, std::cout);
+				std::cout << '\t' << zygosity;
 				std::cout << '\t' << +((vcf_co_field && vcf_co_field->has_value(var)) || (vcf_usra_field && vcf_usra_field->has_value(var))) << '\n';
 				
 				// FIXME: While we output all ALTs above, considering each for counting supporting reads would be quite difficult. Since we only handle heterozygous variants of diploid donors (for now), this is not needed.
