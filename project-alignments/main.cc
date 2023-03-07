@@ -34,10 +34,13 @@ namespace rsv	= ranges::views;
 using seqan3::operator""_tag;
 
 
-// SeqAn 3 does not yet have a definition for the OA tag.
-// (Check when updating, though.)
 namespace seqan3 {
+	// SeqAn 3 does not yet have a definition for the OA tag.
+	// (Check when updating, though.)
 	template <> struct sam_tag_type <"OA"_tag> { typedef std::string type; };
+
+	// Add a definition for Bowtie's XS tag.
+	template <> struct sam_tag_type <"XS"_tag> { typedef std::int32_t type; };
 }
 
 
@@ -73,7 +76,8 @@ namespace {
 			"QT"_tag,	// Phred quality of the sample barcode sequence in the BC tag
 			"QX"_tag,	// Quality score of the unique molecular identifier in the RX tag
 			"RX"_tag,	// Sequence bases of the (possibly corrected) unique molecular identifier
-			"TS"_tag	// Transcript strand
+			"TS"_tag,	// Transcript strand
+			"XS"_tag	// Alignment score of the next best alignment (Bowtie)
 		};
 
 		// Make sure that the values are sorted.
@@ -1229,7 +1233,7 @@ namespace {
 			rec_idx_tag,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
-			args_info.primary_only_flag,
+			false, // args_info.primary_only_flag,
 			args_info.use_read_base_qualities_flag,
 			args_info.keep_duplicate_ranges_flag,
 			args_info.debugging_output_flag,

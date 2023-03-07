@@ -25,8 +25,8 @@ section		"Re-aligned range output"
 option		"output-realigned-ranges"	l	"Output the re-aligned ranges as TSV to the given path"						string	typestr = "filename"	optional
 option		"keep-duplicate-ranges"		-	"Keep duplicate ranges (useful with --debugging-output)"					flag	off									hidden
 
-section		"Processing options"
-option		"primary-only"				p	"Consider primary alignments only"											flag	off
+#section		"Processing options"
+#option		"primary-only"				p	"Consider primary alignments only"											flag	off
 
 section		"Re-alignment options"
 option		"gap-opening-cost"			g	"Gap opening cost when re-aligning runs of insertions and deletions"		int		default = "0"			optional
