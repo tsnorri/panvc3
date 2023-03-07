@@ -9,6 +9,7 @@
 #include <libbio/fasta_reader.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
+#include <libbio/log_memory_usage.hh>
 #include <libbio/utility.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
@@ -1263,6 +1264,8 @@ int main(int argc, char **argv)
 	gengetopt_args_info args_info;
 	if (0 != cmdline_parser(argc, argv, &args_info))
 		std::exit(EXIT_FAILURE);
+	
+	lb::setup_allocated_memory_logging();
 	
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 
