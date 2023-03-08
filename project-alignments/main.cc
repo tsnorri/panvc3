@@ -38,9 +38,6 @@ namespace seqan3 {
 	// SeqAn 3 does not yet have a definition for the OA tag.
 	// (Check when updating, though.)
 	template <> struct sam_tag_type <"OA"_tag> { typedef std::string type; };
-
-	// Add a definition for Bowtie's XS tag.
-	template <> struct sam_tag_type <"XS"_tag> { typedef std::int32_t type; };
 }
 
 
@@ -49,7 +46,7 @@ namespace {
 	constexpr inline std::size_t	QUEUE_SIZE{16};
 	constexpr inline std::size_t	CHUNK_SIZE{4};
 
-	constexpr static auto const preserved_sam_tags{[]() constexpr {
+	constinit static auto const preserved_sam_tags{[]() constexpr {
 		// Consider saving UQ.
 		std::array retval{
 			"AM"_tag,	// The smallest template-independent mapping quality in the template
@@ -76,8 +73,7 @@ namespace {
 			"QT"_tag,	// Phred quality of the sample barcode sequence in the BC tag
 			"QX"_tag,	// Quality score of the unique molecular identifier in the RX tag
 			"RX"_tag,	// Sequence bases of the (possibly corrected) unique molecular identifier
-			"TS"_tag,	// Transcript strand
-			"XS"_tag	// Alignment score of the next best alignment (Bowtie)
+			"TS"_tag	// Transcript strand
 		};
 
 		// Make sure that the values are sorted.
@@ -1269,7 +1265,7 @@ int main(int argc, char **argv)
 	if (0 != cmdline_parser(argc, argv, &args_info))
 		std::exit(EXIT_FAILURE);
 	
-	lb::setup_allocated_memory_logging();
+	//lb::setup_allocated_memory_logging();
 	
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 

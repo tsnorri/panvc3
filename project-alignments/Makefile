@@ -13,7 +13,7 @@ OBJECTS		=	cmdline.o \
 				log_memory_usage.o \
 				main.o
 
-CPPFLAGS += -DLIBBIO_LOG_ALLOCATED_MEMORY
+#CPPFLAGS += -DLIBBIO_LOG_ALLOCATED_MEMORY
 
 all: project_alignments
 
