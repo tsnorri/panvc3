@@ -21,6 +21,7 @@ option		"original-rnext-tag"		-	"SAM tag for the original value of the RNEXT fie
 option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT field"							string	default = "YP"			optional
 option		"realigned-ranges-tag"		-	"SAM tag for the re-aligned ranges"											string	default = "XA"			optional
 option		"record-index-tag"			-	"SAM tag for the original record index"										string							optional
+option		"preserve-tag"				t	"Preserve the given SAM tag"												string	typestr = "tag"			optional	multiple
 option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
 text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 

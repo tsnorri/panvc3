@@ -43,7 +43,8 @@ namespace seqan3 {
 
 namespace {
 
-	typedef std::uint16_t			seqan3_sam_tag_type;
+	typedef std::uint16_t						seqan3_sam_tag_type;
+	typedef std::vector <seqan3_sam_tag_type>	seqan3_sam_tag_vector;
 	
 	constexpr inline std::size_t	QUEUE_SIZE{16};
 	constexpr inline std::size_t	CHUNK_SIZE{4};
@@ -323,6 +324,7 @@ namespace {
 		realigned_range_vector			m_realigned_ranges;
 		realigned_range_vector			m_realigned_range_buffer;
 		reference_id_mapping_type		m_ref_id_mapping;
+		seqan3_sam_tag_vector			m_additional_preserved_tags;
 		std::string						m_msa_ref_id;
 		std::string						m_ref_id_separator;
 		std::int32_t					m_gap_opening_cost{};
@@ -348,6 +350,7 @@ namespace {
 			t_msa_ref_id				&&msa_ref_id,
 			t_ref_id_separator			&&ref_id_separator,
 			reference_id_mapping_type	&&ref_id_mapping,
+			seqan3_sam_tag_vector		&&additional_preserved_tags,
 			sam_tag_specification const	&tag_identifiers,
 			std::int32_t				gap_opening_cost,
 			std::int32_t				gap_extension_cost,
@@ -367,6 +370,7 @@ namespace {
 			m_output_dispatch_queue(dispatch_queue_create("fi.iki.tsnorri.panvc3.project-alignments.output-queue", DISPATCH_QUEUE_SERIAL)),
 			m_exit_cb(exit_cb),
 			m_ref_id_mapping(std::move(ref_id_mapping)),
+			m_additional_preserved_tags(std::move(additional_preserved_tags)),
 			m_msa_ref_id(std::forward <t_msa_ref_id>(msa_ref_id)),
 			m_ref_id_separator(std::forward <t_ref_id_separator>(ref_id_separator)),
 			m_gap_opening_cost(gap_opening_cost),
@@ -403,6 +407,7 @@ namespace {
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
 		sam_tag_specification const &sam_tag_identifiers() const { return m_sam_tag_identifiers; }
+		seqan3_sam_tag_vector const &additional_preserved_tags() const { return m_additional_preserved_tags; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
 		bool should_process_tasks_in_parallel() const { return m_should_process_tasks_in_parallel; }
@@ -573,6 +578,7 @@ namespace {
 		auto const &ref_id_separator(m_input_processor->reference_id_separator());
 		auto const &ref_id_mapping(m_input_processor->reference_id_mapping());
 		auto const &tag_identifiers(m_input_processor->sam_tag_identifiers());
+		auto const &additional_preserved_tags(m_input_processor->additional_preserved_tags());
 		auto const gap_opening_cost(m_input_processor->gap_opening_cost());
 		auto const gap_extension_cost(m_input_processor->gap_extension_cost());
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
@@ -693,6 +699,12 @@ namespace {
 						// Check if the current tag should be preserved.
 						auto const tag(it->first);
 						if (std::binary_search(preserved_sam_tags.begin(), preserved_sam_tags.end(), tag))
+						{
+							++it;
+							continue;
+						}
+
+						if (std::binary_search(additional_preserved_tags.begin(), additional_preserved_tags.end(), tag))
 						{
 							++it;
 							continue;
@@ -1147,6 +1159,7 @@ namespace {
 		std::string ref_id_separator(args_info.ref_id_separator_arg);
 		std::string reference_msa_id(args_info.reference_msa_id_arg);
 
+		// SAM tag identifiers.
 		sam_tag_specification const tag_identifiers{
 			.original_rname{make_sam_tag(args_info.original_rname_tag_arg)},
 			.original_pos{make_sam_tag(args_info.original_pos_tag_arg)},
@@ -1155,6 +1168,16 @@ namespace {
 			.realn_ranges{make_sam_tag(args_info.realigned_ranges_tag_arg)},
 			.rec_idx{make_sam_tag(args_info.record_index_tag_arg)}
 		};
+
+		// Additional preserved SAM tags.
+		seqan3_sam_tag_vector additional_preserved_tags;
+		for (unsigned int i(0); i < args_info.preserve_tag_given; ++i)
+		{
+			auto const tag_id(make_sam_tag(args_info.preserve_tag_arg[i]));
+			libbio_always_assert_neq(0, tag_id);
+			additional_preserved_tags.push_back(tag_id);
+		}
+		std::sort(additional_preserved_tags.begin(), additional_preserved_tags.end());
 
 		// Open the alignment output file.
 		auto aln_output{[&](){
@@ -1216,6 +1239,7 @@ namespace {
 			std::move(reference_msa_id),
 			std::move(ref_id_separator),
 			std::move(ref_id_mapping),
+			std::move(additional_preserved_tags),
 			tag_identifiers,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
