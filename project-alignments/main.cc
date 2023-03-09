@@ -9,6 +9,7 @@
 #include <libbio/fasta_reader.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
+#include <libbio/log_memory_usage.hh>
 #include <libbio/utility.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
@@ -33,19 +34,22 @@ namespace rsv	= ranges::views;
 using seqan3::operator""_tag;
 
 
-// SeqAn 3 does not yet have a definition for the OA tag.
-// (Check when updating, though.)
 namespace seqan3 {
+	// SeqAn 3 does not yet have a definition for the OA tag.
+	// (Check when updating, though.)
 	template <> struct sam_tag_type <"OA"_tag> { typedef std::string type; };
 }
 
 
 namespace {
+
+	typedef std::uint16_t						seqan3_sam_tag_type;
+	typedef std::vector <seqan3_sam_tag_type>	seqan3_sam_tag_vector;
 	
 	constexpr inline std::size_t	QUEUE_SIZE{16};
 	constexpr inline std::size_t	CHUNK_SIZE{4};
 
-	constexpr static auto const preserved_sam_tags{[]() constexpr {
+	constinit static auto const preserved_sam_tags{[]() constexpr {
 		// Consider saving UQ.
 		std::array retval{
 			"AM"_tag,	// The smallest template-independent mapping quality in the template
@@ -81,12 +85,23 @@ namespace {
 		return retval;
 	}()};
 
+	
+	struct sam_tag_specification
+	{
+		seqan3_sam_tag_type	original_rname{};
+		seqan3_sam_tag_type	original_pos{};
+		seqan3_sam_tag_type	original_rnext{};
+		seqan3_sam_tag_type	original_pnext{};
+		seqan3_sam_tag_type	realn_ranges{};
+		seqan3_sam_tag_type	rec_idx{};
+	};
+
 
 	// Convert a SeqAn 3 SAM tag to a std::array <char, N> where 2 ≤ N.
 	// I don't think SeqAn 3 has this utility function.
 	// Compare to operator""_tag() in <seqan3/io/sam_file/sam_tag_dictionary.hpp>.
 	template <std::size_t t_size>
-	constexpr void from_tag(std::uint16_t const val, std::array <char, t_size> &buffer)
+	constexpr void from_tag(seqan3_sam_tag_type const val, std::array <char, t_size> &buffer)
 	requires (2 <= t_size)
 	{
 		char const char0(val / 256); // Narrowed automatically when () (not {}) are used.
@@ -97,13 +112,13 @@ namespace {
 	
 	
 	// Convert a std::array <char, 2> to a SeqAn 3 SAM tag.
-	constexpr std::uint16_t to_tag(std::array <char, 2> const &buffer)
+	constexpr seqan3_sam_tag_type to_tag(std::array <char, 2> const &buffer)
 	{
 		// The tag needs to match /|A-Za-z][A-Za-z0-9]/ (SAMv1, Section 1.5 The alignment section: optional fields),
 		// so the values will not be negative.
 		libbio_always_assert_lte(std::get <0>(buffer), 127);
 		libbio_always_assert_lte(std::get <1>(buffer), 127);
-		std::uint16_t retval(std::get <0>(buffer)); // Narrows when () (not {}) are used.
+		seqan3_sam_tag_type retval(std::get <0>(buffer)); // Narrows when () (not {}) are used.
 		retval *= 256;
 		retval += std::get <1>(buffer);
 		return retval;
@@ -281,7 +296,7 @@ namespace {
 		>															output_reference_ids_type;
 		typedef typename input_type::record_type					input_record_type;
 		typedef project_task <input_processor>						project_task_type;
-		typedef std::map <std::uint16_t, std::size_t>				tag_count_map;
+		typedef std::map <seqan3_sam_tag_type, std::size_t>			tag_count_map;
 		typedef panvc3::spsc_queue <project_task_type, QUEUE_SIZE>	queue_type;
 		typedef lb::dispatch_ptr <dispatch_queue_t>					dispatch_queue_ptr;
 		typedef lb::dispatch_ptr <dispatch_semaphore_t>				semaphore_ptr;
@@ -309,13 +324,12 @@ namespace {
 		realigned_range_vector			m_realigned_ranges;
 		realigned_range_vector			m_realigned_range_buffer;
 		reference_id_mapping_type		m_ref_id_mapping;
+		seqan3_sam_tag_vector			m_additional_preserved_tags;
 		std::string						m_msa_ref_id;
 		std::string						m_ref_id_separator;
 		std::int32_t					m_gap_opening_cost{};
 		std::int32_t					m_gap_extension_cost{};
-		std::uint16_t					m_original_pnext_tag{};	// FIXME: typedef?
-		std::uint16_t					m_realigned_ranges_tag{};
-		std::uint16_t					m_rec_idx_tag{};
+		sam_tag_specification			m_sam_tag_identifiers{};
 		bool							m_should_consider_primary_alignments_only{};
 		bool							m_should_use_read_base_qualities{};
 		bool							m_should_keep_duplicate_realigned_ranges{};
@@ -336,9 +350,8 @@ namespace {
 			t_msa_ref_id				&&msa_ref_id,
 			t_ref_id_separator			&&ref_id_separator,
 			reference_id_mapping_type	&&ref_id_mapping,
-			std::array <char, 2> const	&original_pnext_tag,
-			std::array <char, 2> const	&realigned_ranges_tag,
-			std::array <char, 2> const	&rec_idx_tag,
+			seqan3_sam_tag_vector		&&additional_preserved_tags,
+			sam_tag_specification const	&tag_identifiers,
 			std::int32_t				gap_opening_cost,
 			std::int32_t				gap_extension_cost,
 			bool						should_consider_primary_alignments_only,
@@ -357,13 +370,12 @@ namespace {
 			m_output_dispatch_queue(dispatch_queue_create("fi.iki.tsnorri.panvc3.project-alignments.output-queue", DISPATCH_QUEUE_SERIAL)),
 			m_exit_cb(exit_cb),
 			m_ref_id_mapping(std::move(ref_id_mapping)),
+			m_additional_preserved_tags(std::move(additional_preserved_tags)),
 			m_msa_ref_id(std::forward <t_msa_ref_id>(msa_ref_id)),
 			m_ref_id_separator(std::forward <t_ref_id_separator>(ref_id_separator)),
 			m_gap_opening_cost(gap_opening_cost),
 			m_gap_extension_cost(gap_extension_cost),
-			m_original_pnext_tag(to_tag(original_pnext_tag)),
-			m_realigned_ranges_tag(to_tag(realigned_ranges_tag)),
-			m_rec_idx_tag(to_tag(rec_idx_tag)),
+			m_sam_tag_identifiers(tag_identifiers),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_should_use_read_base_qualities(should_use_read_base_qualities),
 			m_should_keep_duplicate_realigned_ranges(should_keep_duplicate_realigned_ranges),
@@ -394,9 +406,8 @@ namespace {
 		sequence_vector const &output_reference_sequence(std::size_t const idx) const { return m_reference_buffer_store.buffer(idx).get(); }
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
-		std::uint16_t original_pnext_tag() const { return m_original_pnext_tag; }
-		std::uint16_t realigned_ranges_tag() const { return m_realigned_ranges_tag; }
-		std::uint16_t record_index_tag() const { return m_rec_idx_tag; }
+		sam_tag_specification const &sam_tag_identifiers() const { return m_sam_tag_identifiers; }
+		seqan3_sam_tag_vector const &additional_preserved_tags() const { return m_additional_preserved_tags; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
 		bool should_process_tasks_in_parallel() const { return m_should_process_tasks_in_parallel; }
@@ -566,13 +577,12 @@ namespace {
 		auto const &ref_ids(m_input_processor->alignment_input().header().ref_ids()); // ref_ids() not const.
 		auto const &ref_id_separator(m_input_processor->reference_id_separator());
 		auto const &ref_id_mapping(m_input_processor->reference_id_mapping());
+		auto const &tag_identifiers(m_input_processor->sam_tag_identifiers());
+		auto const &additional_preserved_tags(m_input_processor->additional_preserved_tags());
 		auto const gap_opening_cost(m_input_processor->gap_opening_cost());
 		auto const gap_extension_cost(m_input_processor->gap_extension_cost());
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
 		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
-		auto const original_pnext_tag(m_input_processor->original_pnext_tag());
-		auto const realn_ranges_tag(m_input_processor->realigned_ranges_tag());
-		auto const rec_idx_tag(m_input_processor->record_index_tag());
 		auto const should_process_tasks_in_parallel(m_input_processor->should_process_tasks_in_parallel());
 		
 		// Process the records.
@@ -693,6 +703,12 @@ namespace {
 							++it;
 							continue;
 						}
+
+						if (std::binary_search(additional_preserved_tags.begin(), additional_preserved_tags.end(), tag))
+						{
+							++it;
+							continue;
+						}
 						
 						// Remove and increment the count.
 						auto const it_(it);
@@ -745,7 +761,7 @@ namespace {
 			}
 			
 			// Store the re-aligned ranges in query co-ordinates.
-			if (realn_ranges_tag && realn_range_count)
+			if (tag_identifiers.realn_ranges && realn_range_count)
 			{
 				std::vector <std::uint32_t> output_ranges(2 * realn_range_count, 0);
 				auto const &realn_query_ranges(m_alignment_projector.realigned_query_ranges());
@@ -756,21 +772,34 @@ namespace {
 					output_ranges[idx_ + 1] = range.location + range.length;
 				}
 				
-				tags[realn_ranges_tag] = std::move(output_ranges);
+				tags[tag_identifiers.realn_ranges] = std::move(output_ranges);
 			}
 
 			// Store the record index if needed.
-			if (rec_idx_tag)
+			if (tag_identifiers.rec_idx)
 			{
 				auto const rec_idx(m_last_rec_idx - m_valid_records + 1);
 				if (rec_idx <= INT32_MAX)
-					tags[rec_idx_tag] = std::int32_t(rec_idx);
+					tags[tag_identifiers.rec_idx] = std::int32_t(rec_idx);
 			}
+
+			// Original reference ID.
+			if (tag_identifiers.original_rname)
+				tags[tag_identifiers.original_rname] = ref_id;
+
+			// Original position.
+			if (tag_identifiers.original_pos)
+				tags[tag_identifiers.original_pos] = src_pos;
 
 			// Mate reference ID.
 			auto const mate_ref_id(aln_rec.mate_reference_id());
 			if (mate_ref_id)
+			{
 				aln_rec.mate_reference_id() = ref_id_mapping[*mate_ref_id];
+
+				if (tag_identifiers.original_rnext)
+					tags[tag_identifiers.original_rnext] = *mate_ref_id;
+			}
 
 			// Mate position.
 			auto const mate_position_(aln_rec.mate_position());
@@ -781,8 +810,8 @@ namespace {
 				auto const dst_mate_position(src_seq_entry.project_position(mate_position, dst_seq_entry));
 				aln_rec.mate_position() = dst_mate_position;
 
-				if (original_pnext_tag)
-					tags[original_pnext_tag] = mate_position;
+				if (tag_identifiers.original_pnext)
+					tags[tag_identifiers.original_pnext] = mate_position;
 			}
 
 			// Finally (esp. after setting OA/OC) update the CIGAR, the positions, the header pointer,
@@ -1113,55 +1142,42 @@ namespace {
 		>																output_type;
 
 		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
+		auto const make_sam_tag([&tag_regex](char const *tag) -> seqan3_sam_tag_type {
+			if (!tag)
+				return 0;
+
+			if (!std::regex_match(tag, tag_regex))
+			{
+				std::cerr << "ERROR: The given tag '" << tag << "' does not match the expected format.\n";
+				std::exit(EXIT_FAILURE);
+			}
+
+			std::array <char, 2> buffer{tag[0], tag[1]};
+			return to_tag(buffer);
+		});
 
 		std::string ref_id_separator(args_info.ref_id_separator_arg);
 		std::string reference_msa_id(args_info.reference_msa_id_arg);
 
-		// Original PNEXT tag.
-		// FIXME: make a function for these.
-		auto const original_pnext_tag{[&args_info, &tag_regex]() -> std::array <char, 2> {
-			auto const *tag{args_info.original_pnext_tag_arg};
-			if (!tag)
-				return {0, 0};
+		// SAM tag identifiers.
+		sam_tag_specification const tag_identifiers{
+			.original_rname{make_sam_tag(args_info.original_rname_tag_arg)},
+			.original_pos{make_sam_tag(args_info.original_pos_tag_arg)},
+			.original_rnext{make_sam_tag(args_info.original_rnext_tag_arg)},
+			.original_pnext{make_sam_tag(args_info.original_pnext_tag_arg)},
+			.realn_ranges{make_sam_tag(args_info.realigned_ranges_tag_arg)},
+			.rec_idx{make_sam_tag(args_info.record_index_tag_arg)}
+		};
 
-			if (!std::regex_match(tag, tag_regex))
-			{
-				std::cerr << "ERROR: The given tag for the original PNEXT value does not match the expected format.\n";
-				std::exit(EXIT_FAILURE);
-			}
-			
-			return {tag[0], tag[1]};
-		}()};
-		
-		// Re-aligned range tag.
-		auto const realn_ranges_tag{[&args_info, &tag_regex]() -> std::array <char, 2> {
-			auto const *tag{args_info.realigned_ranges_tag_arg};
-			if (!tag)
-				return {0, 0};
-			
-			if (!std::regex_match(tag, tag_regex))
-			{
-				std::cerr << "ERROR: The given tag for re-aligned ranges does not match the expected format.\n";
-				std::exit(EXIT_FAILURE);
-			}
-			
-			return {tag[0], tag[1]};
-		}()};
-
-		// Record index tag.
-		auto const rec_idx_tag{[&args_info, &tag_regex]() -> std::array <char, 2> {
-			auto const *tag(args_info.record_index_tag_arg);
-			if (!tag)
-				return {0, 0};
-
-			if (!std::regex_match(tag, tag_regex))
-			{
-				std::cerr << "ERROR: The given tag for record index does not match the expected format.\n";
-				std::exit(EXIT_FAILURE);
-			}
-
-			return {tag[0], tag[1]};
-		}()};
+		// Additional preserved SAM tags.
+		seqan3_sam_tag_vector additional_preserved_tags;
+		for (unsigned int i(0); i < args_info.preserve_tag_given; ++i)
+		{
+			auto const tag_id(make_sam_tag(args_info.preserve_tag_arg[i]));
+			libbio_always_assert_neq(0, tag_id);
+			additional_preserved_tags.push_back(tag_id);
+		}
+		std::sort(additional_preserved_tags.begin(), additional_preserved_tags.end());
 
 		// Open the alignment output file.
 		auto aln_output{[&](){
@@ -1223,12 +1239,11 @@ namespace {
 			std::move(reference_msa_id),
 			std::move(ref_id_separator),
 			std::move(ref_id_mapping),
-			original_pnext_tag,
-			realn_ranges_tag,
-			rec_idx_tag,
+			std::move(additional_preserved_tags),
+			tag_identifiers,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
-			args_info.primary_only_flag,
+			false, // args_info.primary_only_flag,
 			args_info.use_read_base_qualities_flag,
 			args_info.keep_duplicate_ranges_flag,
 			args_info.debugging_output_flag,
@@ -1263,6 +1278,8 @@ int main(int argc, char **argv)
 	gengetopt_args_info args_info;
 	if (0 != cmdline_parser(argc, argv, &args_info))
 		std::exit(EXIT_FAILURE);
+	
+	//lb::setup_allocated_memory_logging();
 	
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 

@@ -52,7 +52,7 @@ class ReadSupportParser(object):
 					self.alt = ""
 				self.ref = fields[4]
 
-				is_reversed = int(fields[6])
+				is_reversed = int(fields[7])
 				if is_reversed:
 					self.ref, self.alt = self.alt, self.ref
 				

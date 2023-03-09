@@ -10,7 +10,10 @@ include  $(MAKEFILE_DIR)/../make/seqan3.mk
 .PHONY: all clean
 
 OBJECTS		=	cmdline.o \
+				log_memory_usage.o \
 				main.o
+
+#CPPFLAGS += -DLIBBIO_LOG_ALLOCATED_MEMORY
 
 all: project_alignments
 
