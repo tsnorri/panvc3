@@ -3,6 +3,7 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <chrono>
 #include <iostream>
 #include <libbio/algorithm/sorted_set_union.hh>
 #include <libbio/dispatch/dispatch_caller.hh>
@@ -23,12 +24,14 @@
 #include <range/v3/view/take_exactly.hpp>
 #include <range/v3/view/transform.hpp>
 #include <seqan3/io/sam_file/all.hpp>
+#include <syncstream>
 #include "cmdline.h"
 
-namespace fs	= std::filesystem;
-namespace lb	= libbio;
-namespace ios	= boost::iostreams;
-namespace rsv	= ranges::views;
+namespace chrono	= std::chrono;
+namespace fs		= std::filesystem;
+namespace lb		= libbio;
+namespace ios		= boost::iostreams;
+namespace rsv		= ranges::views;
 
 
 using seqan3::operator""_tag;
@@ -133,7 +136,7 @@ namespace {
 		auto const it(std::lower_bound(entries.begin(), entries.end(), chr_id, chr_cmp));
 		if (entries.end() == it || it->chr_id != chr_id)
 		{
-			std::cerr << "ERROR: Did not find an entry for chromosome ID “" << chr_id << "” in the MSA index." << std::endl;
+			std::osyncstream(std::cerr) << "ERROR: Did not find an entry for chromosome ID “" << chr_id << "” in the MSA index." << std::endl;
 			std::exit(EXIT_FAILURE);
 		}
 
@@ -157,7 +160,7 @@ namespace {
 		auto const it(std::lower_bound(entries.begin(), entries.end(), seq_id, seq_cmp));
 		if (entries.end() == it || it->seq_id != seq_id)
 		{
-			std::cerr << "ERROR: Did not find an entry for sequence ID “" << seq_id << "” in the MSA index." << std::endl;
+			std::osyncstream(std::cerr) << "ERROR: Did not find an entry for sequence ID “" << seq_id << "” in the MSA index." << std::endl;
 			std::exit(EXIT_FAILURE);
 		}
 		
@@ -171,8 +174,8 @@ namespace {
 	{
 		return *find_sequence_entry_(entries, seq_id);
 	}
-	
-	
+
+
 	struct alignment_statistics
 	{
 		std::size_t flags_not_matched{};
@@ -225,7 +228,49 @@ namespace {
 		
 		return end;
 	}
-	
+
+
+	template <typename t_duration>
+	std::ostream &log_duration(std::ostream &os, t_duration dur)
+	{
+	    typedef chrono::duration <std::uint64_t, std::ratio <3600 * 24>> day_type;
+		auto const dd{chrono::duration_cast <day_type>(dur)};
+		auto const hh{chrono::duration_cast <chrono::hours>(dur -= dd)};
+		auto const mm{chrono::duration_cast <chrono::minutes>(dur -= hh)};
+		auto const ss{chrono::duration_cast <chrono::seconds>(dur -= mm)};
+		auto const ms{chrono::duration_cast <chrono::milliseconds>(dur -= ss)};
+
+		bool should_print{false};
+		auto const dd_(dd.count());
+		if (dd_)
+		{
+			os << dd_ << " d, ";
+			should_print = true;
+		}
+
+		auto const hh_(hh.count());
+		if (should_print || hh_)
+		{
+			os << hh_ << " h, ";
+			should_print = true;
+		}
+
+		auto const mm_(mm.count());
+		if (should_print || mm_)
+		{
+			os << mm_ << " m, ";
+			should_print = true;
+		}
+
+		auto const ss_(ss.count());
+		if (should_print || ss_)
+			os << ss_ << " s, ";
+
+		os << ms.count() << " ms";
+
+		return os;
+	}
+
 
 	typedef std::vector <std::size_t>	reference_id_mapping_type;
 
@@ -239,9 +284,12 @@ namespace {
 		
 
 	template <typename t_input_processor>
-	class project_task
+	class project_task : public panvc3::alignment_projector_delegate
 	{
 		friend t_input_processor;
+
+		typedef chrono::high_resolution_clock					clock_type;
+		typedef clock_type::time_point							time_point;
 		
 	public:
 		typedef typename t_input_processor::input_record_type	record_type;
@@ -257,10 +305,18 @@ namespace {
 		std::size_t							m_valid_records{};
 		std::size_t							m_task_id{};
 		std::size_t							m_last_rec_idx{};
+		time_point							m_realignment_start_time{};
+		std::uint32_t						m_realignment_time{};
+		std::uint32_t						m_realigned_range_count{};
 		std::atomic <project_task_status>	m_status{}; // FIXME: make this conditional.
 		bool								m_should_store_realigned_range_qnames{};
 		
 	public:
+		project_task():
+			m_alignment_projector(*this)
+		{
+		}
+
 		bool is_full() const { return CHUNK_SIZE == m_valid_records; }
 		bool empty() const { return 0 == m_valid_records; }
 		record_type &next_record() { libbio_assert(project_task_status::inactive == m_status.load()); libbio_assert_lt(m_valid_records, m_records.size()); return m_records[m_valid_records++]; }
@@ -269,15 +325,19 @@ namespace {
 		
 		void process();
 		void output();
-		void reset() { m_valid_records = 0; m_removed_tag_counts.clear(); m_realigned_ranges.clear(); }
+		void reset() { m_valid_records = 0; m_removed_tag_counts.clear(); m_realigned_ranges.clear(); m_realigned_range_count = 0; m_realignment_time = 0; }
+
+		void alignment_projector_begin_realignment() override { m_realignment_start_time = clock_type::now(); }
+		void alignment_projector_end_realignment() override;
 	};
 	
 	
-	// Declare a virtual destructor in order to make assigning input_processor to a std::unique_ptr easier.
+	// Declare some virtual functions in order to make assigning input_processor to a std::unique_ptr easier.
 	struct input_processor_base
 	{
 		virtual ~input_processor_base() {}
 		virtual void process_input() = 0;
+		virtual void output_status() const = 0;
 	};
 	
 	
@@ -285,7 +345,11 @@ namespace {
 	class input_processor final : public input_processor_base
 	{
 		static_assert(panvc3::is_power_of_2(QUEUE_SIZE));
-		
+
+		typedef chrono::steady_clock								clock_type; // For profiling.
+		typedef clock_type::time_point								time_point;
+		typedef clock_type::duration								duration_type;
+
 	public:
 		typedef t_aln_input											input_type;
 		typedef t_aln_output										output_type;
@@ -318,6 +382,12 @@ namespace {
 		exit_callback_type				m_exit_cb{};
 		
 		queue_type						m_task_queue{};
+
+		time_point						m_start_time{};
+		
+		std::atomic_uint32_t			m_current_rec_idx{};
+		std::uint32_t					m_realignment_time{};
+		std::uint32_t					m_realigned_range_count{};
 		
 		alignment_statistics			m_statistics;
 		tag_count_map					m_removed_tag_counts;
@@ -392,6 +462,12 @@ namespace {
 		void output_records(project_task_type &task);
 		void output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id = 0);
 		void finish();
+
+		void output_status() const override;
+
+		std::uint32_t realignment_time() const { return m_realignment_time; }
+		std::uint32_t realigned_range_count() const { return m_realigned_range_count; }
+		std::uint32_t current_record_index() const { return m_current_rec_idx.load(std::memory_order_relaxed); }
 		
 		panvc3::msa_index &msa_index() { return m_msa_index; }
 		panvc3::msa_index const &msa_index() const { return m_msa_index; }
@@ -415,8 +491,46 @@ namespace {
 
 
 	template <typename t_aln_input, typename t_aln_output>
+	void input_processor <t_aln_input, t_aln_output>::output_status() const
+	{
+		auto const pp(clock_type::now());
+		auto const running_time{pp - m_start_time};
+		auto const rec_idx(current_record_index());
+		auto const realigned_ranges(realigned_range_count());
+
+		std::osyncstream cerr(std::cerr);
+		lb::log_time(cerr) << "Time spent processing: ";
+		log_duration(cerr, running_time);
+		cerr << "; processed " << rec_idx << " records";
+
+		if (rec_idx)
+		{
+			double secs_per_record(chrono::duration_cast <chrono::seconds>(running_time).count());
+			secs_per_record /= rec_idx;
+			cerr << " (in " << secs_per_record << " s / record)";
+		}
+		
+		cerr << "; realigned " << realigned_ranges << " ranges";
+		if (realigned_ranges)
+		{
+			auto const realn_time{chrono::milliseconds(realignment_time())};
+			cerr << " (in ";
+			log_duration(cerr, realn_time);
+
+			double ms_per_realn(chrono::duration_cast <chrono::milliseconds>(realn_time).count());
+			ms_per_realn /= realigned_ranges;
+			cerr << ", " << (ms_per_realn / 1000.0) << " s / realignment)";
+		}
+
+		cerr << ".\n" << std::flush;
+	}
+
+
+	template <typename t_aln_input, typename t_aln_output>
 	void input_processor <t_aln_input, t_aln_output>::process_input()
 	{
+		m_start_time = clock_type::now();
+
 		if (m_realn_range_output)
 		{
 			if (m_should_output_debugging_information)
@@ -439,10 +553,21 @@ namespace {
 		
 		auto task_idx(m_task_queue.pop_index()); // Reserve one task.
 		std::size_t task_id{};
+		auto prev_status_logging_time(clock_type::now());
 		for (auto &&[rec_idx, aln_rec] : rsv::enumerate(m_aln_input))
 		{
+			m_current_rec_idx.store(rec_idx, std::memory_order_relaxed);
 			if (0 == (1 + rec_idx) % 10'000'000)
-				lb::log_time(std::cerr) << "Processed " << (1 + rec_idx) << " alignments…\n";
+				lb::log_time(std::osyncstream(std::cerr)) << "Processed " << (1 + rec_idx) << " alignments…\n" << std::flush;
+
+			{
+				auto const pp(clock_type::now());
+				if (std::chrono::minutes(5) <= chrono::duration_cast <chrono::minutes>(pp - prev_status_logging_time))
+				{
+					prev_status_logging_time = pp;
+					output_status();
+				}
+			}
 
 			auto const flags(aln_rec.flag());
 			if (lb::to_underlying(flags & (
@@ -497,9 +622,9 @@ namespace {
 				auto &buffer(ref_buffer.get());
 				if (buffer.empty())
 				{
-					lb::log_time(std::cerr) << "(Re-)loading reference sequence '" << ref_name << "'…\n";
+					lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence '" << ref_name << "'…\n" << std::flush;
 					m_fasta_reader.read_sequence(ref_name, buffer);
-					lb::log_time(std::cerr) << "Loading complete.\n";
+					lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
 				}
 			}
 			
@@ -584,6 +709,9 @@ namespace {
 		auto const should_use_read_base_qualities(m_input_processor->should_use_read_base_qualities());
 		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
 		auto const should_process_tasks_in_parallel(m_input_processor->should_process_tasks_in_parallel());
+
+		libbio_assert_eq(0, m_realignment_time);
+		libbio_assert_eq(0, m_realigned_range_count);
 		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
@@ -611,7 +739,7 @@ namespace {
 				auto const pos(ref_id_sv.find(ref_id_separator));
 				if (pos == std::string_view::npos)
 				{
-					std::cerr << "ERROR: Unable to find the separator “" << ref_id_separator << "” in the RNAME “" << ref_id_sv << "”." << std::endl;
+					std::osyncstream(std::cerr) << "ERROR: Unable to find the separator “" << ref_id_separator << "” in the RNAME “" << ref_id_sv << "”." << std::endl;
 					std::exit(EXIT_FAILURE);
 				}
 				
@@ -830,6 +958,16 @@ namespace {
 		else
 			output();
 	}
+
+
+	template <typename t_input_processor>
+	void project_task <t_input_processor>::alignment_projector_end_realignment()
+	{
+		auto const pp(clock_type::now());
+		auto const diff(pp - m_realignment_start_time);
+		m_realignment_time += chrono::duration_cast <chrono::milliseconds>(diff).count();
+		++m_realigned_range_count;
+	}
 	
 	
 	template <typename t_input_processor>
@@ -880,6 +1018,10 @@ namespace {
 				swap(m_realigned_ranges, m_realigned_range_buffer);
 			}
 		}
+
+		// Update statistics.
+		m_realigned_range_count += task.m_realigned_range_count;
+		m_realignment_time += task.m_realignment_time;
 		
 		// Clean up.
 		task.reset();
@@ -1280,7 +1422,7 @@ int main(int argc, char **argv)
 		std::exit(EXIT_FAILURE);
 	
 	//lb::setup_allocated_memory_logging();
-	
+
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 
 	if (args_info.print_invocation_given)
