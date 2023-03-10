@@ -81,6 +81,9 @@ namespace panvc3 {
 					return scc;
 				}));
 				auto query_part(query_seq | query_range.slice());
+
+				if (m_delegate)
+					m_delegate->alignment_projector_begin_realignment();
 				align_global <false>(
 					ref_part,
 					query_part,
@@ -88,6 +91,8 @@ namespace panvc3 {
 					gap_extension_cost,
 					m_realign_buffer
 				);
+				if (m_delegate)
+					m_delegate->alignment_projector_end_realignment();
 			}
 			else
 			{
@@ -118,6 +123,8 @@ namespace panvc3 {
 					})
 				);
 			
+				if (m_delegate)
+					m_delegate->alignment_projector_begin_realignment();
 				align_global <true, sequence_alphabet, quality_alphabet>(
 					ref_part,
 					query_part,
@@ -125,6 +132,8 @@ namespace panvc3 {
 					gap_extension_cost,
 					m_realign_buffer
 				);
+				if (m_delegate)
+					m_delegate->alignment_projector_end_realignment();
 			}
 		
 			// Copy the new operations.

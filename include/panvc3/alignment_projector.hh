@@ -18,22 +18,38 @@
 
 
 namespace panvc3 {
+
+	struct alignment_projector_delegate
+	{
+		virtual ~alignment_projector_delegate() {}
+		virtual void alignment_projector_begin_realignment() = 0;
+		virtual void alignment_projector_end_realignment() = 0;
+	};
+
 	
 	class alignment_projector
 	{
 	public:
-		typedef seqan3::dna5		sequence_alphabet;
-		typedef seqan3::phred42		quality_alphabet;
+		typedef seqan3::dna5			sequence_alphabet;
+		typedef seqan3::phred42			quality_alphabet;
 		
 	protected:
-		indel_run_checker			m_indel_run_checker;
-		cigar_vector				m_cigar_realigned;
-		cigar_buffer				m_rewrite_buffer;
-		cigar_buffer				m_realign_buffer;
-		range_vector				m_realigned_reference_ranges;
-		range_vector				m_realigned_query_ranges;		// OK b.c. we project one alignment at a time, i.e. there will not be ranges from multiple alignments.
+		indel_run_checker				m_indel_run_checker;
+		cigar_vector					m_cigar_realigned;
+		cigar_buffer					m_rewrite_buffer;
+		cigar_buffer					m_realign_buffer;
+		range_vector					m_realigned_reference_ranges;
+		range_vector					m_realigned_query_ranges;		// OK b.c. we project one alignment at a time, i.e. there will not be ranges from multiple alignments.
+		alignment_projector_delegate	*m_delegate{};
 	
 	public:
+		alignment_projector() = default;
+
+		alignment_projector(alignment_projector_delegate &delegate):
+			m_delegate(&delegate)
+		{
+		}
+
 		void reset();
 		
 		std::size_t project_alignment(
