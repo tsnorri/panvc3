@@ -331,6 +331,15 @@ namespace {
 		void alignment_projector_begin_realignment(panvc3::alignment_projector const &) override { m_realignment_start_time = clock_type::now(); }
 		void alignment_projector_end_realignment(panvc3::alignment_projector const &) override;
 	};
+
+
+	lb::file_ostream open_stream_with_handle(lb::file_handle const &handle)
+	{
+		auto const fd(handle.get());
+		if (-1 == fd)
+			return {};
+		return {fd, ios::never_close_handle};
+	}
 	
 	
 	// Declare some virtual functions in order to make assigning input_processor to a std::unique_ptr easier.
@@ -438,7 +447,7 @@ namespace {
 			m_aln_input(std::move(aln_input)),
 			m_aln_output(std::move(aln_output)),
 			m_realn_range_handle(std::move(realn_range_handle)),
-			m_realn_range_output(m_realn_range_handle.get(), ios::never_close_handle),
+			m_realn_range_output(open_stream_with_handle(m_realn_range_handle)),
 			m_fasta_reader(std::move(fasta_reader_)),
 			m_reference_buffer_store(m_aln_output.header().ref_ids().size()),
 			m_output_dispatch_queue(dispatch_queue_create("fi.iki.tsnorri.panvc3.project-alignments.output-queue", DISPATCH_QUEUE_SERIAL)),
@@ -538,7 +547,7 @@ namespace {
 	{
 		m_start_time = clock_type::now();
 
-		if (m_realn_range_output)
+		if (m_realn_range_output.is_open())
 		{
 			if (m_should_output_debugging_information)
 			{
@@ -1033,7 +1042,7 @@ namespace {
 		
 		// Handle the realigned ranges.
 		auto const &task_realigned_ranges(task.m_realigned_ranges);
-		if (m_realn_range_output)
+		if (m_realn_range_output.is_open())
 		{
 			if (m_should_keep_duplicate_realigned_ranges)
 				output_realigned_ranges(task_realigned_ranges, task.m_task_id);
@@ -1092,7 +1101,7 @@ namespace {
 		std::cout << std::flush;
 		
 		// Output the sorted realigned ranges if needed.
-		if (m_realn_range_output)
+		if (m_realn_range_output.is_open())
 		{
 			if (!m_should_keep_duplicate_realigned_ranges)
 				output_realigned_ranges(m_realigned_ranges);
@@ -1107,7 +1116,7 @@ namespace {
 		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
 		
-		if (m_realn_range_output && !m_should_keep_duplicate_realigned_ranges)
+		if (m_realn_range_output.is_open() && !m_should_keep_duplicate_realigned_ranges)
 			std::cerr << "Re-aligned ranges: " << m_realigned_ranges.size() << '\n';
 		
 		if (m_removed_tag_counts.empty())
