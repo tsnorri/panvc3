@@ -95,7 +95,8 @@ namespace {
 		seqan3_sam_tag_type	original_pos{};
 		seqan3_sam_tag_type	original_rnext{};
 		seqan3_sam_tag_type	original_pnext{};
-		seqan3_sam_tag_type	realn_ranges{};
+		seqan3_sam_tag_type	realn_query_ranges{};
+		seqan3_sam_tag_type	realn_ref_ranges{};
 		seqan3_sam_tag_type	rec_idx{};
 	};
 
@@ -921,20 +922,21 @@ namespace {
 				}
 			}
 			
-			// Store the re-aligned ranges in query co-ordinates.
-			if (tag_identifiers.realn_ranges && realn_range_count)
-			{
+			// Store the re-aligned ranges.
+			auto output_realn_ranges([realn_range_count, &tags](auto const &ranges, auto const tag){
 				std::vector <std::uint32_t> output_ranges(2 * realn_range_count, 0);
-				auto const &realn_query_ranges(m_alignment_projector.realigned_query_ranges());
-				for (auto const &[idx, range] : rsv::enumerate(realn_query_ranges))
+				for (auto const &[idx, range] : rsv::enumerate(ranges))
 				{
 					auto const idx_(2 * idx);
 					output_ranges[idx_] = range.location;
 					output_ranges[idx_ + 1] = range.location + range.length;
 				}
-				
-				tags[tag_identifiers.realn_ranges] = std::move(output_ranges);
-			}
+				tags[tag] = std::move(output_ranges);
+			});
+			if (tag_identifiers.realn_query_ranges && realn_range_count)
+				output_realn_ranges(m_alignment_projector.realigned_query_ranges(), tag_identifiers.realn_query_ranges);
+			if (tag_identifiers.realn_ref_ranges && realn_range_count)
+				output_realn_ranges(m_alignment_projector.realigned_reference_ranges(), tag_identifiers.realn_ref_ranges);
 
 			// Store the record index if needed.
 			if (tag_identifiers.rec_idx)
@@ -1358,7 +1360,8 @@ namespace {
 			.original_pos{make_sam_tag(args_info.original_pos_tag_arg)},
 			.original_rnext{make_sam_tag(args_info.original_rnext_tag_arg)},
 			.original_pnext{make_sam_tag(args_info.original_pnext_tag_arg)},
-			.realn_ranges{make_sam_tag(args_info.realigned_ranges_tag_arg)},
+			.realn_query_ranges{make_sam_tag(args_info.realigned_query_ranges_tag_arg)},
+			.realn_ref_ranges{make_sam_tag(args_info.realigned_ref_ranges_tag_arg)},
 			.rec_idx{make_sam_tag(args_info.record_index_tag_arg)}
 		};
 

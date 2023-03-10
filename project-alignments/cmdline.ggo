@@ -33,7 +33,8 @@ option		"original-rname-tag"		-	"SAM tag for the original value of the RNAME fie
 option		"original-pos-tag"			-	"SAM tag for the original value of the POS field"							string	default = "XP"			optional
 option		"original-rnext-tag"		-	"SAM tag for the original value of the RNEXT field (as numeric identifier)"	string	default = "YR"			optional
 option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT field"							string	default = "YP"			optional
-option		"realigned-ranges-tag"		-	"SAM tag for the re-aligned ranges"											string	default = "XA"			optional
+option		"realigned-query-ranges-tag"	-	"SAM tag for the re-aligned query ranges"										string	default = "XA"			optional
+option		"realigned-ref-ranges-tag"	-	"SAM tag for the re-aligned reference ranges"								string	default = "YA"			optional
 option		"record-index-tag"			-	"SAM tag for the original record index"										string							optional
 text		"Added SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
