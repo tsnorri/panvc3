@@ -402,6 +402,7 @@ namespace {
 		std::int32_t					m_gap_opening_cost{};
 		std::int32_t					m_gap_extension_cost{};
 		sam_tag_specification			m_sam_tag_identifiers{};
+		std::uint16_t					m_status_output_interval{};
 		bool							m_should_consider_primary_alignments_only{};
 		bool							m_should_use_read_base_qualities{};
 		bool							m_should_keep_duplicate_realigned_ranges{};
@@ -426,6 +427,7 @@ namespace {
 			sam_tag_specification const	&tag_identifiers,
 			std::int32_t				gap_opening_cost,
 			std::int32_t				gap_extension_cost,
+			std::uint16_t				status_output_interval,
 			bool						should_consider_primary_alignments_only,
 			bool						should_use_read_base_qualities,
 			bool						should_keep_duplicate_realigned_ranges,
@@ -448,6 +450,7 @@ namespace {
 			m_gap_opening_cost(gap_opening_cost),
 			m_gap_extension_cost(gap_extension_cost),
 			m_sam_tag_identifiers(tag_identifiers),
+			m_status_output_interval(status_output_interval),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_should_use_read_base_qualities(should_use_read_base_qualities),
 			m_should_keep_duplicate_realigned_ranges(should_keep_duplicate_realigned_ranges),
@@ -564,9 +567,10 @@ namespace {
 			if (0 == (1 + rec_idx) % 10'000'000)
 				lb::log_time(std::osyncstream(std::cerr)) << "Processed " << (1 + rec_idx) << " alignments…\n" << std::flush;
 
+			if (m_status_output_interval)
 			{
 				auto const pp(clock_type::now());
-				if (std::chrono::minutes(5) <= chrono::duration_cast <chrono::minutes>(pp - prev_status_logging_time))
+				if (std::chrono::minutes(m_status_output_interval) <= chrono::duration_cast <chrono::minutes>(pp - prev_status_logging_time))
 				{
 					prev_status_logging_time = pp;
 					output_status();
@@ -1348,6 +1352,13 @@ namespace {
 		}
 		std::sort(additional_preserved_tags.begin(), additional_preserved_tags.end());
 
+		// Status output interval
+		if (args_info.status_output_interval_arg < 0)
+		{
+			std::cerr << "ERROR: Status output interval must be non-negative.\n";
+			std::exit(EXIT_FAILURE);
+		}
+
 		// Open the alignment output file.
 		auto aln_output{[&](){
 			// Make sure that aln_output has some header information.
@@ -1412,6 +1423,7 @@ namespace {
 			tag_identifiers,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
+			args_info.status_output_interval_arg,
 			false, // args_info.primary_only_flag,
 			args_info.use_read_base_qualities_flag,
 			args_info.keep_duplicate_ranges_flag,

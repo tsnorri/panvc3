@@ -23,6 +23,7 @@ option		"realigned-ranges-tag"		-	"SAM tag for the re-aligned ranges"											
 option		"record-index-tag"			-	"SAM tag for the original record index"										string							optional
 option		"preserve-tag"				t	"Preserve the given SAM tag"												string	typestr = "tag"			optional	multiple
 option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
+option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
 text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
 section		"Re-aligned range output"
