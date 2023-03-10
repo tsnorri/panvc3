@@ -8,52 +8,11 @@
 
 #include <libbio/file_handle.hh>
 #include <libbio/utility/compare_strings_transparent.hh>
+#include <panvc3/utility.hh>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <vector>
-
-
-namespace panvc3::detail {
-	
-	// FIXME: Move to libbio?
-	template <typename t_type, typename t_proj, typename t_cmp = std::less <>>
-	struct cmp_proj
-	{
-	private:
-		template <typename, typename = void> struct is_transparent_t : public std::false_type {};
-
-		template <typename t_type_>
-		struct is_transparent_t <t_type_, std::void_t <typename t_type_::is_transparent>> : public t_type_::is_transparent {};
-
-	public:
-		typedef is_transparent_t <t_cmp>	is_transparent;
-
-
-		bool operator()(t_type const &lhs, t_type const &rhs) const
-		{
-			t_cmp cmp;
-			t_proj proj;
-			return cmp(proj(lhs), proj(rhs));
-		}
-
-		template <typename t_other>
-		bool operator()(t_type const &lhs, t_other const &rhs) const
-		{
-			t_cmp cmp;
-			t_proj proj;
-			return cmp(proj(lhs), rhs);
-		}
-
-		template <typename t_other>
-		bool operator()(t_other const &lhs, t_type const &rhs) const
-		{
-			t_cmp cmp;
-			t_proj proj;
-			return cmp(lhs, proj(rhs));
-		}
-	};
-}
 
 
 namespace panvc3 {
@@ -74,7 +33,7 @@ namespace panvc3 {
 		};
 	};
 
-	typedef detail::cmp_proj <faidx_entry, faidx_entry::proj_name, libbio::compare_strings_transparent>	faidx_entry_cmp;
+	typedef cmp_proj <faidx_entry, faidx_entry::proj_name, libbio::compare_strings_transparent>	faidx_entry_cmp;
 
 
 	class compressed_fasta_reader
@@ -102,7 +61,7 @@ namespace panvc3 {
 		typedef std::vector <faidx_entry>		faidx_table_type;
 		typedef std::vector <char>				sequence_vector;
 
-		typedef detail::cmp_proj <
+		typedef cmp_proj <
 			gzi_offset_pair,
 			project_first <gzi_offset_pair>
 		>										gzi_offset_pair_cmp;

@@ -25,8 +25,47 @@ namespace panvc3 {
 	
 	template <typename t_type>
 	using type_list_to_tuple_t = type_list_to_tuple <t_type>::type;
+
 	
+	// FIXME: Move to libbio?
+	template <typename t_type, typename t_proj, typename t_cmp = std::less <>>
+	struct cmp_proj
+	{
+	private:
+		template <typename, typename = void> struct is_transparent_t : public std::false_type {};
+
+		template <typename t_type_>
+		struct is_transparent_t <t_type_, std::void_t <typename t_type_::is_transparent>> : public t_type_::is_transparent {};
+
+	public:
+		typedef is_transparent_t <t_cmp>	is_transparent;
+
+
+		bool operator()(t_type const &lhs, t_type const &rhs) const
+		{
+			t_cmp cmp;
+			t_proj proj;
+			return cmp(proj(lhs), proj(rhs));
+		}
+
+		template <typename t_other>
+		bool operator()(t_type const &lhs, t_other const &rhs) const
+		{
+			t_cmp cmp;
+			t_proj proj;
+			return cmp(proj(lhs), rhs);
+		}
+
+		template <typename t_other>
+		bool operator()(t_other const &lhs, t_type const &rhs) const
+		{
+			t_cmp cmp;
+			t_proj proj;
+			return cmp(lhs, proj(rhs));
+		}
+	};
 	
+
 	// FIXME: check that t_alphabet is one of SeqAn3’s alphabets.
 	template <typename t_alphabet>
 	constexpr inline t_alphabet max_letter()
