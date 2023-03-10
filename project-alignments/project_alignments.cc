@@ -1419,7 +1419,7 @@ namespace {
 }
 
 
-int main(int argc, char **argv)
+extern "C" void panvc3_project_alignments(int argc, char **argv)
 {
 	gengetopt_args_info args_info;
 	if (0 != cmdline_parser(argc, argv, &args_info))
@@ -1441,8 +1441,4 @@ int main(int argc, char **argv)
 		std::cerr << "PID: " << getpid() << '\n';
 	
 	process(args_info);
-	dispatch_main();
-	
-	// Not reached.
-	return EXIT_SUCCESS;
 }

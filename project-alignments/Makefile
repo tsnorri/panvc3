@@ -11,6 +11,7 @@ include  $(MAKEFILE_DIR)/../make/seqan3.mk
 
 OBJECTS		=	cmdline.o \
 				log_memory_usage.o \
+				project_alignments.o \
 				main.o
 
 #CPPFLAGS += -DLIBBIO_LOG_ALLOCATED_MEMORY
