@@ -83,7 +83,7 @@ namespace panvc3 {
 				auto query_part(query_seq | query_range.slice());
 
 				if (m_delegate)
-					m_delegate->alignment_projector_begin_realignment();
+					m_delegate->alignment_projector_begin_realignment(*this);
 				align_global <false>(
 					ref_part,
 					query_part,
@@ -92,7 +92,7 @@ namespace panvc3 {
 					m_realign_buffer
 				);
 				if (m_delegate)
-					m_delegate->alignment_projector_end_realignment();
+					m_delegate->alignment_projector_end_realignment(*this);
 			}
 			else
 			{
@@ -124,7 +124,7 @@ namespace panvc3 {
 				);
 			
 				if (m_delegate)
-					m_delegate->alignment_projector_begin_realignment();
+					m_delegate->alignment_projector_begin_realignment(*this);
 				align_global <true, sequence_alphabet, quality_alphabet>(
 					ref_part,
 					query_part,
@@ -133,7 +133,7 @@ namespace panvc3 {
 					m_realign_buffer
 				);
 				if (m_delegate)
-					m_delegate->alignment_projector_end_realignment();
+					m_delegate->alignment_projector_end_realignment(*this);
 			}
 		
 			// Copy the new operations.

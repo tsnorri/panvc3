@@ -19,11 +19,14 @@
 
 namespace panvc3 {
 
+	class alignment_projector; // Fwd.
+
+
 	struct alignment_projector_delegate
 	{
 		virtual ~alignment_projector_delegate() {}
-		virtual void alignment_projector_begin_realignment() = 0;
-		virtual void alignment_projector_end_realignment() = 0;
+		virtual void alignment_projector_begin_realignment(alignment_projector const &) = 0;
+		virtual void alignment_projector_end_realignment(alignment_projector const &) = 0;
 	};
 
 	
@@ -34,7 +37,7 @@ namespace panvc3 {
 		typedef seqan3::phred42			quality_alphabet;
 		
 	protected:
-		indel_run_checker				m_indel_run_checker;
+		class indel_run_checker			m_indel_run_checker;
 		cigar_vector					m_cigar_realigned;
 		cigar_buffer					m_rewrite_buffer;
 		cigar_buffer					m_realign_buffer;
@@ -67,6 +70,8 @@ namespace panvc3 {
 		cigar_vector const &alignment() const { return m_cigar_realigned; }
 		range_vector const &realigned_reference_ranges() const { return m_realigned_reference_ranges; }
 		range_vector const &realigned_query_ranges() const { return m_realigned_query_ranges; }
+
+		class indel_run_checker const &indel_run_checker() const { return m_indel_run_checker; }
 	};
 }
 
