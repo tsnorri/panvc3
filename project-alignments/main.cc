@@ -623,7 +623,11 @@ namespace {
 				if (buffer.empty())
 				{
 					lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence '" << ref_name << "'…\n" << std::flush;
-					m_fasta_reader.read_sequence(ref_name, buffer);
+					if (!m_fasta_reader.read_sequence(ref_name, buffer))
+					{
+						std::osyncstream(std::cerr) << "ERROR: Unable to load sequence ‘" << ref_name << "’ from the input FASTA.\n" << std::flush;
+						std::abort(); // spsc_queue’s semaphore is in use, so std::exit() can’t be called.
+					}
 					lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
 				}
 			}
