@@ -1128,19 +1128,6 @@ namespace {
 	}
 	
 	
-	auto open_alignment_input_file(fs::path const &path)
-	{
-		return seqan3::sam_file_input(path);
-	}
-	
-	
-	template <typename t_format>
-	auto open_alignment_input_stream(std::istream &stream, t_format &&format)
-	{
-		return seqan3::sam_file_input(stream, std::forward <t_format>(format));
-	}	
-
-
 	std::unique_ptr <input_processor_base> s_input_processor;
 
 
@@ -1294,20 +1281,36 @@ namespace {
 	}
 
 
-	template <typename t_aln_input>
-	void process_(
-		t_aln_input &&aln_input,
-		gengetopt_args_info const &args_info
-	)
+	void process(gengetopt_args_info const &args_info)
 	{
 		libbio_assert(args_info.ref_id_separator_arg);
-		
+
+		// Open the SAM input.
+		typedef seqan3::sam_file_input <> input_type;
+		auto aln_input{[&](){
+			auto const make_input_type([&]<typename t_fmt>(t_fmt &&fmt){
+				if (args_info.alignments_arg)
+				{
+					fs::path const path(args_info.alignments_arg);
+					return input_type(path);
+				}
+				else
+				{
+					return input_type(std::cin, std::forward <t_fmt>(fmt));
+				}
+			});
+
+			if (args_info.bam_input_flag)
+				return make_input_type(seqan3::format_bam{});
+			else
+				return make_input_type(seqan3::format_sam{});
+		}()};
+
 		auto &aln_input_header(aln_input.header()); // ref_ids() not const.
 		auto const &input_ref_ids(aln_input_header.ref_ids());
 		
 		// Type aliases for input and output.
 		typedef std::remove_cvref_t <decltype(input_ref_ids)>			ref_ids_type;
-		typedef std::remove_cvref_t <t_aln_input>						input_type;
 		typedef seqan3::sam_file_output <
 			typename input_type::selected_field_ids,
 			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
@@ -1364,12 +1367,23 @@ namespace {
 			// Make sure that aln_output has some header information.
 			auto const make_output_type([&]<typename t_fmt>(t_fmt &&fmt){
 				ref_ids_type empty_ref_ids;
-				return output_type(
-					std::cout,
-					std::move(empty_ref_ids),
-					rsv::empty <std::size_t>(), // Reference lengths; the constructor expects a forward range.
-					std::forward <t_fmt>(fmt)
-				);
+				if (args_info.output_path_arg)
+				{
+					return output_type(
+						fs::path{args_info.output_path_arg},
+						std::move(empty_ref_ids),
+						rsv::empty <std::size_t>()	// Reference lengths; the constructor expects a forward range.
+					);
+				}
+				else
+				{
+					return output_type(
+						std::cout,
+						std::move(empty_ref_ids),
+						rsv::empty <std::size_t>(),	// Reference lengths; the constructor expects a forward range.
+						std::forward <t_fmt>(fmt)
+					);
+				}
 			});
 
 			if (args_info.output_bam_flag)
@@ -1433,23 +1447,6 @@ namespace {
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		lb::dispatch(*s_input_processor).template async <&input_processor_base::process_input>(dispatch_get_main_queue());
-	}
-	
-	
-	void process(gengetopt_args_info const &args_info)
-	{
-		// Open the SAM input.
-		if (args_info.alignments_arg)
-		{
-			fs::path const alignments_path(args_info.alignments_arg);
-			auto aln_input(open_alignment_input_file(alignments_path));
-			process_(aln_input, args_info);
-		}
-		else
-		{
-			auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_sam{}));
-			process_(aln_input, args_info);
-		}
 	}
 }
 
