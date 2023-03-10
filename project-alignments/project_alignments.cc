@@ -306,8 +306,9 @@ namespace {
 		std::size_t							m_task_id{};
 		std::size_t							m_last_rec_idx{};
 		time_point							m_realignment_start_time{};
-		std::uint32_t						m_realignment_time{};
+		std::uint64_t						m_realignment_time{};
 		std::uint32_t						m_realigned_range_count{};
+		std::uint32_t						m_realigned_range_total_length{};
 		std::atomic <project_task_status>	m_status{}; // FIXME: make this conditional.
 		bool								m_should_store_realigned_range_qnames{};
 		
@@ -325,10 +326,10 @@ namespace {
 		
 		void process();
 		void output();
-		void reset() { m_valid_records = 0; m_removed_tag_counts.clear(); m_realigned_ranges.clear(); m_realigned_range_count = 0; m_realignment_time = 0; }
+		inline void reset(); 
 
-		void alignment_projector_begin_realignment() override { m_realignment_start_time = clock_type::now(); }
-		void alignment_projector_end_realignment() override;
+		void alignment_projector_begin_realignment(panvc3::alignment_projector const &) override { m_realignment_start_time = clock_type::now(); }
+		void alignment_projector_end_realignment(panvc3::alignment_projector const &) override;
 	};
 	
 	
@@ -385,9 +386,10 @@ namespace {
 
 		time_point						m_start_time{};
 		
+		std::uint64_t					m_realignment_time{}; // nanoseconds
 		std::atomic_uint32_t			m_current_rec_idx{};
-		std::uint32_t					m_realignment_time{};
 		std::uint32_t					m_realigned_range_count{};
+		std::uint32_t					m_realigned_range_total_length{};
 		
 		alignment_statistics			m_statistics;
 		tag_count_map					m_removed_tag_counts;
@@ -465,7 +467,7 @@ namespace {
 
 		void output_status() const override;
 
-		std::uint32_t realignment_time() const { return m_realignment_time; }
+		std::uint64_t realignment_time() const { return m_realignment_time; }
 		std::uint32_t realigned_range_count() const { return m_realigned_range_count; }
 		std::uint32_t current_record_index() const { return m_current_rec_idx.load(std::memory_order_relaxed); }
 		
@@ -513,13 +515,15 @@ namespace {
 		cerr << "; realigned " << realigned_ranges << " ranges";
 		if (realigned_ranges)
 		{
-			auto const realn_time{chrono::milliseconds(realignment_time())};
+			auto const realn_time{chrono::nanoseconds(realignment_time())};
 			cerr << " (in ";
 			log_duration(cerr, realn_time);
 
-			double ms_per_realn(chrono::duration_cast <chrono::milliseconds>(realn_time).count());
-			ms_per_realn /= realigned_ranges;
-			cerr << ", " << (ms_per_realn / 1000.0) << " s / realignment)";
+			double ns_per_realn(chrono::duration_cast <chrono::nanoseconds>(realn_time).count());
+			double mean_realn_length(m_realigned_range_total_length);
+			ns_per_realn /= realigned_ranges;
+			mean_realn_length /= realigned_ranges;
+			cerr << ", " << ns_per_realn << " ns / realignment, mean length " << mean_realn_length << " characters)";
 		}
 
 		cerr << ".\n" << std::flush;
@@ -691,6 +695,18 @@ namespace {
 			lb::dispatch(*this).template group_notify <&input_processor::finish>(*dispatch_group, *m_output_dispatch_queue);
 		else
 			finish();
+	}
+
+
+	template <typename t_input_processor>
+	void project_task <t_input_processor>::reset()
+	{
+		m_valid_records = 0;
+		m_removed_tag_counts.clear();
+		m_realigned_ranges.clear();
+		m_realigned_range_count = 0;
+		m_realignment_time = 0;
+		m_realigned_range_total_length = 0;
 	}
 	
 	
@@ -965,12 +981,18 @@ namespace {
 
 
 	template <typename t_input_processor>
-	void project_task <t_input_processor>::alignment_projector_end_realignment()
+	void project_task <t_input_processor>::alignment_projector_end_realignment(panvc3::alignment_projector const &aln_projector)
 	{
 		auto const pp(clock_type::now());
 		auto const diff(pp - m_realignment_start_time);
-		m_realignment_time += chrono::duration_cast <chrono::milliseconds>(diff).count();
+		m_realignment_time += chrono::duration_cast <chrono::nanoseconds>(diff).count();
 		++m_realigned_range_count;
+
+		auto const &indel_run_checker(aln_projector.indel_run_checker());
+		auto const ref_range(indel_run_checker.reference_range()); // Has segment-relative position.
+		auto const query_range(indel_run_checker.query_range());
+		auto const length(std::max(ref_range.length, query_range.length));
+		m_realigned_range_total_length += length;
 	}
 	
 	
@@ -1026,6 +1048,7 @@ namespace {
 		// Update statistics.
 		m_realigned_range_count += task.m_realigned_range_count;
 		m_realignment_time += task.m_realignment_time;
+		m_realigned_range_total_length += task.m_realigned_range_total_length;
 		
 		// Clean up.
 		task.reset();
