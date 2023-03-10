@@ -1284,7 +1284,14 @@ namespace {
 	void process(gengetopt_args_info const &args_info)
 	{
 		libbio_assert(args_info.ref_id_separator_arg);
-
+		
+		// Sanity check.
+		if (args_info.alignments_arg && args_info.bam_input_flag)
+		{
+			std::cerr << "ERROR: --bam-input has no effect when reading input from a file.\n";
+			std::exit(EXIT_FAILURE);
+		}
+		
 		// Open the SAM input.
 		typedef seqan3::sam_file_input <> input_type;
 		auto aln_input{[&](){
