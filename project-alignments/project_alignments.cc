@@ -1318,11 +1318,12 @@ namespace {
 		>																output_type;
 
 		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
-		auto const make_sam_tag([&tag_regex](char const *tag) -> seqan3_sam_tag_type {
+		std::regex const any_tag_regex{"^[A-Za-z0-9]{2}$"};
+		auto const make_sam_tag([&tag_regex, &any_tag_regex](char const *tag, bool const should_allow_any = false) -> seqan3_sam_tag_type {
 			if (!tag)
 				return 0;
 
-			if (!std::regex_match(tag, tag_regex))
+			if (!std::regex_match(tag, (should_allow_any ? any_tag_regex : tag_regex)))
 			{
 				std::cerr << "ERROR: The given tag '" << tag << "' does not match the expected format.\n";
 				std::exit(EXIT_FAILURE);
@@ -1349,7 +1350,7 @@ namespace {
 		seqan3_sam_tag_vector additional_preserved_tags;
 		for (unsigned int i(0); i < args_info.preserve_tag_given; ++i)
 		{
-			auto const tag_id(make_sam_tag(args_info.preserve_tag_arg[i]));
+			auto const tag_id(make_sam_tag(args_info.preserve_tag_arg[i], true));
 			libbio_always_assert_neq(0, tag_id);
 			additional_preserved_tags.push_back(tag_id);
 		}
