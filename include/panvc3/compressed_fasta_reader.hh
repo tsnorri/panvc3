@@ -72,9 +72,9 @@ namespace panvc3 {
 		gzi_table_type		m_compressed_offsets; // Reversed w.r.t. the GZI file.
 
 	public:
-		faidx_table_type const &sequence_entries() { return m_sequence_entries; }
+		[[nodiscard]] faidx_table_type const &sequence_entries() { return m_sequence_entries; }
 		void read_sequence(faidx_entry const &seq_entry, sequence_vector &dst);
-		bool read_sequence(std::string_view const seq_id, sequence_vector &dst);
+		[[nodiscard]] bool read_sequence(std::string_view const seq_id, sequence_vector &dst);
 		void open_path(std::string const &fasta_path);
 	};
 }
