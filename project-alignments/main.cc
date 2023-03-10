@@ -1397,7 +1397,7 @@ namespace {
 		);
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
-		s_input_processor->process_input();
+		lb::dispatch(*s_input_processor).template async <&input_processor_base::process_input>(dispatch_get_main_queue());
 	}
 	
 	
