@@ -7,7 +7,8 @@ purpose		"Project alignments to founder sequences to a given reference sequence"
 usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa > projected.sam"
 
 section		"Input options"
-option		"alignments"				a	"Alignment file path"														string	typestr = "filename"	optional
+option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
+option		"bam-input"					B	"Read BAM from stdin"														flag	off
 option		"msa-index"					m	"MSA index path"															string	typestr = "filename"	required
 option		"reference"					r	"Reference sequences FASTA path"											string	typestr = "filename"	required
 option		"reference-msa-id"			d	"Reference sequence ID in MSA index"										string							required
@@ -15,25 +16,26 @@ option		"ref-id-separator"			s	"Reference ID separator in input"											strin
 option		"reference-order-input"		u	"Read output reference order from the given path, one identifier per line"	string	typestr = "filename"	optional
 
 section		"Output options"
+option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"		optional
+option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
+option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
+
+section		"Re-aligned range output"
+option		"output-realigned-ranges"	l	"Output the re-aligned ranges as TSV to the given path"						string	typestr = "filename"	optional
+option		"keep-duplicate-ranges"		-	"Keep duplicate ranges (useful with --debugging-output)"					flag	off									hidden
+
+#section	"Processing options"
+#option		"primary-only"				p	"Consider primary alignments only"											flag	off
+
+section		"Alignment record formatting"
+option		"preserve-tag"				t	"Preserve the given SAM tag"												string	typestr = "tag"			optional	multiple
 option		"original-rname-tag"		-	"SAM tag for the original value of the RNAME field (as numeric identifier)"	string	default = "XR"			optional
 option		"original-pos-tag"			-	"SAM tag for the original value of the POS field"							string	default = "XP"			optional
 option		"original-rnext-tag"		-	"SAM tag for the original value of the RNEXT field (as numeric identifier)"	string	default = "YR"			optional
 option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT field"							string	default = "YP"			optional
 option		"realigned-ranges-tag"		-	"SAM tag for the re-aligned ranges"											string	default = "XA"			optional
 option		"record-index-tag"			-	"SAM tag for the original record index"										string							optional
-option		"preserve-tag"				t	"Preserve the given SAM tag"												string	typestr = "tag"			optional	multiple
-option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"		optional
-option		"bam-input"					B	"Read BAM from stdin"														flag	off
-option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
-option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
-text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
-
-section		"Re-aligned range output"
-option		"output-realigned-ranges"	l	"Output the re-aligned ranges as TSV to the given path"						string	typestr = "filename"	optional
-option		"keep-duplicate-ranges"		-	"Keep duplicate ranges (useful with --debugging-output)"					flag	off									hidden
-
-#section		"Processing options"
-#option		"primary-only"				p	"Consider primary alignments only"											flag	off
+text		"Added SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
 section		"Re-alignment options"
 option		"gap-opening-cost"			g	"Gap opening cost when re-aligning runs of insertions and deletions"		int		default = "0"			optional
