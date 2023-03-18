@@ -14,6 +14,7 @@
 #include <libbio/utility.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
+#include <panvc3/sam_tag.hh>
 #include <panvc3/sequence_buffer_store.hh>
 #include <panvc3/spsc_queue.hh>
 #include <panvc3/utility.hh>
@@ -40,15 +41,12 @@ using seqan3::operator""_tag;
 namespace seqan3 {
 	// SeqAn 3 does not yet have a definition for the OA tag.
 	// (Check when updating, though.)
-	template <> struct sam_tag_type <"OA"_tag> { typedef std::string type; };
+	template <> struct panvc3::sam_tag_type <"OA"_tag> { typedef std::string type; };
 }
 
 
 namespace {
 
-	typedef std::uint16_t						seqan3_sam_tag_type;
-	typedef std::vector <seqan3_sam_tag_type>	seqan3_sam_tag_vector;
-	
 	constexpr inline std::size_t	QUEUE_SIZE{16};
 	constexpr inline std::size_t	CHUNK_SIZE{4};
 
@@ -91,44 +89,16 @@ namespace {
 	
 	struct sam_tag_specification
 	{
-		seqan3_sam_tag_type	original_rname{};
-		seqan3_sam_tag_type	original_pos{};
-		seqan3_sam_tag_type	original_rnext{};
-		seqan3_sam_tag_type	original_pnext{};
-		seqan3_sam_tag_type	realn_query_ranges{};
-		seqan3_sam_tag_type	realn_ref_ranges{};
-		seqan3_sam_tag_type	rec_idx{};
+		panvc3::seqan3_sam_tag_type	original_rname{};
+		panvc3::seqan3_sam_tag_type	original_pos{};
+		panvc3::seqan3_sam_tag_type	original_rnext{};
+		panvc3::seqan3_sam_tag_type	original_pnext{};
+		panvc3::seqan3_sam_tag_type	realn_query_ranges{};
+		panvc3::seqan3_sam_tag_type	realn_ref_ranges{};
+		panvc3::seqan3_sam_tag_type	rec_idx{};
 	};
 
 
-	// Convert a SeqAn 3 SAM tag to a std::array <char, N> where 2 ≤ N.
-	// I don't think SeqAn 3 has this utility function.
-	// Compare to operator""_tag() in <seqan3/io/sam_file/sam_tag_dictionary.hpp>.
-	template <std::size_t t_size>
-	constexpr void from_tag(seqan3_sam_tag_type const val, std::array <char, t_size> &buffer)
-	requires (2 <= t_size)
-	{
-		char const char0(val / 256); // Narrowed automatically when () (not {}) are used.
-		char const char1(val % 256);
-		std::get <0>(buffer) = char0;
-		std::get <1>(buffer) = char1;
-	}
-	
-	
-	// Convert a std::array <char, 2> to a SeqAn 3 SAM tag.
-	constexpr seqan3_sam_tag_type to_tag(std::array <char, 2> const &buffer)
-	{
-		// The tag needs to match /|A-Za-z][A-Za-z0-9]/ (SAMv1, Section 1.5 The alignment section: optional fields),
-		// so the values will not be negative.
-		libbio_always_assert_lte(std::get <0>(buffer), 127);
-		libbio_always_assert_lte(std::get <1>(buffer), 127);
-		seqan3_sam_tag_type retval(std::get <0>(buffer)); // Narrows when () (not {}) are used.
-		retval *= 256;
-		retval += std::get <1>(buffer);
-		return retval;
-	}
-	
-	
 	template <typename t_string>
 	panvc3::msa_index::chr_entry_vector::const_iterator
 	find_chr_entry_(panvc3::msa_index::chr_entry_vector const &entries, t_string const &chr_id)
@@ -371,7 +341,7 @@ namespace {
 		>															output_reference_ids_type;
 		typedef typename input_type::record_type					input_record_type;
 		typedef project_task <input_processor>						project_task_type;
-		typedef std::map <seqan3_sam_tag_type, std::size_t>			tag_count_map;
+		typedef std::map <panvc3::seqan3_sam_tag_type, std::size_t>	tag_count_map;
 		typedef panvc3::spsc_queue <project_task_type, QUEUE_SIZE>	queue_type;
 		typedef lb::dispatch_ptr <dispatch_queue_t>					dispatch_queue_ptr;
 		typedef lb::dispatch_ptr <dispatch_semaphore_t>				semaphore_ptr;
@@ -406,7 +376,7 @@ namespace {
 		realigned_range_vector			m_realigned_ranges;
 		realigned_range_vector			m_realigned_range_buffer;
 		reference_id_mapping_type		m_ref_id_mapping;
-		seqan3_sam_tag_vector			m_additional_preserved_tags;
+		panvc3::seqan3_sam_tag_vector	m_additional_preserved_tags;
 		std::string						m_msa_ref_id;
 		std::string						m_ref_id_separator;
 		std::int32_t					m_gap_opening_cost{};
@@ -425,24 +395,24 @@ namespace {
 			typename t_ref_id_separator
 		>
 		input_processor(
-			panvc3::msa_index			&&msa_index,
-			t_aln_input					&&aln_input,
-			t_aln_output				&&aln_output,
-			fasta_reader				&&fasta_reader_,
-			lb::file_handle				&&realn_range_handle,
-			t_msa_ref_id				&&msa_ref_id,
-			t_ref_id_separator			&&ref_id_separator,
-			reference_id_mapping_type	&&ref_id_mapping,
-			seqan3_sam_tag_vector		&&additional_preserved_tags,
-			sam_tag_specification const	&tag_identifiers,
-			std::int32_t				gap_opening_cost,
-			std::int32_t				gap_extension_cost,
-			std::uint16_t				status_output_interval,
-			bool						should_consider_primary_alignments_only,
-			bool						should_use_read_base_qualities,
-			bool						should_keep_duplicate_realigned_ranges,
-			bool						should_output_debugging_information,
-			exit_callback_type			exit_cb
+			panvc3::msa_index				&&msa_index,
+			t_aln_input						&&aln_input,
+			t_aln_output					&&aln_output,
+			fasta_reader					&&fasta_reader_,
+			lb::file_handle					&&realn_range_handle,
+			t_msa_ref_id					&&msa_ref_id,
+			t_ref_id_separator				&&ref_id_separator,
+			reference_id_mapping_type		&&ref_id_mapping,
+			panvc3::seqan3_sam_tag_vector	&&additional_preserved_tags,
+			sam_tag_specification const		&tag_identifiers,
+			std::int32_t					gap_opening_cost,
+			std::int32_t					gap_extension_cost,
+			std::uint16_t					status_output_interval,
+			bool							should_consider_primary_alignments_only,
+			bool							should_use_read_base_qualities,
+			bool							should_keep_duplicate_realigned_ranges,
+			bool							should_output_debugging_information,
+			exit_callback_type				exit_cb
 		):
 			m_msa_index(std::move(msa_index)),
 			m_aln_input(std::move(aln_input)),
@@ -498,7 +468,7 @@ namespace {
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
 		sam_tag_specification const &sam_tag_identifiers() const { return m_sam_tag_identifiers; }
-		seqan3_sam_tag_vector const &additional_preserved_tags() const { return m_additional_preserved_tags; }
+		panvc3::seqan3_sam_tag_vector const &additional_preserved_tags() const { return m_additional_preserved_tags; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
 		bool should_process_tasks_in_parallel() const { return m_should_process_tasks_in_parallel; }
@@ -1129,7 +1099,7 @@ namespace {
 			std::array <char, 3> buffer{'\0', '\0', '\0'};
 			for (auto const &kv : m_removed_tag_counts)
 			{
-				from_tag(kv.first, buffer);
+				panvc3::from_tag(kv.first, buffer);
 				std::cerr << '\t' << buffer.data() << ": " << kv.second << '\n';
 			}
 		}
@@ -1337,7 +1307,7 @@ namespace {
 
 		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
 		std::regex const any_tag_regex{"^[A-Za-z0-9]{2}$"};
-		auto const make_sam_tag([&tag_regex, &any_tag_regex](char const *tag, bool const should_allow_any = false) -> seqan3_sam_tag_type {
+		auto const make_sam_tag([&tag_regex, &any_tag_regex](char const *tag, bool const should_allow_any = false) -> panvc3::seqan3_sam_tag_type {
 			if (!tag)
 				return 0;
 
@@ -1348,7 +1318,7 @@ namespace {
 			}
 
 			std::array <char, 2> buffer{tag[0], tag[1]};
-			return to_tag(buffer);
+			return panvc3::to_tag(buffer);
 		});
 
 		std::string ref_id_separator(args_info.ref_id_separator_arg);
@@ -1366,7 +1336,7 @@ namespace {
 		};
 
 		// Additional preserved SAM tags.
-		seqan3_sam_tag_vector additional_preserved_tags;
+		panvc3::seqan3_sam_tag_vector additional_preserved_tags;
 		for (unsigned int i(0); i < args_info.preserve_tag_given; ++i)
 		{
 			auto const tag_id(make_sam_tag(args_info.preserve_tag_arg[i], true));
