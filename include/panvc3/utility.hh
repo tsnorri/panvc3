@@ -41,7 +41,7 @@ namespace panvc3 {
 		typedef is_transparent_t <t_cmp>	is_transparent;
 
 
-		bool operator()(t_type const &lhs, t_type const &rhs) const
+		constexpr bool operator()(t_type const &lhs, t_type const &rhs) const
 		{
 			t_cmp cmp;
 			t_proj proj;
@@ -49,7 +49,7 @@ namespace panvc3 {
 		}
 
 		template <typename t_other>
-		bool operator()(t_type const &lhs, t_other const &rhs) const
+		constexpr bool operator()(t_type const &lhs, t_other const &rhs) const
 		{
 			t_cmp cmp;
 			t_proj proj;
@@ -57,7 +57,7 @@ namespace panvc3 {
 		}
 
 		template <typename t_other>
-		bool operator()(t_other const &lhs, t_type const &rhs) const
+		constexpr bool operator()(t_other const &lhs, t_type const &rhs) const
 		{
 			t_cmp cmp;
 			t_proj proj;
