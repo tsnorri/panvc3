@@ -43,7 +43,7 @@ namespace {
 	
 	constexpr static inline auto const SEQUENCE_LENGTH_MAX{std::numeric_limits <sequence_length_type>::max()};
 	constexpr static inline auto const ALIGNMENT_SCORE_MIN{std::numeric_limits <alignment_score_type>::min()};
-	constexpr static inline auto const MAPQ_NO_NEXT_RECORD{255};
+	constexpr static inline mapping_quality_type const MAPQ_NO_NEXT_RECORD{255};
 	
 	
 	template <typename>
@@ -463,7 +463,7 @@ namespace {
 			this->normalise();
 		}
 		
-		constexpr void normalise() { using std::swap; if (lhs < rhs) swap(lhs, rhs); }
+		constexpr void normalise() { using std::swap; if (! (lhs < rhs)) swap(lhs, rhs); }
 		constexpr auto to_tuple() const { return std::make_tuple(lhs, rhs); }
 		constexpr bool operator<(position_pair const &other) const { return to_tuple() < other.to_tuple(); }
 		constexpr bool operator==(position_pair const &other) const { return to_tuple() == other.to_tuple(); }
