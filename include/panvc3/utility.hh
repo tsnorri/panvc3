@@ -24,7 +24,7 @@ namespace panvc3 {
 	};
 	
 	template <typename t_type>
-	using type_list_to_tuple_t = type_list_to_tuple <t_type>::type;
+	using type_list_to_tuple_t = typename type_list_to_tuple <t_type>::type;
 
 	
 	// FIXME: Move to libbio?
