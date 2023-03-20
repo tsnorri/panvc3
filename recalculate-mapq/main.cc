@@ -727,7 +727,7 @@ namespace {
 						if (mate_original_pos == it_->position)
 						{
 							// Store the best score at the mate position if there is one, also store the length of the mate.
-							pss.other_score = it->score;
+							pss.other_score = it_->score;
 							pss.has_mate = true;
 							mate_length = it_->length;
 						}
