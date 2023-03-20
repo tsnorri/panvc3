@@ -40,7 +40,7 @@ namespace {
 	typedef std::uint8_t						mapping_quality_type;
 	
 	constexpr static inline auto const SEQUENCE_LENGTH_MAX{std::numeric_limits <sequence_length_type>::max()};
-	constexpr static inline auto const ALIGNMENT_SCORE_MIN{std::numeric_limits <alignment_score_type>::min()};
+	constexpr static inline auto const ALIGNMENT_SCORE_MIN{-std::numeric_limits <alignment_score_type>::max()};
 	constexpr static inline mapping_quality_type const MAPQ_NO_NEXT_RECORD{255};
 	
 	
@@ -125,7 +125,7 @@ namespace {
 		alignment_score_type	diff_next_threshold{};
 		alignment_score_type	normalised_score_threshold{};
 		mapping_quality_type	mapping_quality{};
-
+		
 		struct project_key
 		{
 			constexpr auto operator()(score_entry_2 const &entry) const
@@ -166,7 +166,7 @@ namespace {
 		);
 
 		constexpr static std::array const non_unique_alignment_scores{
-			score_entry_2{0.0,	0.0,	2},	// For matching non-zero first component
+			score_entry_2{0.0,	0.0,	2},	// For matching positive first component less than 0.1.
 			score_entry_2{0.0,	0.67,	6},
 			score_entry_2{0.1,	0.0,	0},
 			score_entry_2{0.1,	0.67,	7},
@@ -258,14 +258,17 @@ namespace {
 	) const
 	{
 		auto const min_score(calculate_read_min_score(read_length) + calculate_read_min_score(other_read_length)); // Score of a barely valid match
-		auto const max_score(calculate_read_max_score(read_length) + calculate_read_min_score(other_read_length)); // Score of a perfect match.
+		auto const max_score(calculate_read_max_score(read_length) + calculate_read_max_score(other_read_length)); // Score of a perfect match.
 		auto const score_range(std::max(alignment_score_type(1), max_score - min_score));
 
 		auto const normalised_score(score - min_score);
 		auto const normalised_score_quotient(normalised_score / score_range);
 		static_assert(std::is_floating_point_v <alignment_score_type>); // For avoiding UB below.
-		auto const diff_next(score - next_score); // Not undefined behaviour even if next_score == ALIGNMENT_SCORE_MIN.
-		auto const diff_next_quotient(diff_next / score_range);
+		libbio_assert_lte(next_score, score);
+		auto const diff_next(score - next_score); // bestDiff in Bowtie 2; not undefined behaviour even if next_score == ALIGNMENT_SCORE_MIN.
+		auto const diff_next_quotient(diff_next / score_range); // bestdiff / diff in Bowtie 2.
+		libbio_assert_lte(0, normalised_score_quotient);
+		libbio_assert_lte(normalised_score_quotient, 1.0);
 
 		// Replaced branches with table lookup.
 		// See BowtieMapq2::mapq() in Bowtie 2’s unique.h.
@@ -283,15 +286,27 @@ namespace {
 		}
 		else if (diff_next)
 		{
-			auto const it(
-				std::upper_bound(
-					non_unique_alignment_scores.begin(),
-					non_unique_alignment_scores.end(),
-					std::make_pair(diff_next_quotient, normalised_score_quotient),
-					score_entry_2_cmp{}
-				)
-			);
-			return (it - 1)->mapping_quality;
+			libbio_assert_lte(0, diff_next_quotient);
+			libbio_assert_lte(diff_next_quotient, 1.0);
+			
+			// The following approach is safer than assuming that the difference of the scores in terms of diff_next_threshold is always 0.1.
+			auto const begin(non_unique_alignment_scores.begin());
+			auto const it(ranges::upper_bound(
+				non_unique_alignment_scores,
+				diff_next_quotient,
+				ranges::less{},
+				[](auto const &entry){ return entry.diff_next_threshold; }
+			));
+			libbio_assert_neq(begin, it);
+			auto const diff_next_threshold((it - 1)->diff_next_threshold);
+			auto const it_(std::upper_bound(
+				begin,
+				it,
+				std::make_pair(diff_next_threshold, normalised_score_quotient),
+				score_entry_2_cmp{}
+			));
+			libbio_assert_neq(begin, it_);
+			return (it_ - 1)->mapping_quality;
 		}
 		else
 		{
@@ -506,6 +521,11 @@ namespace {
 			position_pair			positions{};
 			sequence_type			*sequence{};
 			alignment_score_type	score{};
+			alignment_score_type	other_score{};
+			bool					has_mate{};
+			
+			alignment_score_type total_score() const { return score + other_score; }
+			alignment_score_type max_score() const { return (has_mate ? std::max(score, other_score) : score); }
 			
 			struct project_positions
 			{
@@ -580,8 +600,8 @@ namespace {
 
 			if (it->sequence == pss.sequence)
 			{
-				if (it->score < pss.score)
-					it->score = pss.score;
+				if (it->total_score() < pss.total_score())
+					*it = pss;
 				return;
 			}
 		}
@@ -684,8 +704,8 @@ namespace {
 				seen_record_types |= 0x1 << has_mate;
 				m_statistics.unpaired_alignments += (!has_mate);
 			
-				position_pair const pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
-				paired_segment_score pss{pos, has_mate ? nullptr : &aln_rec.sequence(), alignment_score(aln_rec)};
+				position_pair const projected_pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
+				paired_segment_score pss{projected_pos, has_mate ? nullptr : &aln_rec.sequence(), alignment_score(aln_rec), 0, false};
 			
 				// Min. score only allowed for invalid positions.
 				libbio_assert((INVALID_POSITION != pss.positions.lhs) ^ (ALIGNMENT_SCORE_MIN == pss.score));
@@ -706,15 +726,16 @@ namespace {
 						auto const it_(it - 1);
 						if (mate_original_pos == it_->position)
 						{
-							// Add the best score at the mate position if there is one, also store the length of the mate.
-							pss.score += it->score; 
+							// Store the best score at the mate position if there is one, also store the length of the mate.
+							pss.other_score = it->score;
+							pss.has_mate = true;
 							mate_length = it_->length;
 						}
 					}
 				}
-			
-				scored_rec = scored_record(&aln_rec, pss.score, mate_length);
-			
+				
+				scored_rec = scored_record(&aln_rec, pss.score + pss.other_score, mate_length);
+				
 				// Insert if needed.
 				add_paired_segment_score(pss);
 			}
@@ -725,7 +746,7 @@ namespace {
 		}
 		// Sort by score.
 		libbio_assert(!m_paired_segment_scores_by_projected_position.empty());
-		ranges::sort(m_paired_segment_scores_by_projected_position, ranges::less{}, [](auto const &pss){ return pss.score; });
+		ranges::sort(m_paired_segment_scores_by_projected_position, ranges::less{}, [](auto const &pss){ return pss.total_score(); });
 		
 		// Check if there are both alignments with and without a mate (obscure?).
 		if (0x3 == seen_record_types)
@@ -736,50 +757,60 @@ namespace {
 		{
 			libbio_assert(sr.record);
 			auto &aln_rec(*sr.record);
-			auto const &seq(aln_rec.sequence());
-			auto const seq_len(seq.size());
-			position_pair const pos{position{aln_rec}, position{aln_rec, position::mate_tag{}}, position_pair::normalised_tag{}};
-
-			// Find the alignments with better scores.
-			auto const begin(m_paired_segment_scores_by_projected_position.begin());
-			auto const end(m_paired_segment_scores_by_projected_position.end());
-			auto it(ranges::upper_bound(
-				m_paired_segment_scores_by_projected_position,
-				sr.score,
-				ranges::less{},
-				[](auto const &pss){ return pss.score; }
-			));
-
-			// Linear search only applies if 0x3 == seen_record_types in both cases below (std::find_if() and the for loop).
-			bool const is_best_score{
-				0x3 == seen_record_types
-				? end != std::find_if(it, end, [&seq](auto const &other){ return sequences_eq <true>(&seq, other.sequence); })
-				: it == end // If all records are either paired or unpaired, it suffices (initially) to check if there were greater scores.
-			};
-			for (auto const &other : rsv::reverse(ranges::subrange(begin, it)))
+			
+			try
 			{
-				libbio_assert_neq(INVALID_POSITION, other.positions.lhs);
+				auto const &seq(aln_rec.sequence());
+				auto const seq_len(seq.size());
+				position_pair const pos{position{aln_rec}, position{aln_rec, position::mate_tag{}}, position_pair::normalised_tag{}};
 
-				// Check if there is a segment description that refers to the sequence of the current alignment.
-				if (0x3 == seen_record_types && !sequences_eq <true>(it->sequence, other.sequence)) [[unlikely]]
-					continue;
+				// Find the alignments with better scores.
+				auto const begin(m_paired_segment_scores_by_projected_position.begin());
+				auto const end(m_paired_segment_scores_by_projected_position.end());
+				auto it(ranges::upper_bound(
+					m_paired_segment_scores_by_projected_position,
+					sr.score,
+					ranges::less{},
+					[](auto const &pss){ return pss.total_score(); }
+				));
 
-				// The sequences match.
-				if (other.positions == pos) // The pairs (positions, sequence) are unique, so this must be the entry for aln_rec.
-					continue;
+				// Linear search only applies if 0x3 == seen_record_types in both cases below (std::find_if() and the for loop).
+				bool const is_best_score{
+					0x3 == seen_record_types
+					? end != std::find_if(it, end, [&seq](auto const &other){ return sequences_eq <true>(&seq, other.sequence); })
+					: it == end // If all records are either paired or unpaired, it suffices (initially) to check if there were greater scores.
+				};
+				for (auto const &other : rsv::reverse(ranges::subrange(begin, it)))
+				{
+					libbio_assert_neq(INVALID_POSITION, other.positions.lhs);
+					
+					// Check if there is a segment description that refers to the sequence of the current alignment.
+					if (0x3 == seen_record_types && !sequences_eq <true>(it->sequence, other.sequence)) [[unlikely]]
+						continue;
+					
+					// The sequences match.
+					if (other.positions == pos) // The pairs (positions, sequence) are unique, so this must be the entry for aln_rec.
+						continue;
+					
+					// At least one of the positions in the pair does not match (but the scores may match).
+					// Bowtie 2 distinguishes mate 1 and 2, which we are not able to do. Hence we choose the better score for the next alignment.
+					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq_len, sr.mate_length, sr.score, seq_len ? other.total_score() : other.max_score());
+					goto output_record;
+				}
 
-				// At least one of the positions in the pair does not match (but the scores may match).
-				aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq_len, sr.mate_length, sr.score, other.score);
-				goto output_record;
+				if (is_best_score)
+					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq_len, sr.mate_length, sr.score, ALIGNMENT_SCORE_MIN);
+				else // There was a better score, hence the current record had the worst score.
+					aln_rec.mapping_quality() = MAPQ_NO_NEXT_RECORD;
+
+			output_record:	
+				aln_output.push_back(aln_rec);
 			}
-
-			if (is_best_score)
-				aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq_len, sr.mate_length, sr.score, ALIGNMENT_SCORE_MIN);
-			else // There was a better score, hence the current record had the worst score.
-				aln_rec.mapping_quality() = MAPQ_NO_NEXT_RECORD;
-
-		output_record:	
-			aln_output.push_back(aln_rec);
+			catch (...)
+			{
+				std::cerr << "*** Read ID ‘" << aln_rec.id() << "’\n" << std::flush;
+				throw;
+			}
 		}
 	}
 	
@@ -811,7 +842,10 @@ namespace {
 			auto const &eq_class_id(rec_buffer.front().id());
 			
 			if (id != eq_class_id)
+			{
 				scorer.process_alignment_group(rec_buffer, aln_output);
+				rec_buffer.clear();
+			}
 			
 			rec_buffer.emplace_back(std::move(aln_rec));
 		}
@@ -877,6 +911,14 @@ namespace {
 			.original_rnext_tag{make_sam_tag(args_info.original_rnext_tag_arg)},
 			.original_pnext_tag{make_sam_tag(args_info.original_pnext_tag_arg)}
 		};
+		
+		if (args_info.print_reference_names_flag)
+		{
+			auto const &ref_ids(aln_input.header().ref_ids());
+			std::cerr << "Reference IDs:\n";
+			for (auto const &[idx, name] : rsv::enumerate(ref_ids))
+				std::cerr << idx << '\t' << name << '\n';
+		}
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		process_(aln_input, aln_output, sam_tags);

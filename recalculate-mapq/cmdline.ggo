@@ -24,3 +24,4 @@ option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT fie
 section		"Debugging options"
 option		"print-invocation"			-	"Output the invocation to stderr"											flag	off									hidden
 option		"print-pid"					-	"Output the PID to stderr"													flag	off									hidden
+option		"print-reference-names"		-	"Output the reference names to stderr"										flag	off
