@@ -20,8 +20,6 @@
 #include <seqan3/io/sam_file/all.hpp>
 #include "cmdline.h"
 
-#warning check if the original position should be retrieved in a strict manner?
-
 namespace fs	= std::filesystem;
 namespace lb	= libbio;
 namespace ios	= boost::iostreams;
@@ -66,6 +64,7 @@ namespace {
 	struct input_error : public std::exception
 	{
 		typedef std::variant <
+			field_value_out_of_bounds,
 			tag_type_mismatch,
 			tag_value_out_of_bounds
 		> error_info_type;
@@ -392,7 +391,7 @@ namespace {
 		if (*ref_id < 0) throw make_input_error <field_value_out_of_bounds>();
 		if (*pos < 0) throw make_input_error <field_value_out_of_bounds>();
 		
-		return {*ref_id, *pos};
+		return {chromosome_id_type(*ref_id), sequence_length_type(*pos)};
 	}
 	
 	
@@ -491,16 +490,30 @@ namespace {
 			alignment_score_type	score{};
 			sequence_length_type	length{};
 			
-			auto to_position_score_tuple() const { return std::make_tuple(position, score); }
-			bool operator<(segment_description const &other) const { return to_position_score_tuple() < other.to_position_score_tuple(); }
+			constexpr auto to_position_score_tuple() const { return std::make_tuple(position, score); }
+			constexpr bool operator<(segment_description const &other) const { return to_position_score_tuple() < other.to_position_score_tuple(); }
+			
+			struct project_position
+			{
+				constexpr auto operator()(segment_description const &desc) const { return desc.position; }
+			};
 		};
+		
+		typedef panvc3::cmp_proj <segment_description, typename segment_description::project_position> cmp_segment_description_position;
 		
 		struct paired_segment_score
 		{
 			position_pair			positions{};
 			sequence_type			*sequence{};
 			alignment_score_type	score{};
+			
+			struct project_positions
+			{
+				constexpr auto operator()(paired_segment_score const &desc) const { return desc.positions; }
+			};
 		};
+		
+		typedef panvc3::cmp_proj <paired_segment_score, typename paired_segment_score::project_positions> cmp_paired_segment_score_positions;
 		
 		struct scored_record
 		{
@@ -553,18 +566,16 @@ namespace {
 	template <typename t_aln_record>
 	void mapq_scorer <t_aln_record>::add_paired_segment_score(paired_segment_score const &pss)
 	{
-		auto const it(
-			ranges::lower_bound(
-				m_paired_segment_scores_by_projected_position,
-				pss.position,
-				ranges::less{},
-				[](auto const &pss_){ return pss_.position; }
-			)
-		);
+		auto it(std::lower_bound(
+			m_paired_segment_scores_by_projected_position.begin(),
+			m_paired_segment_scores_by_projected_position.end(),
+			pss.positions,
+			cmp_paired_segment_score_positions{}
+		));
 
 		for (; m_paired_segment_scores_by_projected_position.end() != it; ++it)
 		{
-			if (it->position != pss.position)
+			if (it->positions != pss.positions)
 				break;
 
 			if (it->sequence == pss.sequence)
@@ -575,7 +586,7 @@ namespace {
 			}
 		}
 
-		m_paired_segment_scores_by_projected_position.emplace(pss, it);
+		m_paired_segment_scores_by_projected_position.emplace(it, pss);
 	}
 	
 	
@@ -608,8 +619,8 @@ namespace {
 		}, error_info);
 		std::exit(EXIT_FAILURE);
 	}
-
-
+	
+	
 	// Precondition: alignments contains (all) the alignments with the same identifier but not necessarily the same sequence.
 	template <typename t_aln_record>
 	template <typename t_aln_output>
@@ -669,13 +680,13 @@ namespace {
 		{
 			try
 			{
-			
 				bool const has_mate(aln_rec.mate_reference_id() && aln_rec.mate_position());
 				seen_record_types |= 0x1 << has_mate;
 				m_statistics.unpaired_alignments += (!has_mate);
 			
-	#warning here
-				position_pair const pos; //{position{aln_rec}, position{aln_rec, typename position::mate_tag}, typename position_pair::normalised_tag};
+				position p1{aln_rec};
+				position p2{aln_rec, typename position::mate_tag{}};
+				position_pair const pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
 				paired_segment_score pss{pos, has_mate ? nullptr : &aln_rec.sequence(), alignment_score(aln_rec)};
 			
 				// Min. score only allowed for invalid positions.
@@ -686,7 +697,12 @@ namespace {
 				if (INVALID_POSITION != pss.positions.lhs)
 				{
 					position const mate_original_pos{aln_rec, m_sam_tags.original_rnext_tag, m_sam_tags.original_pnext_tag};
-					auto const it(ranges::upper_bound(m_segment_descriptions_by_original_position, mate_original_pos, ranges::less{}, [](auto const &desc){ return desc.position; }));
+					auto const it(std::upper_bound( // Couldn’t get ranges::upper_bound() to work.
+						m_segment_descriptions_by_original_position.begin(),
+						m_segment_descriptions_by_original_position.end(),
+						mate_original_pos,
+						cmp_segment_description_position{}
+					));
 					if (it != m_segment_descriptions_by_original_position.begin())
 					{
 						auto const it_(it - 1);
@@ -724,8 +740,7 @@ namespace {
 			auto &aln_rec(*sr.record);
 			auto const &seq(aln_rec.sequence());
 			auto const seq_len(seq.size());
-#warning here
-			position_pair const pos; //{position{aln_rec}, position{aln_rec, position::mate_tag}, position_pair::normalised_tag};
+			position_pair const pos{position{aln_rec}, position{aln_rec, position::mate_tag{}}, position_pair::normalised_tag{}};
 
 			// Find the alignments with better scores.
 			auto const begin(m_paired_segment_scores_by_projected_position.begin());
@@ -740,19 +755,19 @@ namespace {
 			// Linear search only applies if 0x3 == seen_record_types in both cases below (std::find_if() and the for loop).
 			bool const is_best_score{
 				0x3 == seen_record_types
-				? end != std::find_if(it, end, [&seq](auto const &other){ return sequences_eq <true>(seq, other.sequence); })
+				? end != std::find_if(it, end, [&seq](auto const &other){ return sequences_eq <true>(&seq, other.sequence); })
 				: it == end // If all records are either paired or unpaired, it suffices (initially) to check if there were greater scores.
 			};
 			for (auto const &other : rsv::reverse(ranges::subrange(begin, it)))
 			{
-				libbio_assert_neq(INVALID_POSITION, other.position);
+				libbio_assert_neq(INVALID_POSITION, other.positions.lhs);
 
 				// Check if there is a segment description that refers to the sequence of the current alignment.
 				if (0x3 == seen_record_types && !sequences_eq <true>(it->sequence, other.sequence)) [[unlikely]]
 					continue;
 
 				// The sequences match.
-				if (other.position == pos) // The pairs (position, sequence) are unique, so this must be the entry for aln_rec.
+				if (other.positions == pos) // The pairs (positions, sequence) are unique, so this must be the entry for aln_rec.
 					continue;
 
 				// At least one of the positions in the pair does not match (but the scores may match).
@@ -766,7 +781,7 @@ namespace {
 				aln_rec.mapping_quality() = MAPQ_NO_NEXT_RECORD;
 
 		output_record:	
-			aln_output.emplace_back(std::move(aln_rec));
+			aln_output.push_back(aln_rec);
 		}
 	}
 	
