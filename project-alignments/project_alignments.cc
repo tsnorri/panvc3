@@ -41,7 +41,7 @@ using seqan3::operator""_tag;
 namespace seqan3 {
 	// SeqAn 3 does not yet have a definition for the OA tag.
 	// (Check when updating, though.)
-	template <> struct panvc3::sam_tag_type <"OA"_tag> { typedef std::string type; };
+	template <> struct sam_tag_type <"OA"_tag> { typedef std::string type; };
 }
 
 
