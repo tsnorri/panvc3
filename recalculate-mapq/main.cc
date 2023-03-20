@@ -684,8 +684,6 @@ namespace {
 				seen_record_types |= 0x1 << has_mate;
 				m_statistics.unpaired_alignments += (!has_mate);
 			
-				position p1{aln_rec};
-				position p2{aln_rec, typename position::mate_tag{}};
 				position_pair const pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
 				paired_segment_score pss{pos, has_mate ? nullptr : &aln_rec.sequence(), alignment_score(aln_rec)};
 			
@@ -693,7 +691,7 @@ namespace {
 				libbio_assert((INVALID_POSITION != pss.positions.lhs) ^ (ALIGNMENT_SCORE_MIN == pss.score));
 			
 				// Determine the mate’s position only if the alignment has a valid position.
-				sequence_length_type  mate_length{};
+				sequence_length_type mate_length{};
 				if (INVALID_POSITION != pss.positions.lhs)
 				{
 					position const mate_original_pos{aln_rec, m_sam_tags.original_rnext_tag, m_sam_tags.original_pnext_tag};
@@ -831,7 +829,6 @@ namespace {
 	void process(gengetopt_args_info const &args_info)
 	{
 		// Open the SAM input and output.
-		// Open the SAM input.
 		typedef seqan3::sam_file_input <>								input_type;
 		typedef seqan3::sam_file_output <
 			typename input_type::selected_field_ids,
