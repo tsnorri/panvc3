@@ -39,9 +39,9 @@ option		"record-index-tag"			-	"SAM tag for the original record index"										
 text		"Added SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
 section		"Re-alignment options"
+option		"use-read-base-qualities"	q	"Take base qualities into account when re-aligning"							flag	off
 option		"gap-opening-cost"			g	"Gap opening cost when re-aligning runs of insertions and deletions"		int		default = "0"			optional
 option		"gap-extension-cost"		e	"Gap extension cost when re-aligning runs of insertions and deletions"		int		default = "-1"			optional
-option		"use-read-base-qualities"	q	"Take base qualities into account when re-aligning"							flag	off
 
 section		"Debugging options"
 option		"print-invocation"			-	"Output the invocation to stderr"											flag	off									hidden
