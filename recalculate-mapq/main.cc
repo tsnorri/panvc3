@@ -848,9 +848,9 @@ namespace {
 		std::uint64_t rec_idx{};
 		for (auto &aln_rec : aln_input)
 		{
+			if (rec_idx && 0 == rec_idx % 10'000'000)
+				lb::log_time(std::cerr) << "Processed " << rec_idx << " alignments…\n";
 			++rec_idx;
-			if (0 == (rec_idx % 10'000'000 - 1))
-				lb::log_time(std::cerr) << "Processed " << (1 + rec_idx) << " alignments…\n";
 			
 			if (rec_buffer.empty())
 			{
