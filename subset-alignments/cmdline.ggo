@@ -7,8 +7,19 @@ purpose		"Make a subset of the given alignemnts."
 usage		"subset_alignments --alignments=alignments.bam [ ... ]"
 description	"The resulting alignments will be written to stdout."
 
-option		"alignments"		a	"Alignment file path"								string	typestr = "filename"	required
-option		"chr"				c	"Subset by chromosome"								string	typestr = "id"			optional
-option		"read-id"			r	"Subset by read ID, read from stdin"				flag	off
-option		"output-sam"		S	"Output SAM instead of BAM"							flag	off
-option		"verbose"			e	"Verbose output"									flag	off
+section		"Input options"
+option		"alignments"				a	"Alignment file path"													string	typestr = "filename"	optional
+option		"bam-input"					B	"Read BAM from stdin"													flag	off
+
+section		"Subsetting options"
+option		"chr"						c	"Subset by chromosome"													string	typestr = "id"			optional
+option		"read-id"					r	"Subset by read ID, read from stdin"									flag	off
+option		"best-mapq"					q	"Subset by best mapping quality (requires input to be sorted by QNAME)"	flag	off
+
+section		"Output options"
+option		"output-path"				o	"Output path (stdin by default)"										string	typestr = "path"		optional
+option		"output-bam"				b	"Output BAM instead of SAM"												flag	off
+
+section		"Debugging options"
+option		"print-invocation"			-	"Output the invocation to stderr"										flag	off									hidden
+option		"print-pid"					-	"Output the PID to stderr"												flag	off									hidden
