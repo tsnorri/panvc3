@@ -14,6 +14,7 @@ option		"bam-input"					B	"Read BAM from stdin"														flag	off
 section		"Output options"
 option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"		optional
 option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
+option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
 
 section		"Alignment record formatting"
 option		"original-rname-tag"		-	"SAM tag for the original value of the RNAME field (as numeric identifier)"	string	default = "XR"			optional

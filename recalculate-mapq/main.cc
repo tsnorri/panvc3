@@ -3,10 +3,12 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <condition_variable>
 #include <iostream>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/utility.hh> // lb::make_array
+#include <mutex>
 #include <panvc3/sam_tag.hh>
 #include <panvc3/utility.hh>
 #include <range/v3/algorithm/copy.hpp>
@@ -18,12 +20,15 @@
 #include <range/v3/view/enumerate.hpp>
 #include <range/v3/view/reverse.hpp>
 #include <seqan3/io/sam_file/all.hpp>
+#include <syncstream>
+#include <thread>
 #include "cmdline.h"
 
-namespace fs	= std::filesystem;
-namespace lb	= libbio;
-namespace ios	= boost::iostreams;
-namespace rsv	= ranges::views;
+namespace chrono	= std::chrono;
+namespace fs		= std::filesystem;
+namespace lb		= libbio;
+namespace ios		= boost::iostreams;
+namespace rsv		= ranges::views;
 
 
 using seqan3::operator""_tag;
@@ -83,6 +88,37 @@ namespace {
 	input_error make_input_error(t_args && ... args)
 	{
 		return input_error{t_type{std::forward <t_args>(args)...}};
+	}
+
+
+	struct timer
+	{
+	private:
+		mutable std::mutex				m_mutex{};
+		mutable std::condition_variable	m_cv{};
+		bool							m_should_stop{};
+
+	public:
+		void stop();
+
+		template <typename t_rep, typename t_period>
+		bool wait_for(chrono::duration <t_rep, t_period> const duration) const;
+	};
+
+
+	void timer::stop()
+	{
+		std::unique_lock lock(m_mutex);
+		m_should_stop = true;
+		m_cv.notify_all();
+	}
+
+
+	template <typename t_rep, typename t_period>
+	bool timer::wait_for(chrono::duration <t_rep, t_period> const duration) const
+	{
+		std::unique_lock lock(m_mutex);
+		return !m_cv.wait_for(lock, duration, [this](){ return m_should_stop; });
 	}
 
 
@@ -616,30 +652,33 @@ namespace {
 	template <typename t_aln_record, typename t_error_info>
 	void handle_input_error(t_aln_record const &aln_rec, t_error_info const &error_info)
 	{
-		auto print_tag([](auto const tag){
+		std::osyncstream cerr(std::cerr);
+
+		auto print_tag([&cerr](auto const tag){
 			std::array <char, 2> buffer;
 			panvc3::from_tag(tag, buffer);
-			ranges::copy(buffer, std::ostream_iterator <char>(std::cerr));
+			ranges::copy(buffer, std::ostream_iterator <char>(cerr));
 		});
 		
 		std::visit(overloaded{
 			[&](tag_type_mismatch const &mm){
-				std::cerr << "ERROR: Record ‘" << aln_rec.id() << "’ had unexpected type for tag ‘";
+				cerr << "ERROR: Record ‘" << aln_rec.id() << "’ had unexpected type for tag ‘";
 				print_tag(mm.tag);
-				std::cerr << "’.\n";
+				cerr << "’.\n";
 			},
 			[&](tag_value_out_of_bounds const &oob){
-				std::cerr << "ERROR: Value of tag ‘";
+				cerr << "ERROR: Value of tag ‘";
 				print_tag(oob.tag);
-				std::cerr << "’ out of bounds in record with ID ‘" << aln_rec.id() << "’.\n";
+				cerr << "’ out of bounds in record with ID ‘" << aln_rec.id() << "’.\n";
 			},
 			[&](field_value_out_of_bounds const &){
-				std::cerr << "ERROR: Unexpected field value in record with ID ‘" << aln_rec.id() << "’.\n";
+				cerr << "ERROR: Unexpected field value in record with ID ‘" << aln_rec.id() << "’.\n";
 			},
 			[&](auto const &){
-				std::cerr << "ERROR: Unexpected error in record with ID ‘" << aln_rec.id() << "’.\n";
+				cerr << "ERROR: Unexpected error in record with ID ‘" << aln_rec.id() << "’.\n";
 			}
 		}, error_info);
+		cerr << std::flush;
 		std::exit(EXIT_FAILURE);
 	}
 	
@@ -707,7 +746,7 @@ namespace {
 		if (0x3 == seen_record_types)
 		{
 			++m_statistics.reads_with_and_without_mate;
-			std::cerr << "WARNING: Read ‘" << alignments.front().id() << "’ has both paired and unpaired alignment records; skipping.\n";
+			std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().id() << "’ has both paired and unpaired alignment records; skipping.\n";
 			return;
 		}
 		
@@ -831,30 +870,69 @@ namespace {
 			}
 			catch (...)
 			{
-				std::cerr << "*** Read ID ‘" << aln_rec.id() << "’\n" << std::flush;
+				std::osyncstream(std::cerr) << "*** Read ID ‘" << aln_rec.id() << "’\n" << std::flush;
 				throw;
 			}
 		}
 	}
-	
-	
+
+
 	template <typename t_aln_input, typename t_aln_output>
-	void process_(t_aln_input &&aln_input, t_aln_output &&aln_output, sam_tag_specification const &sam_tags)
+	void process_(
+		t_aln_input &&aln_input,
+		t_aln_output &&aln_output,
+		sam_tag_specification const &sam_tags,
+		std::uint16_t const status_output_interval
+	)
 	{
 		typedef std::remove_cvref_t <t_aln_input>	input_type;
 		typedef typename input_type::record_type	record_type;
+		typedef chrono::steady_clock				clock_type;
 		
 		bowtie2_v2_scorer aln_scorer;
 		mapq_scorer <record_type> scorer(aln_scorer, sam_tags);
 		
 		std::vector <record_type> rec_buffer;
 		std::uint64_t rec_idx{};
+
+		auto const start_time(clock_type::now());
+		timer status_output_timer;
+		auto status_output_thread{[&]() -> std::jthread {
+			if (!status_output_interval)
+				return {};
+
+			return std::jthread{[&](){
+				while (status_output_timer.wait_for(chrono::minutes(status_output_interval)))
+				{
+					auto const pp(clock_type::now());
+					auto const running_time{pp - start_time};
+
+					std::osyncstream cerr(std::cerr);
+					lb::log_time(cerr) << "Time spent processing: ";
+					panvc3::log_duration(cerr, running_time);
+					cerr << "; processed " << (rec_idx - 1) << " records";
+
+					if (rec_idx)
+					{
+						double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
+						usecs_per_record /= rec_idx;
+						cerr << " (in " << usecs_per_record << " µs / record)";
+					}
+
+					cerr << ".\n" << std::flush;
+				}
+			}};
+		}()};
+
 		for (auto &aln_rec : aln_input)
 		{
 			if (rec_idx && 0 == rec_idx % 10'000'000)
-				lb::log_time(std::cerr) << "Processed " << rec_idx << " alignments…\n";
+			{
+				std::osyncstream cerr(std::cerr);
+				lb::log_time(cerr) << "Processed " << rec_idx << " alignments…\n" << std::flush;
+			}
 			++rec_idx;
-			
+
 			if (rec_buffer.empty())
 			{
 				rec_buffer.emplace_back(std::move(aln_rec));
@@ -876,12 +954,20 @@ namespace {
 		if (!rec_buffer.empty())
 			scorer.process_alignment_group(rec_buffer, aln_output);
 
-		lb::log_time(std::cerr) << "Done.\n";
-		auto const &statistics(scorer.statistics());
-		std::cerr << "\tTotal alignments: " << statistics.total_alignments << '\n';
-		std::cerr << "\tUnpaired alignments: " << statistics.unpaired_alignments << '\n';
-		std::cerr << "\tRecords with mate missing: " << statistics.mate_not_found << '\n';
-		std::cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
+		status_output_timer.stop();
+		if (status_output_thread.joinable())
+			status_output_thread.join();
+
+		{
+			std::osyncstream cerr(std::cerr);
+			lb::log_time(cerr) << "Done.\n";
+			auto const &statistics(scorer.statistics());
+			cerr << "\tTotal alignments: " << statistics.total_alignments << '\n';
+			cerr << "\tUnpaired alignments: " << statistics.unpaired_alignments << '\n';
+			cerr << "\tRecords with mate missing: " << statistics.mate_not_found << '\n';
+			cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
+			cerr << std::flush;
+		}
 	}
 
 
@@ -899,7 +985,7 @@ namespace {
 	void append_program_info(t_header const &input_header, t_header_ &output_header, int const argc, char const * const * const argv)
 	{
 		typedef typename t_header_::program_info_t program_info_type;
-		copy_program_info(input_header, output_header);
+		//copy_program_info(input_header, output_header);
 		panvc3::append_sam_program_info(
 			"panvc3.recalculate-mapq.",
 			"PanVC 3 recalculate_mapq",
@@ -913,12 +999,15 @@ namespace {
 	
 	void process(gengetopt_args_info const &args_info, int const argc, char const * const * const argv)
 	{
+		// Status output interval
+		if (args_info.status_output_interval_arg < 0)
+		{
+			std::cerr << "ERROR: Status output interval must be non-negative.\n";
+			std::exit(EXIT_FAILURE);
+		}
+
 		// Open the SAM input and output.
 		typedef seqan3::sam_file_input <>								input_type;
-		typedef seqan3::sam_file_output <
-			typename input_type::selected_field_ids,
-			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>
-		>																output_type;
 		auto aln_input{[&](){
 			auto const make_input_type([&]<typename t_fmt>(t_fmt &&fmt){
 				if (args_info.alignments_arg)
@@ -932,14 +1021,38 @@ namespace {
 			else
 				return make_input_type(seqan3::format_sam{});
 		}()};
+
+		auto const &aln_input_header(aln_input.header());
+		auto const &input_ref_ids(aln_input.header().ref_ids()); // ref_ids() not const.
+		typedef std::remove_cvref_t <decltype(input_ref_ids)>			ref_ids_type;
+		ref_ids_type output_ref_ids;
+		typedef seqan3::sam_file_output <
+			typename input_type::selected_field_ids,
+			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
+			ref_ids_type
+		>																output_type;
 		
 		auto aln_output{[&](){
 			// Make sure that aln_output has some header information.
 			auto const make_output_type([&]<typename t_fmt>(t_fmt &&fmt){
+				ref_ids_type empty_ref_ids;
 				if (args_info.output_path_arg)
-					return output_type(fs::path{args_info.output_path_arg});
+				{
+					return output_type(
+						fs::path{args_info.output_path_arg},
+						output_ref_ids,
+						rsv::empty <std::size_t>()	// Reference lengths; the constructor expects a forward range.
+					);
+				}
 				else
-					return output_type(std::cout, std::forward <t_fmt>(fmt));
+				{
+					return output_type(
+						std::cout,
+						output_ref_ids,
+						rsv::empty <std::size_t>(),	// Reference lengths; the constructor expects a forward range.
+						std::forward <t_fmt>(fmt)
+					);
+				}
 			});
 			
 			if (args_info.output_bam_flag)
@@ -947,6 +1060,21 @@ namespace {
 			else
 				return make_output_type(seqan3::format_sam{});
 		}()};
+
+		// Now that we have valid header information in aln_output, we can access it and copy the headers from aln_input.
+		{
+			output_ref_ids = input_ref_ids;
+
+			auto &aln_output_header(aln_output.header());
+			aln_output_header.sorting = aln_input_header.sorting;
+			aln_output_header.subsorting = aln_input_header.subsorting;
+			aln_output_header.grouping = aln_input_header.subsorting;
+			aln_output_header.program_infos = aln_input_header.program_infos;
+			aln_output_header.comments = aln_input_header.comments;
+			aln_output_header.ref_id_info = aln_input_header.ref_id_info;
+			aln_output_header.ref_dict = aln_input_header.ref_dict;
+			aln_output_header.read_groups = aln_input_header.read_groups;
+		}
 		
 		auto const make_sam_tag([](char const *tag, bool const should_allow_any = false) -> sam_tag_type {
 			if (!tag)
@@ -971,10 +1099,8 @@ namespace {
 				std::cerr << idx << '\t' << name << '\n';
 		}
 
-		append_program_info(aln_input.header(), aln_output.header(), argc, argv);
-		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
-		process_(aln_input, aln_output, sam_tags);
+		process_(aln_input, aln_output, sam_tags, args_info.status_output_interval_arg);
 	}
 }
 
