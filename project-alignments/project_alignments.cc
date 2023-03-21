@@ -1262,7 +1262,21 @@ namespace {
 	}
 
 
-	void process(gengetopt_args_info const &args_info)
+	template <typename t_header>
+	void append_program_info(t_header &header, int const argc, char const * const * const argv)
+	{
+		panvc3::append_sam_program_info(
+			"panvc3.project-alignments.",
+			"PanVC 3 project_alignments",
+			argc,
+			argv,
+			CMDLINE_PARSER_VERSION,
+			header.program_infos
+		);
+	}
+
+
+	void process(gengetopt_args_info const &args_info, int const argc, char const * const * const argv)
 	{
 		libbio_assert(args_info.ref_id_separator_arg);
 		
@@ -1393,6 +1407,8 @@ namespace {
 			ref_id_mapping
 		);
 
+		append_program_info(aln_output.header(), argc, argv);
+
 		// Open the realigned range output file if needed.
 		lb::file_handle realigned_range_handle;
 		if (args_info.output_realigned_ranges_arg)
@@ -1462,5 +1478,5 @@ extern "C" void panvc3_project_alignments(int argc, char **argv)
 	if (args_info.print_pid_given)
 		std::cerr << "PID: " << getpid() << '\n';
 	
-	process(args_info);
+	process(args_info, argc, argv);
 }
