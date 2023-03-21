@@ -883,9 +883,35 @@ namespace {
 		std::cerr << "\tRecords with mate missing: " << statistics.mate_not_found << '\n';
 		std::cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
 	}
+
+
+	template <typename t_header, typename t_header_>
+	void copy_program_info(t_header const &input_header, t_header_ &output_header)
+	{
+		output_header.program_infos.resize(input_header.program_infos.size());
+		// FIXME: Not a particularly good idea; filed a feature request to make program_info_t not depend on the template parameter.
+		for (auto &&[src, dst] : rsv::zip(input_header.program_infos, output_header.program_infos))
+			dst = *reinterpret_cast <t_header_::program_info_t const *>(&src);
+	}
+
+
+	template <typename t_header, typename t_header_>
+	void append_program_info(t_header const &input_header, t_header_ &output_header, int const argc, char const * const * const argv)
+	{
+		typedef typename t_header_::program_info_t program_info_type;
+		copy_program_info(input_header, output_header);
+		panvc3::append_sam_program_info(
+			"panvc3.recalculate-mapq.",
+			"PanVC 3 recalculate_mapq",
+			argc,
+			argv,
+			CMDLINE_PARSER_VERSION,
+			output_header.program_infos
+		);
+	}
 	
 	
-	void process(gengetopt_args_info const &args_info)
+	void process(gengetopt_args_info const &args_info, int const argc, char const * const * const argv)
 	{
 		// Open the SAM input and output.
 		typedef seqan3::sam_file_input <>								input_type;
@@ -944,6 +970,8 @@ namespace {
 			for (auto const &[idx, name] : rsv::enumerate(ref_ids))
 				std::cerr << idx << '\t' << name << '\n';
 		}
+
+		append_program_info(aln_input.header(), aln_output.header(), argc, argv);
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		process_(aln_input, aln_output, sam_tags);
@@ -972,7 +1000,7 @@ int main(int argc, char **argv)
 	if (args_info.print_pid_given)
 		std::cerr << "PID: " << getpid() << '\n';
 	
-	process(args_info);
+	process(args_info, argc, argv);
 	
 	return EXIT_SUCCESS;
 }
