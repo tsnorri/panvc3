@@ -22,6 +22,7 @@ BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
 					index-msa/index_msa \
 					libpanvc3/libpanvc3.a \
 					project-alignments/project_alignments \
+					recalculate-mapq/recalculate_mapq \
 					split-alignments-by-reference/split_alignments_by_reference \
 					subset-alignments/subset_alignments \
 
@@ -85,6 +86,9 @@ libpanvc3/libpanvc3.a:
 
 project-alignments/project_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C project-alignments
+
+recalculate-mapq/recalculate_mapq: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+	$(MAKE) -C recalculate-mapq
 
 split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C split-alignments-by-reference
