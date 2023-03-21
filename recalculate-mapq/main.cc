@@ -1074,6 +1074,8 @@ namespace {
 			aln_output_header.ref_id_info = aln_input_header.ref_id_info;
 			aln_output_header.ref_dict = aln_input_header.ref_dict;
 			aln_output_header.read_groups = aln_input_header.read_groups;
+			
+			append_program_info(aln_input_header, aln_output_header, argc, argv);
 		}
 		
 		auto const make_sam_tag([](char const *tag, bool const should_allow_any = false) -> sam_tag_type {
