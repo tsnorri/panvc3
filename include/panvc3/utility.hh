@@ -81,6 +81,64 @@ namespace panvc3 {
 	{
 		return 0 < val && !(val & (val - 1));
 	}
+
+
+	// SeqAn 3's program_info_t currently depends on a template parameter, so we need to have a function template for modifying it.
+	template <typename t_program_info>
+	void append_sam_program_info(
+		std::string_view const id_prefix,
+		std::string_view const name,
+		int const argc,
+		char const * const * const argv,
+		char const * const version,
+		std::vector <t_program_info> &dst
+	)
+	{
+		// Identifier
+		std::uint32_t idx{1};
+		for (auto const &pginfo : dst)
+		{
+			if (pginfo.id.starts_with(id_prefix))
+			{
+				std::string_view const id(pginfo.id);
+				auto const pos(id_prefix.size());
+				auto const tail(id.substr(pos));
+				auto const res(std::from_chars(tail.data(), tail.data() + tail.size(), idx));
+				if (std::errc{} == res.ec)
+				{
+					// idx modified only in this case.
+					++idx;
+					break;
+				}
+			}
+		}
+
+		std::string id(id_prefix);
+		id += std::to_string(idx);
+
+		// CLI call
+		std::string cmd;
+		for (int i(0); i < argc; ++i)
+		{
+			if (0 != i)
+				cmd.append(" ");
+			cmd.append(argv[i]);
+		}
+
+		// Build the record.
+		t_program_info rec{
+			.id{std::move(id)},
+			.command_line_call{std::move(cmd)},
+			.version{version}
+		};
+
+		rec.name = name;
+
+		if (!dst.empty())
+			rec.previous = dst.back().id;
+
+		dst.emplace_back(std::move(rec));
+	}
 }
 
 #endif
