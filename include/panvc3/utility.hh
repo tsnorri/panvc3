@@ -6,6 +6,8 @@
 #ifndef PANVC3_UTILITY_HH
 #define PANVC3_UTILITY_HH
 
+#include <chrono>
+#include <ostream>
 #include <seqan3/utility/type_list/type_list.hpp>
 #include <tuple>
 
@@ -138,6 +140,50 @@ namespace panvc3 {
 			rec.previous = dst.back().id;
 
 		dst.emplace_back(std::move(rec));
+	}
+
+
+	template <typename t_duration>
+	std::ostream &log_duration(std::ostream &os, t_duration dur)
+	{
+		namespace chrono = std::chrono;
+
+	    typedef chrono::duration <std::uint64_t, std::ratio <3600 * 24>> day_type;
+		auto const dd{chrono::duration_cast <day_type>(dur)};
+		auto const hh{chrono::duration_cast <chrono::hours>(dur -= dd)};
+		auto const mm{chrono::duration_cast <chrono::minutes>(dur -= hh)};
+		auto const ss{chrono::duration_cast <chrono::seconds>(dur -= mm)};
+		auto const ms{chrono::duration_cast <chrono::milliseconds>(dur -= ss)};
+
+		bool should_print{false};
+		auto const dd_(dd.count());
+		if (dd_)
+		{
+			os << dd_ << " d, ";
+			should_print = true;
+		}
+
+		auto const hh_(hh.count());
+		if (should_print || hh_)
+		{
+			os << hh_ << " h, ";
+			should_print = true;
+		}
+
+		auto const mm_(mm.count());
+		if (should_print || mm_)
+		{
+			os << mm_ << " m, ";
+			should_print = true;
+		}
+
+		auto const ss_(ss.count());
+		if (should_print || ss_)
+			os << ss_ << " s, ";
+
+		os << ms.count() << " ms";
+
+		return os;
 	}
 }
 

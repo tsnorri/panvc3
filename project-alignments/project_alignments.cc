@@ -201,48 +201,6 @@ namespace {
 	}
 
 
-	template <typename t_duration>
-	std::ostream &log_duration(std::ostream &os, t_duration dur)
-	{
-	    typedef chrono::duration <std::uint64_t, std::ratio <3600 * 24>> day_type;
-		auto const dd{chrono::duration_cast <day_type>(dur)};
-		auto const hh{chrono::duration_cast <chrono::hours>(dur -= dd)};
-		auto const mm{chrono::duration_cast <chrono::minutes>(dur -= hh)};
-		auto const ss{chrono::duration_cast <chrono::seconds>(dur -= mm)};
-		auto const ms{chrono::duration_cast <chrono::milliseconds>(dur -= ss)};
-
-		bool should_print{false};
-		auto const dd_(dd.count());
-		if (dd_)
-		{
-			os << dd_ << " d, ";
-			should_print = true;
-		}
-
-		auto const hh_(hh.count());
-		if (should_print || hh_)
-		{
-			os << hh_ << " h, ";
-			should_print = true;
-		}
-
-		auto const mm_(mm.count());
-		if (should_print || mm_)
-		{
-			os << mm_ << " m, ";
-			should_print = true;
-		}
-
-		auto const ss_(ss.count());
-		if (should_print || ss_)
-			os << ss_ << " s, ";
-
-		os << ms.count() << " ms";
-
-		return os;
-	}
-
-
 	typedef std::vector <std::size_t>	reference_id_mapping_type;
 
 
@@ -485,7 +443,7 @@ namespace {
 
 		std::osyncstream cerr(std::cerr);
 		lb::log_time(cerr) << "Time spent processing: ";
-		log_duration(cerr, running_time);
+		panvc3::log_duration(cerr, running_time);
 		cerr << "; processed " << rec_idx << " records";
 
 		if (rec_idx)
@@ -500,7 +458,7 @@ namespace {
 		{
 			auto const realn_time{chrono::nanoseconds(realignment_time())};
 			cerr << " (in ";
-			log_duration(cerr, realn_time);
+			panvc3::log_duration(cerr, realn_time);
 
 			double us_per_realn(chrono::duration_cast <chrono::microseconds>(realn_time).count());
 			double mean_realn_length(m_realigned_range_total_length);
