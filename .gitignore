@@ -52,6 +52,10 @@ project-alignments/cmdline.c
 project-alignments/cmdline.h
 project-alignments/config.h
 project-alignments/project_alignments
+recalculate-mapq/cmdline.c
+recalculate-mapq/cmdline.h
+recalculate-mapq/config.h
+recalculate-mapq/recalculate_mapq
 split-alignments-by-reference/cmdline.c
 split-alignments-by-reference/cmdline.h
 split-alignments-by-reference/config.h
