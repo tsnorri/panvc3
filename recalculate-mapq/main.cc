@@ -481,6 +481,7 @@ namespace {
 		constexpr auto to_tuple() const { return std::make_tuple(lhs, rhs); }
 		constexpr bool operator<(position_pair const &other) const { return to_tuple() < other.to_tuple(); }
 		constexpr bool operator==(position_pair const &other) const { return to_tuple() == other.to_tuple(); }
+		constexpr bool has_mate() const { return INVALID_POSITION != rhs; }
 	};
 	
 	
@@ -497,6 +498,7 @@ namespace {
 		{
 			std::uint64_t	unpaired_alignments{};
 			std::uint64_t	reads_with_and_without_mate{};
+			std::uint64_t	mate_not_found{};
 		};
 		
 		struct segment_description
@@ -667,14 +669,22 @@ namespace {
 		// NOTE: The algorithm works with single-ended and paired-ended reads but not with three or more segments per template.
 		// (Not sure if such sequencing technology exists, though.)
 		
+		if (alignments.empty())
+			return;
+		
 		// Sort s.t. the records may be searched with the original values of RNEXT and PNEXT.
 		// First cache the (original) positions and scores s.t. sorting does not take O(n log^2 n) time.
 		m_segment_descriptions_by_original_position.clear();
 		m_segment_descriptions_by_original_position.reserve(alignments.size());
+		std::uint8_t seen_record_types{}; // 0x3 for both.
 		for (auto const &aln_rec : alignments)
 		{
 			try
 			{
+				bool const has_mate(aln_rec.mate_reference_id() && aln_rec.mate_position());
+				seen_record_types |= 0x1 << has_mate;
+				m_statistics.unpaired_alignments += (!has_mate);
+				
 				m_segment_descriptions_by_original_position.emplace_back(
 					position{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag},
 					alignment_score(aln_rec),
@@ -686,6 +696,18 @@ namespace {
 				handle_input_error(aln_rec, exc.error_info);
 			}
 		}
+		
+		// Check if there are both alignments with and without a mate (obscure?).
+		// We currently handle this differently than Bowtie 2. In other words, we could keep such runs but instead of comparing the scores
+		// of all records, we should partition by pairedness. Also the formula in calculate_mapq() should be updated s.t. the scores would
+		// be scaled to [0, 1] before calculating the difference.
+		if (0x3 == seen_record_types)
+		{
+			++m_statistics.reads_with_and_without_mate;
+			std::cerr << "WARNING: Read ‘" << alignments.front().id() << "’ has both paired and unpaired alignment records; skipping.\n";
+			return;
+		}
+		
 		m_segment_descriptions_by_original_position.emplace_back(INVALID_POSITION, 0, 0); // Add a sentinel to make the mate searching below slightly simpler.
 		std::sort(m_segment_descriptions_by_original_position.begin(), m_segment_descriptions_by_original_position.end());
 		
@@ -695,16 +717,12 @@ namespace {
 		m_paired_segment_scores_by_projected_position.reserve(alignments.size());
 		m_scored_records.clear();
 		m_scored_records.resize(alignments.size(), scored_record{nullptr, ALIGNMENT_SCORE_MIN, 0});
-		std::uint8_t seen_record_types{}; // 0x3 for both.
 		for (auto &&[aln_rec, scored_rec] : rsv::zip(alignments, m_scored_records))	
 		{
 			try
 			{
-				bool const has_mate(aln_rec.mate_reference_id() && aln_rec.mate_position());
-				seen_record_types |= 0x1 << has_mate;
-				m_statistics.unpaired_alignments += (!has_mate);
-			
 				position_pair const projected_pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
+				bool const has_mate(projected_pos.has_mate());
 				paired_segment_score pss{projected_pos, has_mate ? nullptr : &aln_rec.sequence(), alignment_score(aln_rec), 0, false};
 			
 				// Min. score only allowed for invalid positions.
@@ -721,7 +739,9 @@ namespace {
 						mate_original_pos,
 						cmp_segment_description_position{}
 					));
-					if (it != m_segment_descriptions_by_original_position.begin())
+					if (it == m_segment_descriptions_by_original_position.begin())
+						++m_statistics.mate_not_found;
+					else
 					{
 						auto const it_(it - 1);
 						if (mate_original_pos == it_->position)
@@ -730,6 +750,10 @@ namespace {
 							pss.other_score = it_->score;
 							pss.has_mate = true;
 							mate_length = it_->length;
+						}
+						else
+						{
+							++m_statistics.mate_not_found;
 						}
 					}
 				}
@@ -748,10 +772,6 @@ namespace {
 		libbio_assert(!m_paired_segment_scores_by_projected_position.empty());
 		ranges::sort(m_paired_segment_scores_by_projected_position, ranges::less{}, [](auto const &pss){ return pss.total_score(); });
 		
-		// Check if there are both alignments with and without a mate (obscure?).
-		if (0x3 == seen_record_types)
-			++m_statistics.reads_with_and_without_mate;
-		
 		// Calculate the mapping qualities.
 		for (auto const &sr : m_scored_records)
 		{
@@ -761,8 +781,8 @@ namespace {
 			try
 			{
 				auto const &seq(aln_rec.sequence());
-				auto const seq_len(seq.size());
 				position_pair const pos{position{aln_rec}, position{aln_rec, position::mate_tag{}}, position_pair::normalised_tag{}};
+				bool const has_mate(pos.has_mate());
 
 				// Find the alignments with better scores.
 				auto const begin(m_paired_segment_scores_by_projected_position.begin());
@@ -785,7 +805,7 @@ namespace {
 					libbio_assert_neq(INVALID_POSITION, other.positions.lhs);
 					
 					// Check if there is a segment description that refers to the sequence of the current alignment.
-					if (0x3 == seen_record_types && !sequences_eq <true>(it->sequence, other.sequence)) [[unlikely]]
+					if (!sequences_eq <true>(it->sequence, other.sequence)) [[unlikely]] // implies 0x1 & seen_record_types.
 						continue;
 					
 					// The sequences match.
@@ -794,12 +814,12 @@ namespace {
 					
 					// At least one of the positions in the pair does not match (but the scores may match).
 					// Bowtie 2 distinguishes mate 1 and 2, which we are not able to do. Hence we choose the better score for the next alignment.
-					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq_len, sr.mate_length, sr.score, seq_len ? other.total_score() : other.max_score());
+					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.score, has_mate ? other.total_score() : other.max_score());
 					goto output_record;
 				}
 
 				if (is_best_score)
-					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq_len, sr.mate_length, sr.score, ALIGNMENT_SCORE_MIN);
+					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.score, ALIGNMENT_SCORE_MIN);
 				else // There was a better score, hence the current record had the worst score.
 					aln_rec.mapping_quality() = MAPQ_NO_NEXT_RECORD;
 
@@ -857,6 +877,7 @@ namespace {
 		auto const &statistics(scorer.statistics());
 		std::cerr << "\tUnpaired alignments: " << statistics.unpaired_alignments << '\n';
 		std::cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
+		std::cerr << "\tRecords with mate missing: " << statistics.mate_not_found << '\n';
 	}
 	
 	
