@@ -502,11 +502,11 @@ namespace {
 			cerr << " (in ";
 			log_duration(cerr, realn_time);
 
-			double ns_per_realn(chrono::duration_cast <chrono::nanoseconds>(realn_time).count());
+			double us_per_realn(chrono::duration_cast <chrono::microseconds>(realn_time).count());
 			double mean_realn_length(m_realigned_range_total_length);
-			ns_per_realn /= realigned_ranges;
+			us_per_realn /= realigned_ranges;
 			mean_realn_length /= realigned_ranges;
-			cerr << ", " << ns_per_realn << " ns / realignment, mean length " << mean_realn_length << " characters)";
+			cerr << "; " << us_per_realn << " µs / realignment, mean length " << mean_realn_length << " characters)";
 		}
 
 		cerr << ".\n" << std::flush;
