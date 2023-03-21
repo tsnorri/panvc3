@@ -1263,15 +1263,16 @@ namespace {
 
 
 	template <typename t_header>
-	void append_program_info(t_header &header, int const argc, char const * const * const argv)
+	void append_program_info(t_header const &input_header, t_header &output_header, int const argc, char const * const * const argv)
 	{
+		output_header.program_infos = input_header.program_infos;
 		panvc3::append_sam_program_info(
 			"panvc3.project-alignments.",
 			"PanVC 3 project_alignments",
 			argc,
 			argv,
 			CMDLINE_PARSER_VERSION,
-			header.program_infos
+			output_header.program_infos
 		);
 	}
 
@@ -1407,7 +1408,7 @@ namespace {
 			ref_id_mapping
 		);
 
-		append_program_info(aln_output.header(), argc, argv);
+		append_program_info(aln_input_header, aln_output.header(), argc, argv);
 
 		// Open the realigned range output file if needed.
 		lb::file_handle realigned_range_handle;
