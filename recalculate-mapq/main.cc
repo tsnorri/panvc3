@@ -496,6 +496,7 @@ namespace {
 
 		struct statistics
 		{
+			std::uint64_t	total_alignments{};
 			std::uint64_t	unpaired_alignments{};
 			std::uint64_t	reads_with_and_without_mate{};
 			std::uint64_t	mate_not_found{};
@@ -672,6 +673,8 @@ namespace {
 		if (alignments.empty())
 			return;
 		
+		m_statistics.total_alignments += alignments.size();
+		
 		// Sort s.t. the records may be searched with the original values of RNEXT and PNEXT.
 		// First cache the (original) positions and scores s.t. sorting does not take O(n log^2 n) time.
 		m_segment_descriptions_by_original_position.clear();
@@ -708,7 +711,7 @@ namespace {
 			return;
 		}
 		
-		m_segment_descriptions_by_original_position.emplace_back(INVALID_POSITION, 0, 0); // Add a sentinel to make the mate searching below slightly simpler.
+		m_segment_descriptions_by_original_position.emplace_back(INVALID_POSITION, 0, 0); // Add a sentinel for extra safety.
 		std::sort(m_segment_descriptions_by_original_position.begin(), m_segment_descriptions_by_original_position.end());
 		
 		// Determine the sum of the scores for each pair.
@@ -730,7 +733,7 @@ namespace {
 			
 				// Determine the mate’s position only if the alignment has a valid position.
 				sequence_length_type mate_length{};
-				if (INVALID_POSITION != pss.positions.lhs)
+				if (INVALID_POSITION != pss.positions.lhs && has_mate)
 				{
 					position const mate_original_pos{aln_rec, m_sam_tags.original_rnext_tag, m_sam_tags.original_pnext_tag};
 					auto const it(std::upper_bound( // Couldn’t get ranges::upper_bound() to work.
@@ -875,9 +878,10 @@ namespace {
 
 		lb::log_time(std::cerr) << "Done.\n";
 		auto const &statistics(scorer.statistics());
+		std::cerr << "\tTotal alignments: " << statistics.total_alignments << '\n';
 		std::cerr << "\tUnpaired alignments: " << statistics.unpaired_alignments << '\n';
-		std::cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
 		std::cerr << "\tRecords with mate missing: " << statistics.mate_not_found << '\n';
+		std::cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
 	}
 	
 	
