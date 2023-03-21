@@ -4,7 +4,7 @@
 package		"recalculate-mapq"
 version		"0.1"
 purpose		"Recalculate the mapping quality from the given alignments"
-usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa > projected.sam"
+usage		"recalculate_mapq --alignments=alignments.bam > projected.sam"
 description	"Takes projected alignments sorted by QNAME as input, outputs the best representative in terms of AS value for each such group. The MAPQ value is calculated w.r.t. the alignment that has the best AS value but has different position. All alignments are marked primary in the output."
 
 section		"Input options"
