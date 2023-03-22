@@ -97,7 +97,7 @@ namespace panvc3 {
 	)
 	{
 		// Identifier
-		std::uint32_t idx{1};
+		std::uint32_t idx{};
 		for (auto const &pginfo : dst)
 		{
 			if (pginfo.id.starts_with(id_prefix))
@@ -105,16 +105,14 @@ namespace panvc3 {
 				std::string_view const id(pginfo.id);
 				auto const pos(id_prefix.size());
 				auto const tail(id.substr(pos));
-				auto const res(std::from_chars(tail.data(), tail.data() + tail.size(), idx));
+				std::uint32_t idx_{};
+				auto const res(std::from_chars(tail.data(), tail.data() + tail.size(), idx_));
 				if (std::errc{} == res.ec)
-				{
-					// idx modified only in this case.
-					++idx;
-					break;
-				}
+					idx = std::max(idx, idx_);
 			}
 		}
 
+		++idx;
 		std::string id(id_prefix);
 		id += std::to_string(idx);
 
