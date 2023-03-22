@@ -64,6 +64,7 @@ namespace {
 		{
 			if (aln_rec.mapping_quality() == best_mapq && aln_rec.reference_id() == mate_ref_id && aln_rec.reference_position() == mate_pos)
 			{
+				aln_rec.header_ptr() = &aln_output.header();
 				aln_output.push_back(aln_rec);
 				return;
 			}
@@ -99,6 +100,7 @@ namespace {
 				auto const mate_ref_id_(aln_rec.mate_reference_id());
 				auto const mate_pos_(aln_rec.mate_position());
 				
+				aln_rec.header_ptr() = &aln_output.header();
 				aln_output.push_back(aln_rec); // Needs non-const alignment record.
 				
 				if (! (mate_ref_id_ && mate_pos_))
@@ -113,6 +115,8 @@ namespace {
 		auto &aln_rec(alignments.front());
 		auto const mate_ref_id_(aln_rec.mate_reference_id());
 		auto const mate_pos_(aln_rec.mate_position());
+		
+		aln_rec.header_ptr() = &aln_output.header();
 		aln_output.push_back(aln_rec);
 		
 		if (! (mate_ref_id_ && mate_pos_))
@@ -211,6 +215,7 @@ namespace {
 			}
 			else
 			{
+				aln_rec.header_ptr() = &aln_output.header();
 				aln_output.push_back(aln_rec);
 			}
 		}

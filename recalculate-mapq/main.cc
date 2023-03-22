@@ -866,7 +866,7 @@ namespace {
 					aln_rec.mapping_quality() = MAPQ_NO_NEXT_RECORD;
 
 			output_record:
-				aln_rec.header_ptr() = aln_output.header();
+				aln_rec.header_ptr() = &aln_output.header();
 				aln_output.push_back(aln_rec);
 			}
 			catch (...)
