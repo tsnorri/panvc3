@@ -457,9 +457,9 @@ namespace {
 
 		if (rec_idx)
 		{
-			double secs_per_record(chrono::duration_cast <chrono::seconds>(running_time).count());
-			secs_per_record /= rec_idx;
-			cerr << " (in " << secs_per_record << " s / record)";
+			double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
+			usecs_per_record /= rec_idx;
+			cerr << " (in " << usecs_per_record << " μs / record)";
 		}
 		
 		cerr << "; realigned " << realigned_ranges << " ranges";
@@ -469,11 +469,11 @@ namespace {
 			cerr << " (in ";
 			panvc3::log_duration(cerr, realn_time);
 
-			double us_per_realn(chrono::duration_cast <chrono::microseconds>(realn_time).count());
+			double usecs_per_realn(chrono::duration_cast <chrono::microseconds>(realn_time).count());
 			double mean_realn_length(m_realigned_range_total_length);
-			us_per_realn /= realigned_ranges;
+			usecs_per_realn /= realigned_ranges;
 			mean_realn_length /= realigned_ranges;
-			cerr << "; " << us_per_realn << " µs / realignment, mean length " << mean_realn_length << " characters)";
+			cerr << "; " << usecs_per_realn << " µs / realignment, mean length " << mean_realn_length << " characters)";
 		}
 
 		cerr << ".\n" << std::flush;
