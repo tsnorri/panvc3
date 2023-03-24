@@ -20,7 +20,6 @@ modeoption	"fasta-line-width"	w	"Wrap the FASTA output to the given length"	long
 defmode		"List index contents"	modedesc = "List MSA index contents"
 modeoption	"list-contents"		L	"List index contents"								mode = "List index contents"							dependon = "msa-index-input"	required
 
-defmode		"Query"					modedesc = "Query the index. (Currently only co-ordinate conversion to MSA is supported.)"
+defmode		"Query"					modedesc = "Query the index."
 modeoption	"query"				Q	"Query the index"									mode = "Query"											dependon = "msa-index-input"	required
 modeoption	"chr-id"			-	"Chromosome ID"								string	mode = "Query"																			required
-modeoption	"src-seq-id"		-	"Source sequence ID"						string	mode = "Query"																			required

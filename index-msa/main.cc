@@ -160,13 +160,16 @@ namespace {
 	}
 
 
-	void query_index(char const *path, char const *chr_id, char const *src_seq_id)
+	void query_index(char const *path, char const *chr_id)
 	{
-		panvc3::msa_index msa_index;
-		load_msa_index(path, msa_index);
+		auto const msa_index{[&](){
+			panvc3::msa_index msa_index;
+			load_msa_index(path, msa_index);
+			return msa_index;
+		}()};
 
-		panvc3::msa_index::chr_entry_cmp chr_cmp;
-		panvc3::msa_index::sequence_entry_cmp seq_cmp;
+		panvc3::msa_index::chr_entry_cmp const chr_cmp;
+		panvc3::msa_index::sequence_entry_cmp const seq_cmp;
 
 		auto const &chr_entries(msa_index.chr_entries);
 		auto const chr_rng(std::equal_range(chr_entries.begin(), chr_entries.end(), chr_id, chr_cmp));
@@ -178,28 +181,86 @@ namespace {
 
 		auto const &chr_entry(*chr_rng.first);
 		auto const &seq_entries(chr_entry.sequence_entries);
-		auto const seq_rng(std::equal_range(seq_entries.begin(), seq_entries.end(), src_seq_id, seq_cmp));
-		if (seq_rng.first == seq_rng.second)
+		auto find_seq_entry{[&](auto const &seq_id) -> panvc3::msa_index::sequence_entry const * {
+			auto const seq_rng(std::equal_range(seq_entries.begin(), seq_entries.end(), seq_id, seq_cmp));
+			if (seq_rng.first == seq_rng.second)
+			{
+				std::cerr << "No entry for sequence '" << seq_id << "'.\n";
+				return nullptr;
+			}
+
+			return &(*seq_rng.first);
+		}};
+
+		std::string buffer;
+		auto read_seq_identifier_and_find{[&](char const *msg) -> panvc3::msa_index::sequence_entry const * {
+			while (true)
+			{
+				std::cout << msg << std::flush;
+				std::cin >> buffer;
+				if (std::cin.eof())
+					return nullptr;
+
+				auto const * const entry_ptr(find_seq_entry(buffer));
+				if (entry_ptr)
+					return entry_ptr;
+			}
+		}};
+
+		std::uint64_t aln_limit{};
+		std::uint64_t pos_limit{};
+		auto read_src_seq_identifier_and_find{[&](){
+			auto const retval{read_seq_identifier_and_find("Source sequence identifier? ")};
+			if (!retval)
+				return retval; // Avoid declaring return type.
+
+			aln_limit = retval->gap_positions.size();
+			pos_limit = retval->gap_positions_rank0_support(aln_limit);
+			return retval;
+		}};
+		auto read_dst_seq_identifier_and_find{[&](){
+			return read_seq_identifier_and_find("Destination sequence identifier? ");
+		}};
+
+		auto src_seq_entry{read_src_seq_identifier_and_find()};
+		if (!src_seq_entry)
+			return;
+		auto dst_seq_entry{read_dst_seq_identifier_and_find()};
+		if (!dst_seq_entry)
+			return;
+
+		while (true)
 		{
-			std::cerr << "ERROR: No entry for sequence '" << src_seq_id << "'.\n";
-			std::exit(EXIT_FAILURE);
-		}
+			std::cout << "Source co-ordinate or 's' or 'd' to switch sequence? ([0, " << pos_limit << ")) " << std::flush;
 
-		auto const &seq_entry(*seq_rng.first);
-		auto const aln_limit(seq_entry.gap_positions.size());
-		auto const pos_limit(seq_entry.gap_positions_rank0_support(aln_limit));
+			std::cin >> buffer;
+			if (std::cin.eof())
+				return;
 
-		while (!std::cin.eof())
-		{
-			std::cout << "Source co-ordinate? ([0, " << pos_limit << ")) " << std::flush;
-			
-			std::size_t pos{};
-			std::cin >> pos;
+			if ("s" == buffer)
+			{
+				src_seq_entry = read_src_seq_identifier_and_find();
+				if (!src_seq_entry)
+					return;
+			}
+			else if ("d" == buffer)
+			{
+				dst_seq_entry = read_dst_seq_identifier_and_find();
+				if (!dst_seq_entry)
+					return;
+			}
+			else
+			{
+				std::uint64_t pos{};
+				auto const res(std::from_chars(buffer.data(), buffer.data() + buffer.size(), pos));
+				if (std::errc{} != res.ec)
+					continue;
 
-			if (! (pos < pos_limit))
-				continue;
+				if (! (pos < pos_limit))
+					continue;
 
-			std::cout << seq_entry.gap_positions_select0_support(1 + pos) << '\n';
+				std::cout << src_seq_entry->project_position(pos, *dst_seq_entry) << '\n';
+			}
 		}
 	}
 
@@ -470,7 +531,7 @@ namespace {
 		}
 		else if (args_info.query_given)
 		{
-			query_index(args_info.msa_index_input_arg, args_info.chr_id_arg, args_info.src_seq_id_arg);
+			query_index(args_info.msa_index_input_arg, args_info.chr_id_arg);
 			std::exit(EXIT_SUCCESS);
 		}
 		else if (args_info.build_index_given)
