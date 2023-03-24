@@ -231,7 +231,7 @@ namespace {
 
 		while (true)
 		{
-			std::cout << "Source co-ordinate or 's' or 'd' to switch sequence? ([0, " << pos_limit << ")) " << std::flush;
+			std::cout << "[" << src_seq_entry->seq_id << " → " << dst_seq_entry->seq_id << "] Source co-ordinate or 's' or 'd' to switch sequence? ([0, " << pos_limit << ")) " << std::flush;
 
 			std::cin >> buffer;
 			if (std::cin.eof())
