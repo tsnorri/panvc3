@@ -130,6 +130,8 @@ namespace {
 	{
 		using seqan3::get;
 		using seqan3::operator""_cigar_operation;
+
+		cigar_output.clear();
 		
 		std::size_t query_pos{};
 		for (auto const &item : cigar_seq)
@@ -188,6 +190,7 @@ namespace {
 					auto &new_item(cigar_output.emplace_back());
 					new_item = prev_count;
 					new_item = prev_op;
+					break;
 				}
 				
 				default:
@@ -294,7 +297,7 @@ namespace {
 	}
 	
 	
-	void process(gengetopt_args_info args_info, int const argc, char * const * const argv)
+	void process(gengetopt_args_info const &args_info, int const argc, char * const * const argv)
 	{
 		// Sanity check.
 		if (args_info.alignments_arg && args_info.bam_input_flag)

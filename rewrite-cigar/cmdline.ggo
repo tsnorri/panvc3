@@ -9,7 +9,6 @@ usage		"rewrite_cigar --alignments=alignments.bam --reference=ref.fa.gz > projec
 section		"Input options"
 option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
 option		"bam-input"					B	"Read BAM from stdin"														flag	off
-option		"msa-index"					m	"MSA index path"															string	typestr = "filename"	required
 option		"reference"					r	"Reference sequences FASTA path"											string	typestr = "filename"	required
 
 section		"Output options"
