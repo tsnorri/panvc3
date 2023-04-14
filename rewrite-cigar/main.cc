@@ -130,6 +130,8 @@ namespace {
 	{
 		using seqan3::get;
 		using seqan3::operator""_cigar_operation;
+
+		cigar_output.clear();
 		
 		std::size_t query_pos{};
 		for (auto const &item : cigar_seq)
