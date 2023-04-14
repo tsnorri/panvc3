@@ -4,7 +4,7 @@
 package		"project-alignments"
 version		"0.1"
 purpose		"Project alignments to founder sequences to a given reference sequence"
-usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa > projected.sam"
+usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa.gz > projected.sam"
 
 section		"Input options"
 option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
