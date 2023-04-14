@@ -100,9 +100,9 @@ namespace {
 	};
 
 
-	struct alignment_scorer
+	struct mapq_score_calculator
 	{
-		virtual ~alignment_scorer() {}
+		virtual ~mapq_score_calculator() {}
 		virtual mapping_quality_type calculate_mapq(		// of one segment, remember to sum for a pair.
 			sequence_length_type const read_length,
 			sequence_length_type const other_read_length,	// pass zero if not paired.
@@ -112,7 +112,7 @@ namespace {
 	};
 
 	
-	// These need to be outside bowtie2_v2_scorer so that the definitions of operator() are complete before using in a static assertion.
+	// These need to be outside bowtie2_v2_score_calculator so that the definitions of operator() are complete before using in a static assertion.
 	struct score_entry
 	{
 		alignment_score_type	normalised_score_threshold{};
@@ -147,7 +147,7 @@ namespace {
 	// Bowtie 2's source
 	// https://www.seqanswers.com/forum/bioinformatics/bioinformatics-aa/531-bowtie-an-ultrafast-memory-efficient-open-source-short-read-aligner/page34?postcount=510#post229040
 	// http://biofinysics.blogspot.com/2014/05/how-does-bowtie2-assign-mapq-scores.html#bt2py
-	struct bowtie2_v2_scorer final : public alignment_scorer
+	struct bowtie2_v2_score_calculator final : public mapq_score_calculator
 	{
 		typedef panvc3::cmp_proj <score_entry,		score_entry::project_key>	score_entry_cmp;
 		typedef panvc3::cmp_proj <score_entry_2,	score_entry_2::project_key>	score_entry_2_cmp;
@@ -231,7 +231,7 @@ namespace {
 	// bt2_search.cpp, DEFAULT_MIN_CONST and DEFAULT_MIN_LINEAR set to -0.6 in scoring.h), and X
 	// is the read length (and hence the right side of the minimum always applies). See also
 	// "Valid alignments meet or exceed the minimum score threshold" in MANUAL.markdown.
-	auto bowtie2_v2_scorer::calculate_read_min_score(sequence_length_type const read_length) const -> alignment_score_type
+	auto bowtie2_v2_score_calculator::calculate_read_min_score(sequence_length_type const read_length) const -> alignment_score_type
 	{
 		if (!read_length)
 			return 0;
@@ -249,17 +249,17 @@ namespace {
 	// We would otherwise multiply read length with a precalculated value plus 0.5 (see scoring.h:304),
 	// but since the constant const model with zero constant is used, monotone is set to true and hence
 	// Scoring::perfectScore() always returns zero.
-	auto bowtie2_v2_scorer::calculate_read_max_score(sequence_length_type const read_length) const -> alignment_score_type
+	auto bowtie2_v2_score_calculator::calculate_read_max_score(sequence_length_type const read_length) const -> alignment_score_type
 	{
 		return 0;
 	}
 
 
-	mapping_quality_type bowtie2_v2_scorer::calculate_mapq(	// of one segment, remember to sum for a pair.
+	mapping_quality_type bowtie2_v2_score_calculator::calculate_mapq(	// of one segment, remember to sum for a pair.
 		sequence_length_type const read_length,
-		sequence_length_type const other_read_length,		// Pass zero if not paired.
-		alignment_score_type const score,					// AS
-		alignment_score_type const next_score				// AS/XS, pass ALIGNMENT_SCORE_MIN if no other alignments.
+		sequence_length_type const other_read_length,					// Pass zero if not paired.
+		alignment_score_type const score,								// AS
+		alignment_score_type const next_score							// AS/XS, pass ALIGNMENT_SCORE_MIN if no other alignments.
 	) const
 	{
 		auto const min_score(calculate_read_min_score(read_length) + calculate_read_min_score(other_read_length)); // Score of a barely valid match
@@ -551,7 +551,7 @@ namespace {
 		};
 		
 	private:
-		alignment_scorer					*m_scorer{};
+		mapq_score_calculator				*m_scorer{};
 		std::vector <segment_description>	m_segment_descriptions_by_original_position;
 		std::vector <paired_segment_score>	m_paired_segment_scores_by_projected_position;
 		std::vector <scored_record>			m_scored_records;
@@ -563,7 +563,7 @@ namespace {
 		void add_paired_segment_score(paired_segment_score const &pss);
 		
 	public:
-		mapq_scorer(alignment_scorer &scorer, sam_tag_specification const &sam_tags):
+		mapq_scorer(mapq_score_calculator &scorer, sam_tag_specification const &sam_tags):
 			m_scorer(&scorer),
 			m_sam_tags(sam_tags)
 		{
@@ -859,8 +859,8 @@ namespace {
 		typedef typename input_type::record_type	record_type;
 		typedef chrono::steady_clock				clock_type;
 		
-		bowtie2_v2_scorer aln_scorer;
-		mapq_scorer <record_type> scorer(aln_scorer, sam_tags);
+		bowtie2_v2_score_calculator score_calculator;
+		mapq_scorer <record_type> scorer(score_calculator, sam_tags);
 		
 		std::vector <record_type> rec_buffer;
 		std::uint64_t rec_idx{};
