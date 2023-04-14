@@ -95,6 +95,7 @@ namespace {
 		auto it(m_sequences_by_use.front());
 		auto node(m_sequences.extract(it));
 		node.key() = idx;
+		node.mapped().sequence.clear();
 		node.mapped().index = seq_idx;
 		auto const res(m_sequences.insert(std::move(node)));
 		libbio_assert(res.inserted);
