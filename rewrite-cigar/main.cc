@@ -294,7 +294,7 @@ namespace {
 	}
 	
 	
-	void process(gengetopt_args_info args_info, int const argc, char * const * const argv)
+	void process(gengetopt_args_info const &args_info, int const argc, char * const * const argv)
 	{
 		// Sanity check.
 		if (args_info.alignments_arg && args_info.bam_input_flag)
