@@ -1,0 +1,22 @@
+# (c) 2023 Tuukka Norri
+# This code is licensed under MIT license (see LICENSE for details).
+
+package		"rewrite-cigar"
+version		"0.1"
+purpose		"Rewrite CIGAR such that M characters are replaced with = and X"
+usage		"rewrite_cigar --alignments=alignments.bam --reference=ref.fa.gz > projected.sam"
+
+section		"Input options"
+option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
+option		"bam-input"					B	"Read BAM from stdin"														flag	off
+option		"msa-index"					m	"MSA index path"															string	typestr = "filename"	required
+option		"reference"					r	"Reference sequences FASTA path"											string	typestr = "filename"	required
+
+section		"Output options"
+option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"		optional
+option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
+option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
+
+section		"Debugging options"
+option		"print-invocation"			-	"Output the invocation to stderr"											flag	off									hidden
+option		"print-pid"					-	"Output the PID to stderr"													flag	off									hidden
