@@ -7,6 +7,8 @@
 #define PANVC3_UTILITY_HH
 
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <ostream>
 #include <seqan3/utility/type_list/type_list.hpp>
 #include <tuple>
@@ -182,6 +184,37 @@ namespace panvc3 {
 		os << ms.count() << " ms";
 
 		return os;
+	}
+	
+	
+	struct timer
+	{
+	private:
+		mutable std::mutex				m_mutex{};
+		mutable std::condition_variable	m_cv{};
+		bool							m_should_stop{};
+
+	public:
+		inline void stop();
+
+		template <typename t_rep, typename t_period>
+		bool wait_for(std::chrono::duration <t_rep, t_period> const duration) const;
+	};
+
+
+	void timer::stop()
+	{
+		std::unique_lock lock(m_mutex);
+		m_should_stop = true;
+		m_cv.notify_all();
+	}
+
+
+	template <typename t_rep, typename t_period>
+	bool timer::wait_for(std::chrono::duration <t_rep, t_period> const duration) const
+	{
+		std::unique_lock lock(m_mutex);
+		return !m_cv.wait_for(lock, duration, [this](){ return m_should_stop; });
 	}
 }
 

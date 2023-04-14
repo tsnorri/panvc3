@@ -91,37 +91,6 @@ namespace {
 	}
 
 
-	struct timer
-	{
-	private:
-		mutable std::mutex				m_mutex{};
-		mutable std::condition_variable	m_cv{};
-		bool							m_should_stop{};
-
-	public:
-		void stop();
-
-		template <typename t_rep, typename t_period>
-		bool wait_for(chrono::duration <t_rep, t_period> const duration) const;
-	};
-
-
-	void timer::stop()
-	{
-		std::unique_lock lock(m_mutex);
-		m_should_stop = true;
-		m_cv.notify_all();
-	}
-
-
-	template <typename t_rep, typename t_period>
-	bool timer::wait_for(chrono::duration <t_rep, t_period> const duration) const
-	{
-		std::unique_lock lock(m_mutex);
-		return !m_cv.wait_for(lock, duration, [this](){ return m_should_stop; });
-	}
-
-
 	struct sam_tag_specification
 	{
 		panvc3::seqan3_sam_tag_type original_reference_tag{};
@@ -897,7 +866,7 @@ namespace {
 		std::uint64_t rec_idx{};
 
 		auto const start_time(clock_type::now());
-		timer status_output_timer;
+		panvc3::timer status_output_timer;
 		auto status_output_thread{[&]() -> std::jthread {
 			if (!status_output_interval)
 				return {};
