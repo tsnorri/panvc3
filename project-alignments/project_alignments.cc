@@ -528,15 +528,14 @@ namespace {
 			if (lb::to_underlying(flags & (
 				seqan3::sam_flag::unmapped					|
 				seqan3::sam_flag::failed_filter				|
-				seqan3::sam_flag::duplicate					|
-				seqan3::sam_flag::supplementary_alignment
-			))) // Ignore unmapped, filtered, duplicate and supplementary.
+				seqan3::sam_flag::duplicate
+			))) // Ignore unmapped, filtered, and duplicate. (BWA may set supplementary to non-chimeric?)
 			{
 				++m_statistics.flags_not_matched;
 				continue;
 			}
 			
-			// Ignore secondary if requested.
+			// Ignore secondary and supplementary if requested.
 			if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & seqan3::sam_flag::secondary_alignment))
 			{
 				++m_statistics.flags_not_matched;
@@ -810,6 +809,7 @@ namespace {
 					oa_buffer << src_pos << ',';
 
 					// Strand
+					// FIXME: Some tools may determine from the minus sign that the sequence needs to be reverse-complemented, but this may already have been taken into account?
 					oa_buffer << (std::to_underlying(seqan3::sam_flag::on_reverse_strand & aln_rec.flag()) ? '-' : '+') << ',';
 
 					// CIGAR
