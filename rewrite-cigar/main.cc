@@ -188,6 +188,7 @@ namespace {
 					auto &new_item(cigar_output.emplace_back());
 					new_item = prev_count;
 					new_item = prev_op;
+					break;
 				}
 				
 				default:
