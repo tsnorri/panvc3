@@ -20,7 +20,7 @@ clean:
 	$(RM) $(OBJECTS) rewrite_cigar cmdline.h cmdline.c
 
 rewrite_cigar: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-gcc/libbio.a ../libpanvc3/libpanvc3.a $(LDFLAGS)
+	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h
