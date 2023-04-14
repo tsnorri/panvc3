@@ -847,20 +847,17 @@ namespace {
 	}
 
 
-	template <typename t_aln_input, typename t_aln_output>
+	template <typename t_aln_input, typename t_aln_output, typename t_record = typename std::remove_cvref_t <t_aln_input>::record_type>
 	void process_(
 		t_aln_input &&aln_input,
 		t_aln_output &&aln_output,
-		sam_tag_specification const &sam_tags,
+		mapq_scorer <t_record> &scorer,
 		std::uint16_t const status_output_interval
 	)
 	{
 		typedef std::remove_cvref_t <t_aln_input>	input_type;
-		typedef typename input_type::record_type	record_type;
+		typedef t_record							record_type;
 		typedef chrono::steady_clock				clock_type;
-		
-		bowtie2_v2_score_calculator score_calculator;
-		mapq_scorer <record_type> scorer(score_calculator, sam_tags);
 		
 		std::vector <record_type> rec_buffer;
 		std::uint64_t rec_idx{};
@@ -1072,7 +1069,9 @@ namespace {
 		}
 
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
-		process_(aln_input, aln_output, sam_tags, args_info.status_output_interval_arg);
+		bowtie2_v2_score_calculator score_calculator;
+		mapq_scorer <typename input_type::record_type> scorer(score_calculator, sam_tags);
+		process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg);
 	}
 }
 
