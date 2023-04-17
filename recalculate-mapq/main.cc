@@ -391,7 +391,11 @@ namespace {
 		auto const min_score(calculate_read_min_score(read_length) + calculate_read_min_score(other_read_length)); // Score of a barely valid match
 		auto const max_score(calculate_read_max_score(read_length) + calculate_read_max_score(other_read_length)); // Score of a perfect match.
 		auto const score_range(std::max(alignment_score_type(1), max_score - min_score));
-
+		
+		// Check if the score is too low.
+		if (score < min_score)
+			return 0;
+		
 		auto const normalised_score(score - min_score);
 		auto const normalised_score_quotient(normalised_score / score_range);
 		static_assert(std::is_floating_point_v <alignment_score_type>); // For avoiding UB below.
