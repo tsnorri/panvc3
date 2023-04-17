@@ -18,30 +18,42 @@
 
 namespace panvc3 {
 	
-	template <typename t_seq_alphabet, typename t_qual_alphabet>
-	struct base_probability_scorer
+	// Formulae from Malde, K. The effect of sequence quality on sequence alignment.
+	// https://academic.oup.com/bioinformatics/article/24/7/897/296249
+	template <typename t_qual_alphabet>
+	struct base_quality_scorer
 	{
-		typedef double												score_type;
-		typedef seqan3::qualified <t_seq_alphabet, t_qual_alphabet>	alphabet_type;
+		typedef double	score_type;
 		
-		score_type score(alphabet_type const lhs, alphabet_type const rhs)
+		score_type score(bool const matches, t_qual_alphabet const lhs_qual, t_qual_alphabet const rhs_qual) const
 		{
-			// Formulae from Malde, K. The effect of sequence quality on sequence alignment.
-			// https://academic.oup.com/bioinformatics/article/24/7/897/296249
-			auto const [lhs_cc, lhs_qual] = lhs; // Ignore the quality in lhs for now.
-			auto const [rhs_cc, rhs_qual] = rhs;
 			auto const lhs_e(1.0 / std::pow(10.0, lhs_qual.to_phred() / 10.0));
 			auto const rhs_e(1.0 / std::pow(10.0, rhs_qual.to_phred() / 10.0));
 			auto const combined_e(lhs_e + rhs_e - lhs_e / 3.0 * rhs_e * 4.0);
-			if (lhs_cc == rhs_cc)
+			if (matches)
 				return 2.0 + std::log2(1.0 - combined_e);
 			else
 				return 2.0 - std::log2(3.0) + std::log2(combined_e);
 		}
 	};
 	
+	
+	template <typename t_seq_alphabet, typename t_qual_alphabet, typename t_base = base_quality_scorer <t_qual_alphabet>>
+	struct base_quality_scoring_scheme : public t_base
+	{
+		typedef typename t_base::score_type							score_type;
+		typedef seqan3::qualified <t_seq_alphabet, t_qual_alphabet>	alphabet_type;
+		
+		score_type score(alphabet_type const lhs, alphabet_type const rhs) const
+		{
+			auto const [lhs_cc, lhs_qual] = lhs;
+			auto const [rhs_cc, rhs_qual] = rhs;
+			return t_base::score(lhs_cc == rhs_cc, lhs_qual, rhs_qual);
+		}
+	};
+	
 	template <>
-	struct base_probability_scorer <void, void> {};
+	struct base_quality_scoring_scheme <void, void> {};
 	
 	
 	template <
@@ -67,7 +79,7 @@ namespace panvc3 {
 			seqan3::align_cfg::method_global{}
 			| seqan3::align_cfg::scoring_scheme{std::conditional_t <
 				t_should_use_base_probabilities,
-				base_probability_scorer <t_sequence_alphabet, t_quality_alphabet>,
+				base_quality_scoring_scheme <t_sequence_alphabet, t_quality_alphabet>,
 				seqan3::nucleotide_scoring_scheme <>
 			>{}}
 			| seqan3::align_cfg::gap_cost_affine{

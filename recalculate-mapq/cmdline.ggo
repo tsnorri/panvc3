@@ -8,21 +8,27 @@ usage		"recalculate_mapq --alignments=alignments.bam > projected.sam"
 description	"Takes projected alignments sorted by QNAME as input, outputs the best representative in terms of AS value for each such group. The MAPQ value is calculated w.r.t. the alignment that has the best AS value but has different position. All alignments are marked primary in the output."
 
 section		"Input options"
-option		"alignments"				a	"Alignment file path"														string	typestr = "filename"	optional
+option		"alignments"				a	"Alignment file path"														string	typestr = "filename"								optional
 option		"bam-input"					B	"Read BAM from stdin"														flag	off
 
 section		"Output options"
-option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"		optional
+option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"									optional
 option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
-option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
+option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"										optional
+
+section		"Scoring options"
+option		"re-score-alignments"		-	"Recalculate the alignment scores instead of using the AS tag value"		flag	off
+option		"gap-opening-penalty"		-	"Gap opening penalty"														long	default = "-5"	dependon = "re-score-alignments"
+option		"gap-extension-penalty"		-	"Gap extension penalty"														long	default = "-3"	dependon = "re-score-alignments"
+text		"For re-scoring alignments, the CIGAR strings need to use ‘=’ and ‘X’ characters in place of ‘M’ characters."
 
 section		"Alignment record formatting"
-option		"original-rname-tag"		-	"SAM tag for the original value of the RNAME field (as numeric identifier)"	string	default = "XR"			optional
-option		"original-pos-tag"			-	"SAM tag for the original value of the POS field"							string	default = "XP"			optional
-option		"original-rnext-tag"		-	"SAM tag for the original value of the RNEXT field (as numeric identifier)"	string	default = "YR"			optional
-option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT field"							string	default = "YP"			optional
+option		"original-rname-tag"		-	"SAM tag for the original value of the RNAME field (as numeric identifier)"	string	default = "XR"										optional
+option		"original-pos-tag"			-	"SAM tag for the original value of the POS field"							string	default = "XP"										optional
+option		"original-rnext-tag"		-	"SAM tag for the original value of the RNEXT field (as numeric identifier)"	string	default = "YR"										optional
+option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT field"							string	default = "YP"										optional
 
 section		"Debugging options"
-option		"print-invocation"			-	"Output the invocation to stderr"											flag	off									hidden
-option		"print-pid"					-	"Output the PID to stderr"													flag	off									hidden
-option		"print-reference-names"		-	"Output the reference names to stderr"										flag	off									hidden
+option		"print-invocation"			-	"Output the invocation to stderr"											flag	off																hidden
+option		"print-pid"					-	"Output the PID to stderr"													flag	off																hidden
+option		"print-reference-names"		-	"Output the reference names to stderr"										flag	off																hidden
