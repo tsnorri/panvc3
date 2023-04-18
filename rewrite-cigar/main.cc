@@ -203,6 +203,7 @@ namespace {
 				{
 					libbio_assert_lte(query_pos + count, query_seq.size());
 					fill_ref_n_positions(ref, ref_n_positions_output, ref_base_pos, ref_pos, count);
+
 					std::size_t prev_count(1);
 					auto prev_op(query_seq[query_pos].to_char() == ref[ref_base_pos + ref_pos] ? '='_cigar_operation : 'X'_cigar_operation);
 					for (std::size_t i(1); i < count; ++i)
@@ -224,6 +225,9 @@ namespace {
 					auto &new_item(cigar_output.emplace_back());
 					new_item = prev_count;
 					new_item = prev_op;
+
+					ref_pos += count;
+					query_pos += count;
 					break;
 				}
 				
