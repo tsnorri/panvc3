@@ -36,7 +36,7 @@ option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT fie
 option		"realigned-query-ranges-tag"	-	"SAM tag for the re-aligned query ranges"										string	default = "XA"			optional
 option		"realigned-ref-ranges-tag"	-	"SAM tag for the re-aligned reference ranges"								string	default = "YA"			optional
 option		"record-index-tag"			-	"SAM tag for the original record index"										string							optional
-text		"Added SAM tags need to match /[XYZ][A-Za-z0-9]/."
+text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
 section		"Re-alignment options"
 option		"use-read-base-qualities"	q	"Take base qualities into account when re-aligning"							flag	off
