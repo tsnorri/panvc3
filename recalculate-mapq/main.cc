@@ -99,6 +99,8 @@ namespace {
 		panvc3::seqan3_sam_tag_type original_position_tag{};
 		panvc3::seqan3_sam_tag_type original_rnext_tag{};
 		panvc3::seqan3_sam_tag_type original_pnext_tag{};
+		panvc3::seqan3_sam_tag_type original_alignment_score_tag{};
+		panvc3::seqan3_sam_tag_type new_alignment_score_tag{};
 	};
 	
 	
@@ -106,14 +108,14 @@ namespace {
 	struct alignment_scorer
 	{
 		virtual ~alignment_scorer() {}
-		virtual alignment_score_type operator()(t_aln_rec const &rec) const = 0;
+		virtual alignment_score_type operator()(t_aln_rec &rec, sam_tag_specification const &tag_spec) const = 0;
 	};
 	
 	
 	template <typename t_aln_rec>
 	struct as_tag_alignment_scorer final : public alignment_scorer <t_aln_rec>
 	{
-		alignment_score_type operator()(t_aln_rec const &rec) const override;
+		alignment_score_type operator()(t_aln_rec &rec, sam_tag_specification const &tag_spec) const override;
 	};
 	
 	
@@ -134,12 +136,15 @@ namespace {
 		{
 		}
 		
-		alignment_score_type operator()(t_aln_rec const &rec) const override;
+		alignment_score_type operator()(t_aln_rec &rec, sam_tag_specification const &tag_spec) const override;
+		
+	private:
+		alignment_score_type calculate_score(t_aln_rec const &rec) const;
 	};
 	
 	
 	template <typename t_aln_rec>
-	alignment_score_type as_tag_alignment_scorer <t_aln_rec>::operator()(t_aln_rec const &aln_rec) const
+	alignment_score_type as_tag_alignment_scorer <t_aln_rec>::operator()(t_aln_rec &aln_rec, sam_tag_specification const &) const
 	{
 		// Retrieve the alignment score from the AS tag.
 		auto const &tags(aln_rec.tags());
@@ -152,7 +157,7 @@ namespace {
 	
 	
 	template <typename t_aln_rec>
-	alignment_score_type cigar_alignment_scorer <t_aln_rec>::operator()(t_aln_rec const &aln_rec) const
+	alignment_score_type cigar_alignment_scorer <t_aln_rec>::calculate_score(t_aln_rec const &aln_rec) const
 	{
 		// Calculate the alignment score from the CIGAR and the base qualities.
 		using seqan3::get;
@@ -223,6 +228,30 @@ namespace {
 		}
 		
 		return retval;
+	}
+	
+	
+	template <typename t_aln_rec>
+	alignment_score_type cigar_alignment_scorer <t_aln_rec>::operator()(t_aln_rec &aln_rec, sam_tag_specification const &tag_spec) const
+	{
+		auto const new_score(calculate_score(aln_rec));
+		
+		// Retrieve the alignment score from the AS tag.
+		auto &tags(aln_rec.tags());
+		auto const it(tags.find("AS"_tag));
+		if (tags.end() == it)
+		{
+			auto &as_tag(tags.template get <"AS"_tag>());
+			as_tag = new_score;
+		}
+		else
+		{
+			tags[tag_spec.original_alignment_score_tag] = std::get <alignment_score_tag_type>(it->second);
+			tags[tag_spec.new_alignment_score_tag] = float(new_score);
+			it->second = score_type(new_score);
+		}
+		
+		return new_score;
 	}
 	
 	
@@ -679,7 +708,8 @@ namespace {
 		struct scored_record
 		{
 			t_aln_record			*record{};
-			alignment_score_type	score{};
+			alignment_score_type	alignment_score{};
+			alignment_score_type	pairwise_score{};
 			sequence_length_type	mate_length{};
 		};
 		
@@ -813,8 +843,10 @@ namespace {
 		// First cache the (original) positions and scores s.t. sorting does not take O(n log^2 n) time.
 		m_segment_descriptions_by_original_position.clear();
 		m_segment_descriptions_by_original_position.reserve(alignments.size());
+		m_scored_records.clear();
+		m_scored_records.resize(alignments.size(), scored_record{nullptr, ALIGNMENT_SCORE_MIN, ALIGNMENT_SCORE_MIN, 0});
 		std::uint8_t seen_record_types{}; // 0x3 for both.
-		for (auto const &aln_rec : alignments)
+		for (auto &&[aln_rec, scored_rec] : rsv::zip(alignments, m_scored_records))
 		{
 			try
 			{
@@ -822,9 +854,14 @@ namespace {
 				seen_record_types |= 0x1 << has_mate;
 				m_statistics.unpaired_alignments += (!has_mate);
 				
+				auto const score((*m_aln_scorer)(aln_rec, m_sam_tags));
+				
+				scored_rec.record = &aln_rec;
+				scored_rec.alignment_score = score;
+				
 				m_segment_descriptions_by_original_position.emplace_back(
 					position{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag},
-					(*m_aln_scorer)(aln_rec),
+					score,
 					aln_rec.sequence().size()
 				);
 			}
@@ -852,19 +889,18 @@ namespace {
 		// m_scored_records is needed so that we don’t need to re-calculate the score after partitioning the records.
 		m_paired_segment_scores_by_projected_position.clear();
 		m_paired_segment_scores_by_projected_position.reserve(alignments.size());
-		m_scored_records.clear();
-		m_scored_records.resize(alignments.size(), scored_record{nullptr, ALIGNMENT_SCORE_MIN, 0});
-		for (auto &&[aln_rec, scored_rec] : rsv::zip(alignments, m_scored_records))	
+		for (auto &sr : m_scored_records)
 		{
 			try
 			{
+				auto &aln_rec(*sr.record);
 				position_pair const projected_pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
 				bool const has_mate(projected_pos.has_mate());
-				paired_segment_score pss{projected_pos, has_mate ? nullptr : &aln_rec.sequence(), (*m_aln_scorer)(aln_rec), 0, false};
-			
+				paired_segment_score pss{projected_pos, has_mate ? nullptr : &aln_rec.sequence(), sr.alignment_score, 0, false};
+				
 				// Min. score only allowed for invalid positions.
 				libbio_assert((INVALID_POSITION != pss.positions.lhs) ^ (ALIGNMENT_SCORE_MIN == pss.score));
-			
+				
 				// Determine the mate’s position only if the alignment has a valid position.
 				sequence_length_type mate_length{};
 				if (INVALID_POSITION != pss.positions.lhs && has_mate)
@@ -895,14 +931,15 @@ namespace {
 					}
 				}
 				
-				scored_rec = scored_record(&aln_rec, pss.score + pss.other_score, mate_length);
+				sr.pairwise_score = pss.score + pss.other_score;
+				sr.mate_length = mate_length;
 				
 				// Insert if needed.
 				add_paired_segment_score(pss);
 			}
 			catch (input_error const &exc)
 			{
-				handle_input_error(aln_rec, exc.error_info);
+				handle_input_error(*sr.record, exc.error_info);
 			}
 		}
 		// Sort by score.
@@ -926,7 +963,7 @@ namespace {
 				auto const end(m_paired_segment_scores_by_projected_position.end());
 				auto it(ranges::upper_bound(
 					m_paired_segment_scores_by_projected_position,
-					sr.score,
+					sr.pairwise_score,
 					ranges::less{},
 					[](auto const &pss){ return pss.total_score(); }
 				));
@@ -951,12 +988,12 @@ namespace {
 					
 					// At least one of the positions in the pair does not match (but the scores may match).
 					// Bowtie 2 distinguishes mate 1 and 2, which we are not able to do. Hence we choose the better score for the next alignment.
-					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.score, has_mate ? other.total_score() : other.max_score());
+					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.pairwise_score, has_mate ? other.total_score() : other.max_score());
 					goto output_record;
 				}
 
 				if (is_best_score)
-					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.score, ALIGNMENT_SCORE_MIN);
+					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.pairwise_score, ALIGNMENT_SCORE_MIN);
 				else // There was a better score, hence the current record had the worst score.
 					aln_rec.mapping_quality() = MAPQ_NO_NEXT_RECORD;
 
@@ -1155,11 +1192,11 @@ namespace {
 			else
 				return make_output_type(seqan3::format_sam{});
 		}()};
-
+		
 		// Now that we have valid header information in aln_output, we can access it and copy the headers from aln_input.
 		{
 			output_ref_ids = input_ref_ids;
-
+			
 			auto &aln_output_header(aln_output.header());
 			aln_output_header.sorting = aln_input_header.sorting;
 			aln_output_header.subsorting = aln_input_header.subsorting;
@@ -1185,7 +1222,9 @@ namespace {
 			.original_reference_tag{make_sam_tag(args_info.original_rname_tag_arg)},
 			.original_position_tag{make_sam_tag(args_info.original_pos_tag_arg)},
 			.original_rnext_tag{make_sam_tag(args_info.original_rnext_tag_arg)},
-			.original_pnext_tag{make_sam_tag(args_info.original_pnext_tag_arg)}
+			.original_pnext_tag{make_sam_tag(args_info.original_pnext_tag_arg)},
+			.original_alignment_score_tag{make_sam_tag(args_info.original_alignment_score_tag_arg)},
+			.new_alignment_score_tag{make_sam_tag(args_info.new_alignment_score_tag_arg)}
 		};
 		
 		if (args_info.print_reference_names_flag)
@@ -1198,7 +1237,7 @@ namespace {
 
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		bowtie2_v2_score_calculator score_calculator;
-		if (args_info.re_score_alignments_given)
+		if (args_info.rescore_alignments_given)
 		{
 			// FIXME: Add bounds check.
 			cigar_alignment_scorer <record_type> aln_scorer(args_info.gap_opening_penalty_arg, args_info.gap_extension_penalty_arg);
