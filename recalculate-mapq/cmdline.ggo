@@ -18,8 +18,8 @@ option		"status-output-interval"		-	"Status output interval in minutes, zero to 
 
 section		"Scoring options"
 option		"rescore-alignments"			-	"Recalculate the alignment scores instead of using the AS tag value"		flag	off
-option		"gap-opening-penalty"			-	"Gap opening penalty"														long	default = "-5"	dependon = "rescore-alignments"
-option		"gap-extension-penalty"			-	"Gap extension penalty"														long	default = "-3"	dependon = "rescore-alignments"
+option		"gap-opening-penalty"			-	"Gap opening penalty"														long	default = "-5"	dependon = "rescore-alignments"	optional
+option		"gap-extension-penalty"			-	"Gap extension penalty"														long	default = "-3"	dependon = "rescore-alignments"	optional
 text		"For rescoring alignments, the CIGAR strings need to use ‘=’ and ‘X’ characters in place of ‘M’ characters."
 
 section		"Alignment record formatting"
