@@ -56,6 +56,10 @@ recalculate-mapq/cmdline.c
 recalculate-mapq/cmdline.h
 recalculate-mapq/config.h
 recalculate-mapq/recalculate_mapq
+rewrite-cigar/cmdline.c
+rewrite-cigar/cmdline.h
+rewrite-cigar/config.h
+rewrite-cigar/rewrite_cigar
 split-alignments-by-reference/cmdline.c
 split-alignments-by-reference/cmdline.h
 split-alignments-by-reference/config.h
