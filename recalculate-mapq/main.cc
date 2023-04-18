@@ -95,12 +95,25 @@ namespace {
 
 	struct sam_tag_specification
 	{
+		panvc3::seqan3_sam_tag_type ref_n_positions_tag{};
 		panvc3::seqan3_sam_tag_type original_reference_tag{};
 		panvc3::seqan3_sam_tag_type original_position_tag{};
 		panvc3::seqan3_sam_tag_type original_rnext_tag{};
 		panvc3::seqan3_sam_tag_type original_pnext_tag{};
 		panvc3::seqan3_sam_tag_type original_alignment_score_tag{};
 		panvc3::seqan3_sam_tag_type new_alignment_score_tag{};
+	};
+
+
+	struct alignment_scoring
+	{
+		typedef std::int32_t	score_type;
+
+		score_type	min_mismatch_penalty{};
+		score_type	max_mismatch_penalty{};
+		score_type	n_penalty{};
+		score_type	gap_opening_penalty{};
+		score_type	gap_extension_penalty{};
 	};
 	
 	
@@ -124,22 +137,32 @@ namespace {
 	{
 	public:
 		typedef std::int32_t	score_type;
+
+	private:
+		constexpr static inline std::size_t const		QUALITY_MAX{256};
+		typedef std::array <score_type, QUALITY_MAX>	quality_lookup_array;
+		typedef std::vector <std::uint8_t>				ref_n_position_vector;
 		
 	private:
-		score_type	m_gap_opening_penalty{};
-		score_type	m_gap_extension_penalty{};
+		quality_lookup_array		m_mismatch_penalties;
+		quality_lookup_array		m_n_penalties;
+		alignment_scoring			m_scoring{};
+		panvc3::seqan3_sam_tag_type	m_ref_n_positions_tag{};
 		
 	public:
-		cigar_alignment_scorer(score_type const gap_opening_penalty, score_type const gap_extension_penalty):
-			m_gap_opening_penalty(gap_opening_penalty),
-			m_gap_extension_penalty(gap_extension_penalty)
+		cigar_alignment_scorer(alignment_scoring &&scoring, panvc3::seqan3_sam_tag_type const ref_n_positions_tag):
+			m_scoring(std::move(scoring)),
+			m_ref_n_positions_tag(ref_n_positions_tag)
 		{
+			fill_penalties(m_mismatch_penalties, m_scoring.min_mismatch_penalty, m_scoring.max_mismatch_penalty);
+			fill_penalties(m_n_penalties, m_scoring.n_penalty, m_scoring.n_penalty);
 		}
 		
 		alignment_score_type operator()(t_aln_rec &rec, sam_tag_specification const &tag_spec) const override;
 		
 	private:
-		alignment_score_type calculate_score(t_aln_rec const &rec) const;
+		void fill_penalties(quality_lookup_array &penalties, score_type const min, score_type const max);
+		alignment_score_type calculate_score(t_aln_rec const &rec, ref_n_position_vector const &ref_n_positions) const;
 	};
 	
 	
@@ -152,24 +175,35 @@ namespace {
 		if (tags.end() == it)
 			return ALIGNMENT_SCORE_MIN;
 
-		return std::get <alignment_score_tag_type>(it->second);
+		using seqan3::get;
+		return get <alignment_score_tag_type>(it->second);
+	}
+
+
+	template <typename t_aln_rec>
+	void cigar_alignment_scorer <t_aln_rec>::fill_penalties(quality_lookup_array &penalties, score_type const min, score_type const max)
+	{
+		for (std::size_t i(0); i < QUALITY_MAX; ++i)
+			penalties[i] = std::min(i, std::size_t(40)) / double(40) * (max - min) + min; // Cut-off at 40 like in Bowtie 2.
 	}
 	
 	
 	template <typename t_aln_rec>
-	alignment_score_type cigar_alignment_scorer <t_aln_rec>::calculate_score(t_aln_rec const &aln_rec) const
+	alignment_score_type cigar_alignment_scorer <t_aln_rec>::calculate_score(
+		t_aln_rec const &aln_rec,
+		ref_n_position_vector const &ref_n_positions
+	) const
 	{
 		// Calculate the alignment score from the CIGAR and the base qualities.
 		using seqan3::get;
 		using seqan3::operator""_cigar_operation;
+		using seqan3::operator""_dna5;
 		
-		// Getting this from the alignment record seems difficult.
-		typedef seqan3::phred42 quality_alphabet;
-		panvc3::base_quality_scorer <quality_alphabet> scorer;
-		
+		auto const &query_seq(aln_rec.sequence());
 		auto const &cigar_seq(aln_rec.cigar_sequence());
 		auto const &base_qualities(aln_rec.base_qualities());
 		std::size_t query_pos{};
+		std::size_t ref_pos{};
 		char prev_op{};
 		alignment_score_type retval{};
 		for (auto const &item : cigar_seq)
@@ -182,43 +216,63 @@ namespace {
 			{
 				case 'H':	// Hard clipping, consumes nothing.
 				case 'P':	// Padding (silent deletion from padded reference), consumes nothing.
+					// Do not set prev_op.
+					break;
+					
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
 					// Do not set prev_op.
+					ref_pos += count;
 					break;
 					
 				case 'I':	// Insertion, consumes query.
 					if (! ('I' == prev_op || 'D' == prev_op))
-						retval += m_gap_opening_penalty;
+						retval -= m_scoring.gap_opening_penalty;
 					
-					retval += count * m_gap_extension_penalty;
+					retval -= count * m_scoring.gap_extension_penalty;
 					query_pos += count;
 					prev_op = op_;
 					break;
 				
 				case 'D':	// Deletion, consumes reference.
 					if (! ('I' == prev_op || 'D' == prev_op))
-						retval += m_gap_opening_penalty;
+						retval -= m_scoring.gap_opening_penalty;
 					
-					retval += count * m_gap_extension_penalty;
+					retval -= count * m_scoring.gap_extension_penalty;
+					ref_pos += count;
 					prev_op = op_;
 					break;
 				
 				case 'S':	// Soft clipping, consumes query.
-				case '=':	// Match, consumes both.
 					query_pos += count;
+					prev_op = op_;
+					break;
+
+				case '=':	// Match, consumes both.
+					for (std::size_t i(0); i < count; ++i)
+					{
+						if ('N'_dna5 == query_seq[query_pos + i]) // Match implies that reference also has N.
+							retval -= m_n_penalties[base_qualities[query_pos + i].to_rank()];
+					}
+					query_pos += count;
+					ref_pos += count;
 					prev_op = op_;
 					break;
 				
 				case 'X':	// Mismatch, consumes both.
-				{
-					libbio_assert_lte(query_pos + count, base_qualities.size());
-					for (auto const i : rsv::iota(std::remove_cvref_t <decltype(count)>(0), count))
-						retval += scorer.score(false, panvc3::max_letter <quality_alphabet>(), base_qualities[query_pos + i]);
-					
+					for (std::size_t i(0); i < count; ++i)
+					{
+						auto const qp(query_pos + i);
+						auto const rp(ref_pos + i);
+						auto const qual(base_qualities[qp].to_rank());
+						if ('N'_dna5 == query_seq[qp] || ((0x1 << (rp % 8)) & ref_n_positions[rp / 8]))
+							retval -= m_n_penalties[qual];
+						else
+							retval -= m_mismatch_penalties[qual];
+					}
 					query_pos += count;
+					ref_pos += count;
 					prev_op = op_;
 					break;
-				}
 				
 				case 'M':	// Match or mismatch, consumes both.
 				default:
@@ -234,21 +288,32 @@ namespace {
 	template <typename t_aln_rec>
 	alignment_score_type cigar_alignment_scorer <t_aln_rec>::operator()(t_aln_rec &aln_rec, sam_tag_specification const &tag_spec) const
 	{
-		auto const new_score(calculate_score(aln_rec));
-		
-		// Retrieve the alignment score from the AS tag.
+		using seqan3::get;
+
 		auto &tags(aln_rec.tags());
-		auto const it(tags.find("AS"_tag));
+		auto const it(tags.find(tag_spec.ref_n_positions_tag));
 		if (tags.end() == it)
 		{
-			auto &as_tag(tags.template get <"AS"_tag>());
-			as_tag = new_score;
+			std::cerr << "WARNING: Reference N positions not set in record '" << aln_rec.id() << "'; skipping.\n";
+			return 0;
 		}
-		else
+
+		auto const new_score(calculate_score(aln_rec, get <ref_n_position_vector>(it->second)));
+		
+		// Retrieve the alignment score from the AS tag.
 		{
-			tags[tag_spec.original_alignment_score_tag] = std::get <alignment_score_tag_type>(it->second);
-			tags[tag_spec.new_alignment_score_tag] = float(new_score);
-			it->second = score_type(new_score);
+			auto const it(tags.find("AS"_tag));
+			if (tags.end() == it)
+			{
+				auto &as_tag(tags.template get <"AS"_tag>());
+				as_tag = new_score;
+			}
+			else
+			{
+				tags[tag_spec.original_alignment_score_tag] = get <alignment_score_tag_type>(it->second);
+				tags[tag_spec.new_alignment_score_tag] = float(new_score);
+				it->second = score_type(new_score);
+			}
 		}
 		
 		return new_score;
@@ -425,6 +490,7 @@ namespace {
 		if (score < min_score)
 			return 0;
 		
+		libbio_assert_lte(score, max_score);
 		auto const normalised_score(score - min_score);
 		auto const normalised_score_quotient(normalised_score / score_range);
 		static_assert(std::is_floating_point_v <alignment_score_type>); // For avoiding UB below.
@@ -1136,6 +1202,13 @@ namespace {
 			std::exit(EXIT_FAILURE);
 		}
 
+		// Mismatch penalties.
+		if (args_info.min_mismatch_penalty_arg < 0)		{ std::cerr << "ERROR: Minimum mismatch penalty must be non-negative.\n";	std::exit(EXIT_FAILURE); }
+		if (args_info.max_mismatch_penalty_arg < 0)		{ std::cerr << "ERROR: Maximum mismatch penalty must be non-negative.\n";	std::exit(EXIT_FAILURE); }
+		if (args_info.n_penalty_arg < 0)				{ std::cerr << "ERROR: N character penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
+		if (args_info.gap_opening_penalty_arg < 0)		{ std::cerr << "ERROR: Gap opening penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
+		if (args_info.gap_extension_penalty_arg < 0)	{ std::cerr << "ERROR: Gap extension penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
+
 		// Open the SAM input and output.
 		typedef seqan3::sam_file_input <>								input_type;
 		typedef typename input_type::record_type						record_type;
@@ -1219,6 +1292,7 @@ namespace {
 		});
 		
 		sam_tag_specification const sam_tags{
+			.ref_n_positions_tag{make_sam_tag(args_info.ref_n_positions_tag_arg)},
 			.original_reference_tag{make_sam_tag(args_info.original_rname_tag_arg)},
 			.original_position_tag{make_sam_tag(args_info.original_pos_tag_arg)},
 			.original_rnext_tag{make_sam_tag(args_info.original_rnext_tag_arg)},
@@ -1239,8 +1313,14 @@ namespace {
 		bowtie2_v2_score_calculator score_calculator;
 		if (args_info.rescore_alignments_given)
 		{
-			// FIXME: Add bounds check.
-			cigar_alignment_scorer <record_type> aln_scorer(args_info.gap_opening_penalty_arg, args_info.gap_extension_penalty_arg);
+			// FIXME: Check upper bound (INT32_MAX).
+			cigar_alignment_scorer <record_type> aln_scorer(alignment_scoring{
+				.min_mismatch_penalty	= alignment_scoring::score_type(args_info.min_mismatch_penalty_arg),
+				.max_mismatch_penalty	= alignment_scoring::score_type(args_info.max_mismatch_penalty_arg),
+				.n_penalty				= alignment_scoring::score_type(args_info.n_penalty_arg),
+				.gap_opening_penalty	= alignment_scoring::score_type(args_info.gap_opening_penalty_arg),
+				.gap_extension_penalty	= alignment_scoring::score_type(args_info.gap_extension_penalty_arg)
+			}, sam_tags.ref_n_positions_tag);
 			mapq_scorer_type scorer(aln_scorer, score_calculator, sam_tags);
 			process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg);
 		}

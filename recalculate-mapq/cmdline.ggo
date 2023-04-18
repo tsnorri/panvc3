@@ -6,6 +6,7 @@ version		"0.1"
 purpose		"Recalculate the mapping quality from the given alignments"
 usage		"recalculate_mapq --alignments=alignments.bam > projected.sam"
 description	"Takes projected alignments sorted by QNAME as input, outputs the best representative in terms of AS value for each such group. The MAPQ value is calculated w.r.t. the alignment that has the best AS value but has different position. All alignments are marked primary in the output."
+text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
 section		"Input options"
 option		"alignments"					a	"Alignment file path"														string	typestr = "filename"							optional
@@ -18,8 +19,12 @@ option		"status-output-interval"		-	"Status output interval in minutes, zero to 
 
 section		"Scoring options"
 option		"rescore-alignments"			-	"Recalculate the alignment scores instead of using the AS tag value"		flag	off
-option		"gap-opening-penalty"			-	"Gap opening penalty"														long	default = "-5"	dependon = "rescore-alignments"	optional
-option		"gap-extension-penalty"			-	"Gap extension penalty"														long	default = "-3"	dependon = "rescore-alignments"	optional
+option		"min-mismatch-penalty"			-	"Minimum mismatch penalty"													long	default = "2"	dependon = "rescore-alignments"	optional
+option		"max-mismatch-penalty"			-	"Maximum mismatch penalty"													long	default = "6"	dependon = "rescore-alignments"	optional
+option		"n-penalty"						-	"N character penalty"														long	default = "1"	dependon = "rescore-alignments"	optional
+option		"gap-opening-penalty"			-	"Gap opening penalty"														long	default = "5"	dependon = "rescore-alignments"	optional
+option		"gap-extension-penalty"			-	"Gap extension penalty"														long	default = "3"	dependon = "rescore-alignments"	optional
+option		"ref-n-positions-tag"			-	"SAM tag for the N character positions in the reference"					string	default = "XN"	dependon = "rescore-alignments"	optional
 text		"For rescoring alignments, the CIGAR strings need to use ‘=’ and ‘X’ characters in place of ‘M’ characters."
 
 section		"Alignment record formatting"
