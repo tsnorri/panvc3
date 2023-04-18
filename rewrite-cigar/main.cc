@@ -12,8 +12,10 @@
 #include <map>
 #include <mutex>
 #include <panvc3/compressed_fasta_reader.hh>
+#include <panvc3/sam_tag.hh>
 #include <panvc3/utility.hh>
 #include <range/v3/view/enumerate.hpp>
+#include <regex>
 #include <seqan3/alphabet/cigar/cigar.hpp>
 #include <seqan3/io/sam_file/all.hpp>
 #include <syncstream>
@@ -118,23 +120,51 @@ namespace {
 			output_header.program_infos
 		);
 	}
+
+
+	inline void fill_ref_n_positions(
+		std::vector <char> const &ref,
+		std::vector <std::uint8_t> &ref_n_positions,
+		std::size_t const ref_base_pos,
+		std::size_t const ref_pos,
+		std::size_t const count
+	)
+	{
+		// Reserve space.
+		ref_n_positions.resize((ref_pos + count + 7) / 8, 0);
+
+		// Mark the N character positions.
+		for (std::size_t i(0); i < count; ++i)
+		{
+			auto const cc(ref[ref_base_pos + ref_pos + i]);
+			if ('N' == cc)
+			{
+				auto const bidx((ref_pos + i) / 8);
+				auto const mask(std::uint8_t(1) << ((ref_pos + i) % 8));
+				ref_n_positions[bidx] |= mask;
+			}
+		}
+	}
 	
 	
 	template <typename t_query_seq>
 	void rewrite_cigar(
 		std::vector <char> const &ref,
-		std::size_t ref_pos,
+		std::size_t const ref_base_pos,
 		t_query_seq const &query_seq,
 		std::vector <seqan3::cigar> const &cigar_seq,
-		std::vector <seqan3::cigar> &cigar_output
+		std::vector <seqan3::cigar> &cigar_output,
+		std::vector <std::uint8_t> &ref_n_positions_output
 	)
 	{
 		using seqan3::get;
 		using seqan3::operator""_cigar_operation;
 
 		cigar_output.clear();
+		ref_n_positions_output.clear();
 		
 		std::size_t query_pos{};
+		std::size_t ref_pos{};
 		for (auto const &item : cigar_seq)
 		{
 			auto const count(get <0>(item));
@@ -157,6 +187,7 @@ namespace {
 				case '=':	// Match, consumes both.
 				case 'X':	// Mismatch, consumes both.
 					cigar_output.push_back(item);
+					fill_ref_n_positions(ref, ref_n_positions_output, ref_base_pos, ref_pos, count);
 					query_pos += count;
 					ref_pos += count;
 					break;
@@ -164,17 +195,19 @@ namespace {
 				case 'D':	// Deletion, consumes reference.
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
 					cigar_output.push_back(item);
+					fill_ref_n_positions(ref, ref_n_positions_output, ref_base_pos, ref_pos, count);
 					ref_pos += count;
 					break;
 				
 				case 'M':	// Match or mismatch, consumes both.
 				{
 					libbio_assert_lte(query_pos + count, query_seq.size());
+					fill_ref_n_positions(ref, ref_n_positions_output, ref_base_pos, ref_pos, count);
 					std::size_t prev_count(1);
-					auto prev_op(query_seq[query_pos].to_char() == ref[ref_pos] ? '='_cigar_operation : 'X'_cigar_operation);
+					auto prev_op(query_seq[query_pos].to_char() == ref[ref_base_pos + ref_pos] ? '='_cigar_operation : 'X'_cigar_operation);
 					for (std::size_t i(1); i < count; ++i)
 					{
-						auto const curr_op(query_seq[query_pos + i].to_char() == ref[ref_pos + i] ? '='_cigar_operation : 'X'_cigar_operation);
+						auto const curr_op(query_seq[query_pos + i].to_char() == ref[ref_base_pos + ref_pos + i] ? '='_cigar_operation : 'X'_cigar_operation);
 						if (curr_op == prev_op)
 							++prev_count;
 						else
@@ -203,7 +236,13 @@ namespace {
 	
 	
 	template <typename t_aln_input, typename t_aln_output>
-	void process_alignments(t_aln_input &&aln_input, t_aln_output &&aln_output, char const *ref_path, std::uint16_t const status_output_interval)
+	void process_alignments(
+		t_aln_input &&aln_input,
+		t_aln_output &&aln_output,
+		char const *ref_path,
+		panvc3::seqan3_sam_tag_type const ref_n_positions_tag,
+		std::uint16_t const status_output_interval
+	)
 	{
 		typedef chrono::steady_clock	clock_type;
 		
@@ -229,6 +268,8 @@ namespace {
 					auto const pp(clock_type::now());
 					auto const running_time{pp - start_time};
 
+					// Inaccurate b.c. rec_idx is not atomic.
+					// FIXME: come up with a better way to report status.
 					std::osyncstream cerr(std::cerr);
 					lb::log_time(cerr) << "Time spent processing: ";
 					panvc3::log_duration(cerr, running_time);
@@ -247,6 +288,7 @@ namespace {
 		}()};
 		
 		std::vector <seqan3::cigar> cigar_buffer;
+		std::vector <std::uint8_t> n_positions_buffer;
 		for (auto &aln_rec : aln_input)
 		{
 			++rec_idx;
@@ -282,7 +324,8 @@ namespace {
 				lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
 			}
 			
-			rewrite_cigar(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer);
+			rewrite_cigar(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer, n_positions_buffer);
+			aln_rec.tags()[ref_n_positions_tag] = n_positions_buffer;
 			
 			{
 				using std::swap;
@@ -335,6 +378,23 @@ namespace {
 			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
 			ref_ids_type
 		>																output_type;
+
+		// Tags.
+		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
+		auto const make_sam_tag([&tag_regex](char const *tag) -> panvc3::seqan3_sam_tag_type {
+			if (!tag)
+				return 0;
+
+			if (!std::regex_match(tag, tag_regex))
+			{
+				std::cerr << "ERROR: The given tag '" << tag << "' does not match the expected format.\n";
+				std::exit(EXIT_FAILURE);
+			}
+
+			std::array <char, 2> buffer{tag[0], tag[1]};
+			return panvc3::to_tag(buffer);
+		});
+		auto const ref_n_positions_tag(make_sam_tag(args_info.ref_n_positions_tag_arg));
 		
 		// Status output interval
 		if (args_info.status_output_interval_arg < 0)
@@ -379,7 +439,7 @@ namespace {
 		aln_output.header().ref_dict = aln_input.header().ref_dict;
 		append_program_info(aln_input.header(), aln_output.header(), argc, argv);
 		
-		process_alignments(aln_input, aln_output, args_info.reference_arg, args_info.status_output_interval_arg);
+		process_alignments(aln_input, aln_output, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
 	}
 }
 
