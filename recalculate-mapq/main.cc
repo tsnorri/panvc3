@@ -479,7 +479,7 @@ namespace {
 		sequence_length_type const read_length,
 		sequence_length_type const other_read_length,					// Pass zero if not paired.
 		alignment_score_type const score,								// AS
-		alignment_score_type const next_score							// AS/XS, pass ALIGNMENT_SCORE_MIN if no other alignments.
+		alignment_score_type const next_score_							// AS/XS, pass ALIGNMENT_SCORE_MIN if no other alignments.
 	) const
 	{
 		auto const min_score(calculate_read_min_score(read_length) + calculate_read_min_score(other_read_length)); // Score of a barely valid match
@@ -489,6 +489,9 @@ namespace {
 		// Check if the score is too low.
 		if (score < min_score)
 			return 0;
+
+		// Try to cope with the situation that the next alignment is not good enough.
+		auto const next_score(min_score < next_score_ ? next_score_ : min_score);
 		
 		libbio_assert_lte(score, max_score);
 		auto const normalised_score(score - min_score);
@@ -516,27 +519,42 @@ namespace {
 		}
 		else if (diff_next)
 		{
-			libbio_assert_lte(0, diff_next_quotient);
-			libbio_assert_lte(diff_next_quotient, 1.0);
-			
-			// The following approach is safer than assuming that the difference of the scores in terms of diff_next_threshold is always 0.1.
-			auto const begin(non_unique_alignment_scores.begin());
-			auto const it(ranges::upper_bound(
-				non_unique_alignment_scores,
-				diff_next_quotient,
-				ranges::less{},
-				[](auto const &entry){ return entry.diff_next_threshold; }
-			));
-			libbio_assert_neq(begin, it);
-			auto const diff_next_threshold((it - 1)->diff_next_threshold);
-			auto const it_(std::upper_bound(
-				begin,
-				it,
-				std::make_pair(diff_next_threshold, normalised_score_quotient),
-				score_entry_2_cmp{}
-			));
-			libbio_assert_neq(begin, it_);
-			return (it_ - 1)->mapping_quality;
+			try
+			{
+				libbio_assert_lte(0, diff_next_quotient);
+				libbio_assert_lte(diff_next_quotient, 1.0);
+				
+				// The following approach is safer than assuming that the difference of the scores in terms of diff_next_threshold is always 0.1.
+				auto const begin(non_unique_alignment_scores.begin());
+				auto const it(ranges::upper_bound(
+					non_unique_alignment_scores,
+					diff_next_quotient,
+					ranges::less{},
+					[](auto const &entry){ return entry.diff_next_threshold; }
+				));
+				libbio_assert_neq(begin, it);
+				auto const diff_next_threshold((it - 1)->diff_next_threshold);
+				auto const it_(std::upper_bound(
+					begin,
+					it,
+					std::make_pair(diff_next_threshold, normalised_score_quotient),
+					score_entry_2_cmp{}
+				));
+				libbio_assert_neq(begin, it_);
+				return (it_ - 1)->mapping_quality;
+			}
+			catch (...)
+			{
+				std::cerr
+					<< "diff_next_quotient: " << diff_next_quotient
+					<< " score: " << score
+					<< " next_score: " << next_score
+					<< " max_score: " << max_score
+					<< " min_score: " << min_score
+					<< " score_range: " << score_range
+					<< std::endl;
+				throw;
+			}
 		}
 		else
 		{
