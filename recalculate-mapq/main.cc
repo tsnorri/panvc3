@@ -1187,6 +1187,11 @@ namespace {
 			}
 			++rec_idx;
 
+			// Ignore unmapped.
+			auto const flags(aln_rec.flag());
+			if (lb::to_underlying(flags & seqan3::sam_flag::unmapped))
+				continue;
+
 			if (rec_buffer.empty())
 			{
 				rec_buffer.emplace_back(std::move(aln_rec));
