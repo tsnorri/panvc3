@@ -295,7 +295,7 @@ namespace {
 		if (tags.end() == it)
 		{
 			std::cerr << "WARNING: Reference N positions not set in record '" << aln_rec.id() << "'; skipping.\n";
-			return 0;
+			return ALIGNMENT_SCORE_MIN;
 		}
 
 		auto const new_score(calculate_score(aln_rec, get <ref_n_position_vector>(it->second)));
@@ -637,6 +637,13 @@ namespace {
 	
 	
 	constexpr static inline const position INVALID_POSITION{UINT32_MAX, SEQUENCE_LENGTH_MAX};
+
+
+	std::ostream &operator<<(std::ostream &os, position const &pos)
+	{
+		os << pos.chr << ':' << pos.pos;
+		return os;
+	}
 	
 	
 	template <typename t_reference_id, typename t_position>
@@ -731,6 +738,55 @@ namespace {
 		constexpr bool operator==(position_pair const &other) const { return to_tuple() == other.to_tuple(); }
 		constexpr bool has_mate() const { return INVALID_POSITION != rhs; }
 	};
+
+
+	std::ostream &operator<<(std::ostream &os, position_pair const &pp)
+	{
+		os << "(lhs: " << pp.lhs << ", rhs: " << pp.rhs << ")";
+		return os;
+	}
+
+		
+	template <typename t_aln_record>
+	struct scored_record
+	{
+		t_aln_record			*record{};
+		alignment_score_type	alignment_score{};
+		alignment_score_type	pairwise_score{};
+		sequence_length_type	mate_length{};
+	};
+
+
+	template <typename t_aln_record>
+	std::ostream &operator<<(std::ostream &os, scored_record <t_aln_record> const &sr)
+	{
+		os << "(rec: " << sr.record;
+		if (sr.record)
+			os << " id: " << sr.record->id();
+		os << " AS: " << sr.alignment_score << " PS: " << sr.pairwise_score << " mate_length: " << sr.mate_length << ")";
+		return os;
+	}
+
+
+	template <typename t_sequence>
+	struct paired_segment_score
+	{
+		typedef t_sequence sequence_type;
+
+		position_pair			positions{};
+		sequence_type			*sequence{};
+		alignment_score_type	score{};
+		alignment_score_type	other_score{};
+		bool					has_mate{};
+		
+		alignment_score_type total_score() const { return score + other_score; }
+		alignment_score_type max_score() const { return (has_mate ? std::max(score, other_score) : score); }
+		
+		struct project_positions
+		{
+			constexpr auto operator()(paired_segment_score const &desc) const { return desc.positions; }
+		};
+	};
 	
 	
 	template <typename t_aln_record>
@@ -769,45 +825,21 @@ namespace {
 		};
 		
 		typedef panvc3::cmp_proj <segment_description, typename segment_description::project_position> cmp_segment_description_position;
-		
-		struct paired_segment_score
-		{
-			position_pair			positions{};
-			sequence_type			*sequence{};
-			alignment_score_type	score{};
-			alignment_score_type	other_score{};
-			bool					has_mate{};
-			
-			alignment_score_type total_score() const { return score + other_score; }
-			alignment_score_type max_score() const { return (has_mate ? std::max(score, other_score) : score); }
-			
-			struct project_positions
-			{
-				constexpr auto operator()(paired_segment_score const &desc) const { return desc.positions; }
-			};
-		};
-		
-		typedef panvc3::cmp_proj <paired_segment_score, typename paired_segment_score::project_positions> cmp_paired_segment_score_positions;
-		
-		struct scored_record
-		{
-			t_aln_record			*record{};
-			alignment_score_type	alignment_score{};
-			alignment_score_type	pairwise_score{};
-			sequence_length_type	mate_length{};
-		};
+		typedef scored_record <t_aln_record>			scored_record_type;
+		typedef paired_segment_score <sequence_type>	paired_segment_score_type;
+		typedef panvc3::cmp_proj <paired_segment_score_type, typename paired_segment_score_type::project_positions> cmp_paired_segment_score_positions;
 		
 	private:
-		alignment_scorer_type				*m_aln_scorer{};
-		mapq_score_calculator				*m_scorer{};
-		std::vector <segment_description>	m_segment_descriptions_by_original_position;
-		std::vector <paired_segment_score>	m_paired_segment_scores_by_projected_position;
-		std::vector <scored_record>			m_scored_records;
-		sam_tag_specification				m_sam_tags{};
-		struct statistics					m_statistics{};
+		alignment_scorer_type					*m_aln_scorer{};
+		mapq_score_calculator					*m_scorer{};
+		std::vector <segment_description>		m_segment_descriptions_by_original_position;
+		std::vector <paired_segment_score_type>	m_paired_segment_scores_by_projected_position;
+		std::vector <scored_record_type>		m_scored_records;
+		sam_tag_specification					m_sam_tags{};
+		struct statistics						m_statistics{};
 		
 	private:
-		void add_paired_segment_score(paired_segment_score const &pss);
+		void add_paired_segment_score(paired_segment_score_type const &pss);
 		
 	public:
 		mapq_scorer(
@@ -829,10 +861,18 @@ namespace {
 			
 		struct statistics const &statistics() const { return m_statistics; }
 	};
+
+
+	template <typename t_sequence>
+	std::ostream &operator<<(std::ostream &os, paired_segment_score <t_sequence> const &pss)
+	{
+		os << "(positions: " << pss.positions << " sequence: " << pss.sequence << " score: " << pss.score << " other_score: " << pss.other_score << " has_mate: " << pss.has_mate << ")";
+		return os;
+	}
 	
 	
 	template <typename t_aln_record>
-	void mapq_scorer <t_aln_record>::add_paired_segment_score(paired_segment_score const &pss)
+	void mapq_scorer <t_aln_record>::add_paired_segment_score(paired_segment_score_type const &pss)
 	{
 		auto it(std::lower_bound(
 			m_paired_segment_scores_by_projected_position.begin(),
@@ -928,7 +968,7 @@ namespace {
 		m_segment_descriptions_by_original_position.clear();
 		m_segment_descriptions_by_original_position.reserve(alignments.size());
 		m_scored_records.clear();
-		m_scored_records.resize(alignments.size(), scored_record{nullptr, ALIGNMENT_SCORE_MIN, ALIGNMENT_SCORE_MIN, 0});
+		m_scored_records.resize(alignments.size(), scored_record_type{nullptr, ALIGNMENT_SCORE_MIN, ALIGNMENT_SCORE_MIN, 0});
 		std::uint8_t seen_record_types{}; // 0x3 for both.
 		for (auto &&[aln_rec, scored_rec] : rsv::zip(alignments, m_scored_records))
 		{
@@ -980,10 +1020,10 @@ namespace {
 				auto &aln_rec(*sr.record);
 				position_pair const projected_pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
 				bool const has_mate(projected_pos.has_mate());
-				paired_segment_score pss{projected_pos, has_mate ? nullptr : &aln_rec.sequence(), sr.alignment_score, 0, false};
+				paired_segment_score_type pss{projected_pos, has_mate ? nullptr : &aln_rec.sequence(), sr.alignment_score, 0, false};
 				
 				// Min. score only allowed for invalid positions.
-				libbio_assert((INVALID_POSITION != pss.positions.lhs) ^ (ALIGNMENT_SCORE_MIN == pss.score));
+				libbio_assert_msg((INVALID_POSITION != pss.positions.lhs) ^ (ALIGNMENT_SCORE_MIN == pss.score), "pss: ", pss, " sr: ", sr);
 				
 				// Determine the mate’s position only if the alignment has a valid position.
 				sequence_length_type mate_length{};
