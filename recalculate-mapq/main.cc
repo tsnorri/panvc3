@@ -807,6 +807,7 @@ namespace {
 			std::uint64_t	unpaired_alignments{};
 			std::uint64_t	reads_with_and_without_mate{};
 			std::uint64_t	mate_not_found{};
+			std::uint64_t	reads_without_valid_position{};
 		};
 		
 		struct segment_description
@@ -1008,6 +1009,17 @@ namespace {
 		
 		m_segment_descriptions_by_original_position.emplace_back(INVALID_POSITION, 0, 0); // Add a sentinel for extra safety.
 		std::sort(m_segment_descriptions_by_original_position.begin(), m_segment_descriptions_by_original_position.end());
+		
+		{
+			auto const begin(m_segment_descriptions_by_original_position.begin());
+			auto const it(std::lower_bound(begin, m_segment_descriptions_by_original_position.end(), INVALID_POSITION, cmp_segment_description_position{}));
+			auto const valid_count(std::distance(begin, it));
+			if (0 == valid_count)
+			{
+				++m_statistics.reads_without_valid_position;
+				std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().id() << "’ has no alignments with a valid position.\n";
+			}
+		}
 		
 		// Determine the sum of the scores for each pair.
 		// m_scored_records is needed so that we don’t need to re-calculate the score after partitioning the records.
@@ -1225,6 +1237,7 @@ namespace {
 			cerr << "\tUnpaired alignments: " << statistics.unpaired_alignments << '\n';
 			cerr << "\tRecords with mate missing: " << statistics.mate_not_found << '\n';
 			cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
+			cerr << "\tReads without valid positions: " << statistics.reads_without_valid_position << '\n';
 			cerr << std::flush;
 		}
 	}
