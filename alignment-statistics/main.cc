@@ -457,7 +457,8 @@ namespace {
 				}
 
 				auto const mapq(aln_rec.mapping_quality());
-				acc(mapq);
+				if (mapq < 255) // Ignore invalid values.
+					acc(mapq);
 			}
 		);
 
