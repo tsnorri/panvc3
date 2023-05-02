@@ -146,21 +146,21 @@ namespace {
 		typedef typename alignment_input_traits_type::ref_ids			reference_ids_type;
 		
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
-		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
+		bool const requires_same_contig_in_next(args_info.same_ref_flag);
 		
 		reference_ids_type const &reference_ids(aln_input.header().ref_ids());
 		std::vector <std::size_t> filtered_ref_ids; // Filter == keep.
 		std::vector <std::size_t> ref_id_eq_classes(reference_ids.size(), SIZE_MAX);
 
-		// Check if any RNAME prefixes were given.
-		for (unsigned int i(0); i < args_info.rname_prefix_given; ++i)
+		// Check if any RNAME (prefixes) were given.
+		for (unsigned int i(0); i < args_info.rname_given; ++i)
 		{
-			auto const *prefix(args_info.rname_prefix_arg[i]);
-			std::string_view const prefix_sv(prefix);
+			auto const *rname(args_info.rname_arg[i]);
+			std::string_view const rname_sv(rname);
 			
 			for (auto const &[ref_id, ref_name] : rsv::enumerate(reference_ids))
 			{
-				if (ref_name.starts_with(prefix_sv))
+				if (ref_name == rname_sv || (args_info.rname_prefix_given && ref_name.starts_with(rname_sv)))
 				{
 					std::cerr << "Filtering by reference '" << ref_name << "' (" << ref_id << ").\n";
 					filtered_ref_ids.push_back(ref_id);
@@ -217,10 +217,10 @@ namespace {
 					continue;
 				}
 				
-				// Check the contig prefix of the next primary alignment.
+				// Check the contig (prefix) of the next primary alignment.
 				// (Currently we do not try to determine the reference ID of all the possible alignments
 				// of the next read.)
-				if (requires_same_config_prefix_in_next)
+				if (requires_same_contig_in_next)
 				{
 					auto const mate_ref_id(aln_rec.mate_reference_id());
 					if (!mate_ref_id.has_value())
@@ -505,9 +505,9 @@ int main(int argc, char **argv)
 	
 	if (args_info.same_ref_flag)
 	{
-		if (!args_info.rname_prefix_given)
+		if (!args_info.rname_given)
 		{
-			std::cerr << "ERROR: --same-ref requires --rname-prefix." << std::endl;
+			std::cerr << "ERROR: --same-ref requires --rname." << std::endl;
 			return EXIT_FAILURE;
 		}
 		

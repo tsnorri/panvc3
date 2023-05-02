@@ -11,7 +11,8 @@ section "Input options"
 option		"alignments"		a	"Alignment file path"														string	typestr = "filename"					optional
 option		"bam-input"			b	"Input read from stdin is in BAM format"									flag	off
 section "Alignment options"
-option		"rname-prefix"		p	"Filter alignments by the given RNAME prefix"								string	typestr = "prefix"						optional	multiple
+option		"rname"				r	"Filter alignments by the given RNAME"										string											optional	multiple
+option		"rname-prefix"		p	"Treat RNAMEs as prefixes"													flag	off
 option		"primary-only"		m	"Consider primary alignments only"											flag	off
 option		"same-ref"			s	"Consider alignments with the same contig prefix only"						flag	off
 option		"include-clipping"	l	"Include soft clipping"														flag	off
