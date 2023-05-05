@@ -852,9 +852,11 @@ namespace {
 					libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT (", gt.size(), ")"); // FIXME: error message, or handle other zygosities.
 					
 					// Check the zygosity. (Generalised for polyploid.)
-					static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
-					auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::int16_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
-						return acc + (sample_gt.alt ? 1 : 0);
+					static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::int64_t or similar.
+					auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::int64_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
+						auto const res(acc + (sample_gt.alt ? 1 : 0));
+						libbio_always_assert_lte(acc, res);
+						return res;
 					}));
 					
 					if (0 <= expected_zygosity && zygosity != expected_zygosity)
