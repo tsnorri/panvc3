@@ -10,6 +10,7 @@ description	"Currently coverage per position and the number of alignments for ea
 section "Input options"
 option		"alignments"		a	"Alignment file path"														string	typestr = "filename"	optional
 option		"bam-input"			b	"Input read from stdin is in BAM format"									flag	off
+
 section "Alignment options"
 option		"rname-prefix"		p	"Filter alignments by the given RNAME prefix"								string	typestr = "prefix"		optional	multiple
 option		"primary-only"		m	"Consider primary alignments only"											flag	off
