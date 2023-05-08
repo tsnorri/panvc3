@@ -536,8 +536,7 @@ namespace {
 	protected:
 		alignment_iterator_type		m_it;
 		alignment_sentinel_type		m_end;
-		reference_ids_type const	&m_reference_ids; // Change to a pointer if needed.
-		char const					*m_contig_prefix{};
+		std::vector <bool>			m_target_contigs;
 		record_set					m_candidate_records;
 		alignment_statistics		m_statistics{};
 		std::size_t					m_prev_record_pos{};
@@ -548,17 +547,27 @@ namespace {
 	public:
 		alignment_reader(
 			t_aln_input &aln_input,
-			char const *contig_prefix,
+			char const *contig,
+            bool const should_treat_contig_as_prefix,
 			bool const should_consider_primary_alignments_only,
 			bool const requires_same_config_prefix_in_next
 		):
 			m_it(aln_input.begin()),
 			m_end(aln_input.end()),
-			m_reference_ids(aln_input.header().ref_ids()),
-			m_contig_prefix(contig_prefix),
+			m_target_contigs(aln_input.header().ref_ids().size()),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_requires_same_config_prefix_in_next(requires_same_config_prefix_in_next)
 		{
+			if (!contig)
+				m_target_contigs.flip(); // Allow all.
+			else
+			{
+				for (auto const &[idx, rname] : rsv::enumerate(aln_input.header().ref_ids()))
+				{
+					if (should_treat_contig_as_prefix ? rname.starts_with(contig) : rname == contig)
+						m_target_contigs[idx] = true;
+				}
+			}
 		}
 		
 		record_set const &candidate_records() const { return m_candidate_records; }
@@ -602,38 +611,34 @@ namespace {
 				
 				// Check the contig name if requested.
 				auto const ref_id(aln_rec.reference_id());
-				if (m_contig_prefix)
+				if (!ref_id.has_value())
 				{
-					// Check the contig prefix for the current alignment.
-					if (!ref_id.has_value())
+					++m_statistics.ref_id_mismatches;
+					continue;
+				}
+
+				if (!m_target_contigs[*ref_id])
+				{
+					++m_statistics.ref_id_mismatches;
+					continue;
+				}
+
+				// Check the contig prefix of the next primary alignment.
+				// (Currently we do not try to determine the reference ID of all the possible alignments
+				// of the next read.)
+				if (m_requires_same_config_prefix_in_next)
+				{
+					auto const mate_ref_id(aln_rec.mate_reference_id());
+					if (!mate_ref_id.has_value())
 					{
-						++m_statistics.ref_id_mismatches;
+						++m_statistics.mate_ref_id_mismatches;
 						continue;
 					}
 					
-					if (!m_reference_ids[*ref_id].starts_with(m_contig_prefix))
+					if (!m_target_contigs[*mate_ref_id])
 					{
-						++m_statistics.ref_id_mismatches;
+						++m_statistics.mate_ref_id_mismatches;
 						continue;
-					}
-					
-					// Check the contig prefix of the next primary alignment.
-					// (Currently we do not try to determine the reference ID of all the possible alignments
-					// of the next read.)
-					if (m_requires_same_config_prefix_in_next)
-					{
-						auto const mate_ref_id(aln_rec.mate_reference_id());
-						if (!mate_ref_id.has_value())
-						{
-							++m_statistics.mate_ref_id_mismatches;
-							continue;
-						}
-						
-						if (!m_reference_ids[*mate_ref_id].starts_with(m_contig_prefix))
-						{
-							++m_statistics.mate_ref_id_mismatches;
-							continue;
-						}
 					}
 				}
 				
@@ -762,8 +767,9 @@ namespace {
 		auto const regions_path(args_info.regions_arg);
 		auto const expected_zygosity(args_info.zygosity_arg);
 		bool const should_include_clipping(args_info.include_clipping_flag);
+		bool const should_treat_contig_as_prefix(args_info.contig_prefix_flag);
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
-		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
+		bool const requires_same_contig_or_prefix_in_next(args_info.same_ref_flag);
 		bool const should_anchor_reads_left_only(args_info.anchor_left_flag);
 		
 		// Open the VCF file.
@@ -799,9 +805,10 @@ namespace {
 		
 		alignment_reader aln_reader(
 			aln_input,
-			args_info.contig_prefix_arg,
+			args_info.contig_arg,
+			should_treat_contig_as_prefix,
 			should_consider_primary_alignments_only,
-			requires_same_config_prefix_in_next
+			requires_same_contig_or_prefix_in_next
 		);
 		std::map <panvc3::dna11_vector, std::size_t> supported_sequences;
 		panvc3::dna11_vector buffer;
@@ -852,9 +859,11 @@ namespace {
 					libbio_always_assert_eq_msg(2, gt.size(), "Variant on line ", var.lineno(), " has non-diploid GT (", gt.size(), ")"); // FIXME: error message, or handle other zygosities.
 					
 					// Check the zygosity. (Generalised for polyploid.)
-					static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::uint64_t or similar.
-					auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::int16_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
-						return acc + (sample_gt.alt ? 1 : 0);
+					static_assert(0x7fff == vcf::sample_genotype::NULL_ALLELE); // Should be positive and small enough s.t. the sum can fit into std::int64_t or similar.
+					auto const zygosity(std::accumulate(gt.begin(), gt.end(), std::int64_t(0), [](auto const acc, vcf::sample_genotype const &sample_gt){
+						auto const res(acc + (sample_gt.alt ? 1 : 0));
+						libbio_always_assert_lte(acc, res);
+						return res;
 					}));
 					
 					if (0 <= expected_zygosity && zygosity != expected_zygosity)
@@ -1003,9 +1012,9 @@ int main(int argc, char **argv)
 	
 	if (args_info.same_ref_flag)
 	{
-		if (!args_info.contig_prefix_arg)
+		if (!args_info.contig_arg)
 		{
-			std::cerr << "ERROR: --same-ref requires --contig-prefix." << std::endl;
+			std::cerr << "ERROR: --same-ref requires --contig." << std::endl;
 			return EXIT_FAILURE;
 		}
 		

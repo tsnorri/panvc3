@@ -3,6 +3,19 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <sstream> // Needed by boost::accumulators.
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/count.hpp>
+#include <boost/accumulators/statistics/extended_p_square_quantile.hpp>
+#include <boost/accumulators/statistics/max.hpp>
+#include <boost/accumulators/statistics/min.hpp>
+#include <boost/accumulators/statistics/stats.hpp>
+#pragma GCC diagnostic pop
+
 #include <deque>
 #include <iostream>
 #include <libbio/assert.hh>
@@ -13,6 +26,7 @@
 #include <seqan3/io/sam_file/all.hpp>
 #include "cmdline.h"
 
+namespace accs	= boost::accumulators;
 namespace fs	= std::filesystem;
 namespace lb	= libbio;
 namespace rsv	= ranges::views;
@@ -132,21 +146,21 @@ namespace {
 		typedef typename alignment_input_traits_type::ref_ids			reference_ids_type;
 		
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
-		bool const requires_same_config_prefix_in_next(args_info.same_ref_flag);
+		bool const requires_same_contig_in_next(args_info.same_ref_flag);
 		
 		reference_ids_type const &reference_ids(aln_input.header().ref_ids());
 		std::vector <std::size_t> filtered_ref_ids; // Filter == keep.
 		std::vector <std::size_t> ref_id_eq_classes(reference_ids.size(), SIZE_MAX);
 
-		// Check if any RNAME prefixes were given.
-		for (unsigned int i(0); i < args_info.rname_prefix_given; ++i)
+		// Check if any RNAME (prefixes) were given.
+		for (unsigned int i(0); i < args_info.rname_given; ++i)
 		{
-			auto const *prefix(args_info.rname_prefix_arg[i]);
-			std::string_view const prefix_sv(prefix);
+			auto const *rname(args_info.rname_arg[i]);
+			std::string_view const rname_sv(rname);
 			
 			for (auto const &[ref_id, ref_name] : rsv::enumerate(reference_ids))
 			{
-				if (ref_name.starts_with(prefix_sv))
+				if (ref_name == rname_sv || (args_info.rname_prefix_given && ref_name.starts_with(rname_sv)))
 				{
 					std::cerr << "Filtering by reference '" << ref_name << "' (" << ref_id << ").\n";
 					filtered_ref_ids.push_back(ref_id);
@@ -203,10 +217,10 @@ namespace {
 					continue;
 				}
 				
-				// Check the contig prefix of the next primary alignment.
+				// Check the contig (prefix) of the next primary alignment.
 				// (Currently we do not try to determine the reference ID of all the possible alignments
 				// of the next read.)
-				if (requires_same_config_prefix_in_next)
+				if (requires_same_contig_in_next)
 				{
 					auto const mate_ref_id(aln_rec.mate_reference_id());
 					if (!mate_ref_id.has_value())
@@ -381,6 +395,75 @@ namespace {
 			std::cout << val << '\t' << count << '\n';
 		}
 	}
+
+
+	template <typename t_aln_input>
+	void mapq_box_plot(
+		t_aln_input &aln_input,
+		alignment_statistics &stats,
+		gengetopt_args_info const &args_info
+	)
+	{
+		if (args_info.bin_width_arg <= 0)
+		{
+			std::cerr << "ERROR: Bin width must be positive.\n";
+			std::exit(EXIT_FAILURE);
+		}
+		std::uint64_t const bin_width(args_info.bin_width_arg);
+		std::uint64_t current_bin{};
+
+		lb::log_time(std::cerr) << "Calculating the box plot parameters from the MAPQ values…\n";
+		std::cerr << "NOTE: Currently the data should be sorted and filtered by chromosome.\n";
+		std::cout << "BIN\tMIN\tq10\tq25\tMED\tq75\tq90\tMAX\tCOUNT\n";
+
+		typedef accs::accumulator_set <double, accs::stats <
+			accs::tag::count,
+			accs::tag::min,
+			accs::tag::max,
+			accs::tag::extended_p_square_quantile
+		>> accumulator_type;
+		std::array const probabilities{0.1, 0.25, 0.50, 0.75, 0.9};
+
+		accumulator_type acc(accs::extended_p_square_probabilities = probabilities);
+
+		auto print_cb([&](){
+			std::cout
+				<< current_bin << '\t'
+				<< accs::min(acc) << '\t'
+				<< accs::quantile(acc, accs::quantile_probability = 0.1) << '\t'
+				<< accs::quantile(acc, accs::quantile_probability = 0.25) << '\t'
+				<< accs::quantile(acc, accs::quantile_probability = 0.5) << '\t'
+				<< accs::quantile(acc, accs::quantile_probability = 0.75) << '\t'
+				<< accs::quantile(acc, accs::quantile_probability = 0.9) << '\t'
+				<< accs::max(acc) << '\t'
+				<< accs::count(acc) << '\n';
+		});
+
+		process_alignments(aln_input, args_info, stats,
+			[
+				bin_width,
+				&current_bin,
+				&acc,
+				&probabilities,
+				&print_cb
+			](auto const &aln_rec){
+				auto const rec_ref_pos(*aln_rec.reference_position()); // Check done earlier.
+				auto const bin(rec_ref_pos / bin_width);
+				if (bin != current_bin)
+				{
+					print_cb();
+					current_bin = bin;
+					acc = accumulator_type(accs::extended_p_square_probabilities = probabilities);
+				}
+
+				auto const mapq(aln_rec.mapping_quality());
+				if (mapq < 255) // Ignore invalid values.
+					acc(mapq);
+			}
+		);
+
+		print_cb();
+	}
 	
 	
 	template <typename t_cb>
@@ -423,9 +506,9 @@ int main(int argc, char **argv)
 	
 	if (args_info.same_ref_flag)
 	{
-		if (!args_info.rname_prefix_given)
+		if (!args_info.rname_given)
 		{
-			std::cerr << "ERROR: --same-ref requires --rname-prefix." << std::endl;
+			std::cerr << "ERROR: --same-ref requires --rname." << std::endl;
 			return EXIT_FAILURE;
 		}
 		
@@ -444,6 +527,8 @@ int main(int argc, char **argv)
 			read_input(args_info, [&stats, &args_info](auto &aln_input){ count_alignments_by_contig(aln_input, stats, args_info); });
 		else if (args_info.mapq_histogram_given)
 			read_input(args_info, [&stats, &args_info](auto &aln_input){ mapq_histogram(aln_input, stats, args_info); });
+		else if (args_info.mapq_box_plot_given)
+			read_input(args_info, [&stats, &args_info](auto &aln_input){ mapq_box_plot(aln_input, stats, args_info); });
 		else
 		{
 			std::cerr << "ERROR: No mode given." << std::endl;
