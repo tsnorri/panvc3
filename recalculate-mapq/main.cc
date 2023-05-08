@@ -854,10 +854,12 @@ namespace {
 		{
 		}
 		
-		template <typename t_aln_output>
+		template <typename t_aln_output, typename t_aln_input_ref_ids>
 		void process_alignment_group(
 			alignment_vector &alignments,
-			t_aln_output &&aln_output
+			t_aln_output &&aln_output,
+			t_aln_input_ref_ids const &input_ref_ids,
+			bool const verbose_output_enabled
 		);
 			
 		struct statistics const &statistics() const { return m_statistics; }
@@ -933,12 +935,34 @@ namespace {
 	}
 	
 	
+	template <typename t_aln_record, typename t_ref_ids>
+	void output_mate_not_found_warning(t_aln_record const &aln_rec, t_ref_ids const &ref_ids, position const &mate_original_pos)
+	{
+		auto const &ref_id(aln_rec.reference_id());
+		auto const &ref_pos(aln_rec.reference_position());
+		std::osyncstream cerr(std::cerr);
+		cerr << "WARNING: Mate not found for alignment ‘" << aln_rec.id() << "’ at ";
+		if (ref_id)
+			cerr << ref_ids[*ref_id];
+		else
+			cerr << '*';
+		cerr << ":";
+		if (ref_pos)
+			cerr << *ref_pos;
+		else
+			cerr << '*';
+		cerr << "; mate original position: " << mate_original_pos << '\n' << std::flush;
+	}
+	
+	
 	// Precondition: alignments contains (all) the alignments with the same identifier but not necessarily the same sequence.
 	template <typename t_aln_record>
-	template <typename t_aln_output>
+	template <typename t_aln_output, typename t_aln_input_ref_ids>
 	void mapq_scorer <t_aln_record>::process_alignment_group(
 		alignment_vector &alignments,
-		t_aln_output &&aln_output
+		t_aln_output &&aln_output,
+		t_aln_input_ref_ids const &input_ref_ids,
+		bool const verbose_output_enabled
 	)
 	{
 		// Bowtie 2 calculates the mapping qualities by considering the best and the second best alignment for each
@@ -1049,7 +1073,12 @@ namespace {
 						cmp_segment_description_position{}
 					));
 					if (it == m_segment_descriptions_by_original_position.begin())
+					{
 						++m_statistics.mate_not_found;
+						
+						if (verbose_output_enabled)
+							output_mate_not_found_warning(aln_rec, input_ref_ids, mate_original_pos);
+					}
 					else
 					{
 						auto const it_(it - 1);
@@ -1063,6 +1092,9 @@ namespace {
 						else
 						{
 							++m_statistics.mate_not_found;
+							
+							if (verbose_output_enabled)
+								output_mate_not_found_warning(aln_rec, input_ref_ids, mate_original_pos);
 						}
 					}
 				}
@@ -1151,7 +1183,8 @@ namespace {
 		t_aln_input &&aln_input,
 		t_aln_output &&aln_output,
 		mapq_scorer <t_record> &scorer,
-		std::uint16_t const status_output_interval
+		std::uint16_t const status_output_interval,
+		bool const verbose_output_enabled
 	)
 	{
 		typedef std::remove_cvref_t <t_aln_input>	input_type;
@@ -1215,7 +1248,7 @@ namespace {
 			
 			if (id != eq_class_id)
 			{
-				scorer.process_alignment_group(rec_buffer, aln_output);
+				scorer.process_alignment_group(rec_buffer, aln_output, aln_input.header().ref_ids(), verbose_output_enabled);
 				rec_buffer.clear();
 			}
 			
@@ -1223,7 +1256,7 @@ namespace {
 		}
 		
 		if (!rec_buffer.empty())
-			scorer.process_alignment_group(rec_buffer, aln_output);
+			scorer.process_alignment_group(rec_buffer, aln_output, aln_input.header().ref_ids(), verbose_output_enabled);
 
 		status_output_timer.stop();
 		if (status_output_thread.joinable())
@@ -1398,13 +1431,13 @@ namespace {
 				.gap_extension_penalty	= alignment_scoring::score_type(args_info.gap_extension_penalty_arg)
 			}, sam_tags.ref_n_positions_tag);
 			mapq_scorer_type scorer(aln_scorer, score_calculator, sam_tags);
-			process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg);
+			process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
 		}
 		else
 		{
 			as_tag_alignment_scorer <record_type> aln_scorer;
 			mapq_scorer_type scorer(aln_scorer, score_calculator, sam_tags);
-			process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg);
+			process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
 		}
 	}
 }

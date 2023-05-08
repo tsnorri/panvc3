@@ -16,6 +16,7 @@ section		"Output options"
 option		"output-path"					o	"Output path (stdin by default)"											string	typestr = "path"								optional
 option		"output-bam"					b	"Output BAM instead of SAM"													flag	off
 option		"status-output-interval"		-	"Status output interval in minutes, zero to disable"						short	default = "5"									optional
+option		"verbose"						-	"Enable verbose output"														flag	off
 
 section		"Scoring options"
 option		"rescore-alignments"			-	"Recalculate the alignment scores instead of using the AS tag value"		flag	off
