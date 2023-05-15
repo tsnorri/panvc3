@@ -300,7 +300,13 @@ namespace {
 			{
 				auto const cc(buffer[i]);
 				if ('-' == cc)
+				{
+					// Handle the case where sb.st_size == 0, i.e. reading from a pipe.
+					if (bv.size() <= pos + i)
+						bv.resize(1 + pos + i, 0);
+					
 					bv[pos + i] = 1;
+				}
 				else
 				{
 					if constexpr (t_should_output_seq)
@@ -316,6 +322,9 @@ namespace {
 			
 			pos += bytes_read;
 		}
+		
+		// Make the vector long enough in case sb.st_size was zero.
+		bv.resize(pos, 0);
 		
 		if constexpr (t_should_output_seq)
 		{
