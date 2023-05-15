@@ -266,12 +266,13 @@ namespace {
 
 
 	template <bool t_should_output_seq>
-	void build_index(
+	std::size_t build_index(
 		std::string const &chr_id,
 		std::string const &seq_id,
 		lb::file_handle &read_handle,
 		std::vector <char> &buffer,
 		sdsl::bit_vector &bv,
+		std::size_t const input_size, // 0 if not known
 		std::size_t const wrap_amt
 	)
 	{
@@ -284,7 +285,7 @@ namespace {
 		buffer.resize(sb.st_blksize ?: 4096, 0);
 		
 		bv.clear();
-		bv.resize(sb.st_size, 0);
+		bv.resize(input_size ?: sb.st_size, 0);
 		
 		// Output the FASTA header for this sequence.
 		if constexpr (t_should_output_seq)
@@ -325,12 +326,16 @@ namespace {
 		
 		// Make the vector long enough in case sb.st_size was zero.
 		bv.resize(pos, 0);
+		if (input_size)
+			libbio_always_assert_eq(pos, input_size);
 		
 		if constexpr (t_should_output_seq)
 		{
 			if (0 == wrap_amt || 0 != non_gap_count % wrap_amt)
 				std::cout << '\n';
 		}
+		
+		return pos;
 	}
 
 
@@ -463,6 +468,7 @@ namespace {
 				auto &msa_chr_entry(find_msa_chr_entry(msa_index, entry.chr_id));
 				msa_chr_entry.sequence_entries.reserve(entry.paths.size());
 				
+				std::size_t input_size{};
 				for (auto const &path_str : entry.paths)
 				{
 					handler.process_input(
@@ -474,7 +480,8 @@ namespace {
 							&entry,
 							&chr_group,
 							&msa_chr_entry,
-							&path_str
+							&path_str,
+							&input_size
 						](lb::file_handle &handle){
 							sdsl::bit_vector bv;
 							fs::path const path(path_str);
@@ -482,9 +489,9 @@ namespace {
 							lb::log_time(std::cerr) << "Processing " << fname << "…\n";
 
 							if (m_should_output_fasta)
-								build_index <true>(entry.chr_id, fname, handle, seq_buffer, bv, m_fasta_line_width);
+								input_size = build_index <true>(entry.chr_id, fname, handle, seq_buffer, bv, input_size, m_fasta_line_width);
 							else
-								build_index <false>(entry.chr_id, fname, handle, seq_buffer, bv, m_fasta_line_width);
+								input_size = build_index <false>(entry.chr_id, fname, handle, seq_buffer, bv, input_size, m_fasta_line_width);
 							
 							auto &seq_entry(msa_chr_entry.sequence_entries.emplace_back());
 							lb::dispatch_group_async_fn(*chr_group, global_queue, [fname, bv = std::move(bv), &seq_entry](){
