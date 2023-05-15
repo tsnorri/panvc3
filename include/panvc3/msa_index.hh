@@ -55,8 +55,9 @@ namespace panvc3 {
 			
 			sequence_entry() = default;
 			
-			sequence_entry(std::string &&seq_id_, sdsl::bit_vector const &gap_positions_):
-				seq_id(std::move(seq_id_)),
+			template <typename t_string>
+			sequence_entry(t_string &&seq_id_, sdsl::bit_vector const &gap_positions_):
+				seq_id(std::forward <t_string>(seq_id_)),
 				gap_positions(gap_positions_),
 				gap_positions_rank0_support(&gap_positions),
 				gap_positions_select0_support(&gap_positions)

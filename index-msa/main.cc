@@ -21,11 +21,17 @@ namespace fs	= std::filesystem;
 
 
 namespace {
+
+	struct sequence_entry
+	{
+		std::string	seq_id;
+		std::string	path;
+	};
 	
 	struct chr_entry
 	{
-		std::string					chr_id;
-		std::vector <std::string>	paths;
+		std::string						chr_id;
+		std::vector <sequence_entry>	sequence_entries;
 		
 		explicit chr_entry(std::string const &chr_id_):
 			chr_id(chr_id_)
@@ -102,11 +108,14 @@ namespace {
 	}
 	
 	
-	void read_input_entry(std::size_t const lineno, std::string const &entry, std::string &chr_id, std::string &path)
+	void read_input_entry(std::size_t const lineno, std::string const &entry, std::string &chr_id, std::string &seq_id, std::string &path)
 	{
 		std::string_view const &entry_sv(entry);
 		std::size_t start(0);
+
+		std::array dsts{&chr_id, &seq_id};
 		
+		for (auto *dst_ptr : dsts)
 		{
 			auto const tab_pos(entry_sv.find('\t', start));
 			if (std::string::npos == tab_pos)
@@ -115,7 +124,7 @@ namespace {
 				std::exit(EXIT_FAILURE);
 			}
 			
-			chr_id = entry_sv.substr(start, tab_pos - start);
+			*dst_ptr = entry_sv.substr(start, tab_pos - start);
 			start = 1 + tab_pos;
 		}
 		
@@ -440,14 +449,15 @@ namespace {
 			{
 				std::string entry_buffer;
 				std::string chr_id;
+				std::string seq_id;
 				std::string path;
 				std::size_t lineno(1);
 				
 				while (std::getline(path_stream, entry_buffer))
 				{
-					read_input_entry(lineno, entry_buffer, chr_id, path);
+					read_input_entry(lineno, entry_buffer, chr_id, seq_id, path);
 					auto &entry(find_chr_entry(chr_entries, chr_id));
-					entry.paths.emplace_back(path);
+					entry.sequence_entries.emplace_back(seq_id, path);
 					++lineno;
 				}
 			}
@@ -460,42 +470,40 @@ namespace {
 			lb::dispatch_ptr <dispatch_group_t> main_group(dispatch_group_create());
 			auto global_queue(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
 	
-			for (auto const &entry : chr_entries)
+			for (auto const &chr_entry : chr_entries)
 			{
-				lb::log_time(std::cerr) << "Handling sequences for chromosome " << entry.chr_id << "…\n";
+				lb::log_time(std::cerr) << "Handling sequences for chromosome " << chr_entry.chr_id << "…\n";
 				
 				lb::dispatch_ptr <dispatch_group_t> chr_group(dispatch_group_create());
-				auto &msa_chr_entry(find_msa_chr_entry(msa_index, entry.chr_id));
-				msa_chr_entry.sequence_entries.reserve(entry.paths.size());
+				auto &msa_chr_entry(find_msa_chr_entry(msa_index, chr_entry.chr_id));
+				msa_chr_entry.sequence_entries.reserve(chr_entry.sequence_entries.size());
 				
 				std::size_t input_size{};
-				for (auto const &path_str : entry.paths)
+				for (auto const &seq_entry : chr_entry.sequence_entries)
 				{
 					handler.process_input(
-						path_str,
+						seq_entry.path,
 						[
 							this,
 							global_queue,
 							&seq_buffer,
-							&entry,
+							&chr_entry,
+							&seq_entry,
 							&chr_group,
 							&msa_chr_entry,
-							&path_str,
 							&input_size
 						](lb::file_handle &handle){
 							sdsl::bit_vector bv;
-							fs::path const path(path_str);
-							auto const fname(path.filename());
-							lb::log_time(std::cerr) << "Processing " << fname << "…\n";
+							lb::log_time(std::cerr) << "Processing " << seq_entry.path << "…\n";
 
 							if (m_should_output_fasta)
-								input_size = build_index <true>(entry.chr_id, fname, handle, seq_buffer, bv, input_size, m_fasta_line_width);
+								input_size = build_index <true>(chr_entry.chr_id, seq_entry.seq_id, handle, seq_buffer, bv, input_size, m_fasta_line_width);
 							else
-								input_size = build_index <false>(entry.chr_id, fname, handle, seq_buffer, bv, input_size, m_fasta_line_width);
+								input_size = build_index <false>(chr_entry.chr_id, seq_entry.seq_id, handle, seq_buffer, bv, input_size, m_fasta_line_width);
 							
-							auto &seq_entry(msa_chr_entry.sequence_entries.emplace_back());
-							lb::dispatch_group_async_fn(*chr_group, global_queue, [fname, bv = std::move(bv), &seq_entry](){
-								seq_entry = panvc3::msa_index::sequence_entry(std::move(fname), bv);
+							auto &msa_seq_entry(msa_chr_entry.sequence_entries.emplace_back());
+							lb::dispatch_group_async_fn(*chr_group, global_queue, [bv = std::move(bv), &seq_entry, &msa_seq_entry](){
+								msa_seq_entry = panvc3::msa_index::sequence_entry(seq_entry.seq_id, bv);
 							});
 						}
 					);
