@@ -370,6 +370,7 @@ namespace {
 		subprocess_input_handler(std::vector <std::string> &pipe_command):
 			m_pipe_command(pipe_command)
 		{
+			m_pipe_command.emplace_back(); // Add an element for the target path. (See process_input() below.)
 		}
 
 		virtual void process_input(
