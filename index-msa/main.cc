@@ -26,6 +26,12 @@ namespace {
 	{
 		std::string	seq_id;
 		std::string	path;
+
+		sequence_entry(std::string const &seq_id_, std::string const &path_):
+			seq_id(seq_id_),
+			path(path_)
+		{
+		}
 	};
 	
 	struct chr_entry
