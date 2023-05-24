@@ -88,7 +88,7 @@ class ReadSupportParser(object):
 
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser(description = 'Calculate allelic balance per site using #REF / (#REF + #ALT) from count_supporting_reads’s output.')
+	parser = argparse.ArgumentParser(description = 'Calculate reference bias per site using #REF / (#REF + #ALT) from count_supporting_reads’s output.')
 	parser.add_argument('--min-coverage', metavar = 'N', type = int, default = 1, help = 'minimum read coverage considering reads that support either REF or ALT')
 	args = parser.parse_args()
 
