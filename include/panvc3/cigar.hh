@@ -36,6 +36,7 @@ namespace panvc3 {
 		void push_back(seqan3::cigar::operation const op, cigar_count_type const count = 1);
 		void finish();
 		void clear();
+		void swap_buffer(cigar_vector &ops) { using std::swap; swap(ops, m_operations); }
 		
 		cigar_vector &operations() { return m_operations; }
 		cigar_vector const &operations() const { return m_operations; }
