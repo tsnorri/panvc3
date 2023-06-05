@@ -11,6 +11,7 @@
 #include <libbio/assert.hh>
 #include <map>
 #include <mutex>
+#include <panvc3/cigar.hh>
 #include <panvc3/compressed_fasta_reader.hh>
 #include <panvc3/sam_tag.hh>
 #include <panvc3/utility.hh>
@@ -147,8 +148,57 @@ namespace {
 	}
 	
 	
+	void rewrite_cigar_sequence_match(
+		std::vector <seqan3::cigar> &cigar_seq, // non-const for swapping.
+		panvc3::cigar_buffer &cigar_output
+	)
+	{
+		using seqan3::get;
+		using seqan3::operator""_cigar_operation;
+		
+		cigar_output.clear();
+		
+		for (auto const &item : cigar_seq)
+		{
+			auto const count(get <0>(item));
+			auto const op(get <1>(item));
+			auto const op_(op.to_char());
+			
+			switch (op_)
+			{
+				case 'H':	// Hard clipping, consumes nothing.
+				case 'P':	// Padding (silent deletion from padded reference), consumes nothing.
+				case 'I':	// Insertion, consumes query.
+				case 'S':	// Soft clipping, consumes query.
+				case 'D':	// Deletion, consumes reference.
+				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
+				case 'M':	// Match or mismatch, consumes both.
+					cigar_output.push_back(item);
+					break;
+				
+				case '=':	// Match, consumes both.
+				case 'X':	// Mismatch, consumes both.
+				{
+					seqan3::cigar new_item;
+					new_item = 'M'_cigar_operation;
+					new_item = count;
+					cigar_output.push_back(new_item);
+					break;
+				}
+				
+				default:
+					libbio_fail("Unexpected CIGAR operation “", op_, "”");
+					break;
+			}
+		}
+		
+		cigar_output.finish();
+		cigar_output.swap_buffer(cigar_seq);
+	}
+	
+	
 	template <typename t_query_seq>
-	void rewrite_cigar(
+	void rewrite_cigar_alignment_match(
 		std::vector <char> const &ref,
 		std::size_t const ref_base_pos,
 		t_query_seq const &query_seq,
@@ -239,8 +289,74 @@ namespace {
 	}
 	
 	
+	std::jthread start_status_output_thread(
+		panvc3::timer &status_output_timer,
+		std::uint64_t &rec_idx,
+		std::uint16_t const status_output_interval
+	)
+	{
+		typedef chrono::steady_clock	clock_type;
+		
+		if (!status_output_interval)
+			return {};
+		
+		return std::jthread{[&](){
+			auto const start_time(clock_type::now());
+			while (status_output_timer.wait_for(chrono::minutes(status_output_interval)))
+			{
+				auto const pp(clock_type::now());
+				auto const running_time{pp - start_time};
+				
+				// Inaccurate b.c. rec_idx is not atomic.
+				// FIXME: come up with a better way to report status.
+				std::osyncstream cerr(std::cerr);
+				lb::log_time(cerr) << "Time spent processing: ";
+				panvc3::log_duration(cerr, running_time);
+				cerr << "; processed " << (rec_idx - 1) << " records";
+				
+				if (rec_idx)
+				{
+					double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
+					usecs_per_record /= rec_idx;
+					cerr << " (in " << usecs_per_record << " µs / record)";
+				}
+				
+				cerr << ".\n" << std::flush;
+			}
+		}};
+	}
+	
+	
 	template <typename t_aln_input, typename t_aln_output>
-	void process_alignments(
+	void process_alignments_sequence_match(
+		t_aln_input &&aln_input,
+		t_aln_output &&aln_output,
+		std::uint16_t const status_output_interval
+	)
+	{
+		lb::log_time(std::cerr) << "Processing the alignments…\n";
+		std::uint64_t rec_idx{};
+		panvc3::timer status_output_timer;
+		auto status_output_thread(start_status_output_thread(status_output_timer, rec_idx, status_output_interval));
+		panvc3::cigar_buffer cigar_buffer;
+		
+		for (auto &aln_rec : aln_input)
+		{
+			++rec_idx;
+			aln_rec.header_ptr() = &aln_output.header();
+			
+			rewrite_cigar_sequence_match(aln_rec.cigar_sequence(), cigar_buffer);
+			aln_output.push_back(aln_rec);
+		}
+		
+		status_output_timer.stop();
+		if (status_output_thread.joinable())
+			status_output_thread.join();
+	}
+	
+	
+	template <typename t_aln_input, typename t_aln_output>
+	void process_alignments_alignment_match(
 		t_aln_input &&aln_input,
 		t_aln_output &&aln_output,
 		char const *ref_path,
@@ -248,8 +364,6 @@ namespace {
 		std::uint16_t const status_output_interval
 	)
 	{
-		typedef chrono::steady_clock	clock_type;
-		
 		// Load the reference sequences.
 		lb::log_time(std::cerr) << "Loading the reference sequences…\n";
 		panvc3::compressed_fasta_reader fasta_reader;
@@ -260,37 +374,8 @@ namespace {
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		std::uint64_t rec_idx{};
-		auto const start_time(clock_type::now());
 		panvc3::timer status_output_timer;
-		auto status_output_thread{[&]() -> std::jthread {
-			if (!status_output_interval)
-				return {};
-			
-			return std::jthread{[&](){
-				while (status_output_timer.wait_for(chrono::minutes(status_output_interval)))
-				{
-					auto const pp(clock_type::now());
-					auto const running_time{pp - start_time};
-
-					// Inaccurate b.c. rec_idx is not atomic.
-					// FIXME: come up with a better way to report status.
-					std::osyncstream cerr(std::cerr);
-					lb::log_time(cerr) << "Time spent processing: ";
-					panvc3::log_duration(cerr, running_time);
-					cerr << "; processed " << (rec_idx - 1) << " records";
-
-					if (rec_idx)
-					{
-						double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
-						usecs_per_record /= rec_idx;
-						cerr << " (in " << usecs_per_record << " µs / record)";
-					}
-
-					cerr << ".\n" << std::flush;
-				}
-			}};
-		}()};
-		
+		auto status_output_thread(start_status_output_thread(status_output_timer, rec_idx, status_output_interval));
 		std::vector <seqan3::cigar> cigar_buffer;
 		std::vector <std::uint8_t> n_positions_buffer;
 		for (auto &aln_rec : aln_input)
@@ -328,7 +413,7 @@ namespace {
 				lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
 			}
 			
-			rewrite_cigar(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer, n_positions_buffer);
+			rewrite_cigar_alignment_match(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer, n_positions_buffer);
 			aln_rec.tags()[ref_n_positions_tag] = n_positions_buffer;
 			
 			{
@@ -443,7 +528,12 @@ namespace {
 		aln_output.header().ref_dict = aln_input.header().ref_dict;
 		append_program_info(aln_input.header(), aln_output.header(), argc, argv);
 		
-		process_alignments(aln_input, aln_output, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
+		if (args_info.output_alignment_match_ops_given)
+			process_alignments_alignment_match(aln_input, aln_output, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
+		else if (args_info.output_sequence_match_ops_given)
+			process_alignments_sequence_match(aln_input, aln_output, args_info.status_output_interval_arg);
+		else
+			libbio_fail("Unexpected mode");
 	}
 }
 

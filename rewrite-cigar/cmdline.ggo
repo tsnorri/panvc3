@@ -7,17 +7,23 @@ purpose		"Rewrite CIGAR such that M characters are replaced with = and X"
 usage		"rewrite_cigar --alignments=alignments.bam --reference=ref.fa.gz > projected.sam"
 
 section		"Input options"
-option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
-option		"bam-input"					B	"Read BAM from stdin"														flag	off
-option		"reference"					r	"Reference sequences FASTA path"											string	typestr = "filename"	required
+option		"alignments"					a	"Alignment file path (stdin by default)"									string	typestr = "filename"										optional
+option		"bam-input"						B	"Read BAM from stdin"														flag	off
 
 section		"Output options"
-option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"		optional
-option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
-option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
-option		"ref-n-positions-tag"		-	"SAM tag for the N character positions in the reference."					string	default = "XN"			optional
+option		"output-path"					o	"Output path (stdin by default)"											string	typestr = "path"											optional
+option		"output-bam"					b	"Output BAM instead of SAM"													flag	off
+option		"status-output-interval"		-	"Status output interval in minutes, zero to disable"						short	default = "5"												optional
 text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
+defmode		"Output alignment match ops"	modedesc = "Output alignment match (M) operations (for converting alignments for e.g. Illumina Manta)"
+modeoption	"output-alignment-match-ops"	M	"Output alignment match (M) operations"												mode = "Output alignment match ops"							required
+
+defmode		"Output sequence match ops"		modedesc = "Output sequence match (=, X) operations"
+modeoption	"output-sequence-match-ops"		S	"Output sequence match (=, X) operations"											mode = "Output sequence match ops"							required
+modeoption	"reference"						r	"Reference sequences FASTA path"											string	mode = "Output sequence match ops"	typestr = "filename"	required
+modeoption	"ref-n-positions-tag"			-	"SAM tag for the N character positions in the reference."					string	mode = "Output sequence match ops"	default = "XN"			optional
+
 section		"Debugging options"
-option		"print-invocation"			-	"Output the invocation to stderr"											flag	off									hidden
-option		"print-pid"					-	"Output the PID to stderr"													flag	off									hidden
+option		"print-invocation"				-	"Output the invocation to stderr"											flag	off															hidden
+option		"print-pid"						-	"Output the PID to stderr"													flag	off															hidden
