@@ -148,7 +148,7 @@ namespace {
 	}
 	
 	
-	void rewrite_cigar_sequence_match(
+	void rewrite_cigar_alignment_match(
 		std::vector <seqan3::cigar> &cigar_seq, // non-const for swapping.
 		panvc3::cigar_buffer &cigar_output
 	)
@@ -198,7 +198,7 @@ namespace {
 	
 	
 	template <typename t_query_seq>
-	void rewrite_cigar_alignment_match(
+	void rewrite_cigar_sequence_match(
 		std::vector <char> const &ref,
 		std::size_t const ref_base_pos,
 		t_query_seq const &query_seq,
@@ -328,7 +328,7 @@ namespace {
 	
 	
 	template <typename t_aln_input, typename t_aln_output>
-	void process_alignments_sequence_match(
+	void process_alignments_alignment_match(
 		t_aln_input &&aln_input,
 		t_aln_output &&aln_output,
 		std::uint16_t const status_output_interval
@@ -345,7 +345,7 @@ namespace {
 			++rec_idx;
 			aln_rec.header_ptr() = &aln_output.header();
 			
-			rewrite_cigar_sequence_match(aln_rec.cigar_sequence(), cigar_buffer);
+			rewrite_cigar_alignment_match(aln_rec.cigar_sequence(), cigar_buffer);
 			aln_output.push_back(aln_rec);
 		}
 		
@@ -356,7 +356,7 @@ namespace {
 	
 	
 	template <typename t_aln_input, typename t_aln_output>
-	void process_alignments_alignment_match(
+	void process_alignments_sequence_match(
 		t_aln_input &&aln_input,
 		t_aln_output &&aln_output,
 		char const *ref_path,
@@ -413,7 +413,7 @@ namespace {
 				lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
 			}
 			
-			rewrite_cigar_alignment_match(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer, n_positions_buffer);
+			rewrite_cigar_sequence_match(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer, n_positions_buffer);
 			aln_rec.tags()[ref_n_positions_tag] = n_positions_buffer;
 			
 			{
@@ -528,10 +528,10 @@ namespace {
 		aln_output.header().ref_dict = aln_input.header().ref_dict;
 		append_program_info(aln_input.header(), aln_output.header(), argc, argv);
 		
-		if (args_info.output_alignment_match_ops_given)
-			process_alignments_alignment_match(aln_input, aln_output, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
-		else if (args_info.output_sequence_match_ops_given)
-			process_alignments_sequence_match(aln_input, aln_output, args_info.status_output_interval_arg);
+		if (args_info.output_sequence_match_ops_given)
+			process_alignments_sequence_match(aln_input, aln_output, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
+		else if (args_info.output_alignment_match_ops_given)
+			process_alignments_alignment_match(aln_input, aln_output, args_info.status_output_interval_arg);
 		else
 			libbio_fail("Unexpected mode");
 	}
