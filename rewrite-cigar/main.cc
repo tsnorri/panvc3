@@ -173,18 +173,13 @@ namespace {
 				case 'D':	// Deletion, consumes reference.
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
 				case 'M':	// Match or mismatch, consumes both.
-					cigar_output.push_back(item);
+					cigar_output.push_back(op, count);
 					break;
 				
 				case '=':	// Match, consumes both.
 				case 'X':	// Mismatch, consumes both.
-				{
-					seqan3::cigar new_item;
-					new_item = 'M'_cigar_operation;
-					new_item = count;
-					cigar_output.push_back(new_item);
+					cigar_output.push_back('M'_cigar_operation, count);
 					break;
-				}
 				
 				default:
 					libbio_fail("Unexpected CIGAR operation “", op_, "”");
