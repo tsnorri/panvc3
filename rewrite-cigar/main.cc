@@ -415,7 +415,9 @@ namespace {
 			}
 			
 			rewrite_cigar_sequence_match(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer, n_positions_buffer);
-			aln_rec.tags()[ref_n_positions_tag] = n_positions_buffer;
+			// SAM reference does not state that empty arrays are not allowed (I think) but Samtools reports a parse error anyway.
+			if (!n_positions_buffer.empty())
+				aln_rec.tags()[ref_n_positions_tag] = n_positions_buffer;
 			
 			{
 				using std::swap;
