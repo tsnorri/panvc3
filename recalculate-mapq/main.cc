@@ -264,7 +264,9 @@ namespace {
 						auto const qp(query_pos + i);
 						auto const rp(ref_pos + i);
 						auto const qual(base_qualities[qp].to_rank());
-						if ('N'_dna5 == query_seq[qp] || ((0x1 << (rp % 8)) & ref_n_positions[rp / 8]))
+						auto const rp_(rp / 8);
+						libbio_always_assert_lt(rp_, ref_n_positions.size());
+						if ('N'_dna5 == query_seq[qp] || ((0x1 << (rp % 8)) & ref_n_positions[rp_]))
 							retval -= m_n_penalties[qual];
 						else
 							retval -= m_mismatch_penalties[qual];
@@ -292,13 +294,12 @@ namespace {
 
 		auto &tags(aln_rec.tags());
 		auto const it(tags.find(tag_spec.ref_n_positions_tag));
-		if (tags.end() == it)
-		{
-			std::cerr << "WARNING: Reference N positions not set in record '" << aln_rec.id() << "'; skipping.\n";
-			return ALIGNMENT_SCORE_MIN;
-		}
-
-		auto const new_score(calculate_score(aln_rec, get <ref_n_position_vector>(it->second)));
+		auto const new_score(
+			calculate_score(
+				aln_rec,
+				tags.end() == it ? ref_n_position_vector{} : get <ref_n_position_vector>(it->second)
+			)
+		);
 		
 		// Retrieve the alignment score from the AS tag.
 		{
