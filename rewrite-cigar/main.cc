@@ -295,30 +295,36 @@ namespace {
 		if (!status_output_interval)
 			return {};
 		
-		return std::jthread{[&](){
-			auto const start_time(clock_type::now());
-			while (status_output_timer.wait_for(chrono::minutes(status_output_interval)))
-			{
-				auto const pp(clock_type::now());
-				auto const running_time{pp - start_time};
-				
-				// Inaccurate b.c. rec_idx is not atomic.
-				// FIXME: come up with a better way to report status.
-				std::osyncstream cerr(std::cerr);
-				lb::log_time(cerr) << "Time spent processing: ";
-				panvc3::log_duration(cerr, running_time);
-				cerr << "; processed " << (rec_idx - 1) << " records";
-				
-				if (rec_idx)
+		return std::jthread{
+			[
+				&status_output_timer,
+				&rec_idx,
+				status_output_interval
+			](){
+				auto const start_time(clock_type::now());
+				while (status_output_timer.wait_for(chrono::minutes(status_output_interval)))
 				{
-					double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
-					usecs_per_record /= rec_idx;
-					cerr << " (in " << usecs_per_record << " µs / record)";
+					auto const pp(clock_type::now());
+					auto const running_time{pp - start_time};
+					
+					// Inaccurate b.c. rec_idx is not atomic.
+					// FIXME: come up with a better way to report status.
+					std::osyncstream cerr(std::cerr);
+					lb::log_time(cerr) << "Time spent processing: ";
+					panvc3::log_duration(cerr, running_time);
+					cerr << "; processed " << (rec_idx - 1) << " records";
+					
+					if (rec_idx)
+					{
+						double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
+						usecs_per_record /= rec_idx;
+						cerr << " (in " << usecs_per_record << " µs / record)";
+					}
+					
+					cerr << ".\n" << std::flush;
 				}
-				
-				cerr << ".\n" << std::flush;
 			}
-		}};
+		};
 	}
 	
 	
