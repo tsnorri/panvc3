@@ -6,13 +6,24 @@ MAKE_SCRIPT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 
 LIBDISPATCH_CFLAGS		?= -U__STDC_HOSTED__ $(CLANG_INCLUDES)
 LIBDISPATCH_CXXFLAGS	?= -U__STDC_HOSTED__ $(CLANG_INCLUDES) -stdlib=libc++
-LIBDISPATCH_LDFLAGS		?= -lpthread -lrt
+LIBDISPATCH_LDFLAGS		?= -lpthread -lrt -lc++abi
 
-CPPFLAGS				?= -DBOOST_NO_CXX98_FUNCTION_BASE
-CFLAGS					?= -fblocks -U__STDC_HOSTED__ $(CLANG_INCLUDES)
-CXXFLAGS				?= -fblocks -nostdinc++ -U__STDC_HOSTED__ $(CLANG_INCLUDES)
 WARNING_FLAGS_			= -Wno-deprecated-builtins
-CLANG_LIBGCC_LDFLAGS	?= -lgcc_s -lgcc
-LDFLAGS					?= -stdlib=libc++ -nodefaultlibs $(LIBCXX_ROOT)/lib/libc++.a $(LIBCXX_ROOT)/lib/libc++abi.a -lpthread -lbsd -lz -ldl -lm -lc -lrt $(CLANG_LIBGCC_LDFLAGS) $(CLANG_LDFLAGS)
+LLVM_CPPFLAGS			?=
+LLVM_CFLAGS				?= -fblocks -U__STDC_HOSTED__ $(CLANG_INCLUDES)
+LLVM_CXXFLAGS			?= -fblocks -nostdinc++ -U__STDC_HOSTED__ $(CLANG_INCLUDES)
+LLVM_LIBGCC_LDFLAGS		?= -lgcc_s -lgcc
+LLVM_LDFLAGS			?= -stdlib=libc++ -nodefaultlibs $(LIBCXX_ROOT)/lib/libc++.a $(LIBCXX_ROOT)/lib/libc++abi.a -lpthread -lbsd -lz -ldl -lm -lc -lrt $(CLANG_LIBGCC_LDFLAGS) $(CLANG_LDFLAGS)
+CPPFLAGS				?= $(LLVM_CPPFLAGS)
+CFLAGS					?= $(LLVM_CFLAGS)
+CXXFLAGS				?= $(LLVM_CXXFLAGS)
+LDFLAGS					?= $(LLVM_LDFLAGS)
 
 BOOST_LIBS				?= $(BOOST_ROOT)/lib/libboost_iostreams.a
+
+#SYSTEM_CFLAGS += -fsanitize=thread
+#SYSTEM_CXXFLAGS += -fsanitize=thread
+#SYSTEM_LDFLAGS += -fsanitize=thread
+#LIBDISPATCH_CFLAGS += -fsanitize=thread
+#LIBDISPATCH_CXXFLAGS += -fsanitize=thread
+#LIBDISPATCH_LDFLAGS += -fsanitize=thread
