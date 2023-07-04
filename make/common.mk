@@ -6,7 +6,7 @@ WARNING_FLAGS_		?=
 WARNING_CXXFLAGS_	?=
 WARNING_FLAGS		?= -Wall -Werror -Wno-deprecated-declarations -Wno-unused $(WARNING_FLAGS_)
 WARNING_CXXFLAGS	?= $(WARNING_CXXFLAGS_)
-OPT_FLAGS			?= -O2 -gdwarf-5
+OPT_FLAGS			?= -O2 -ggdb
 
 CMAKE			?= cmake
 CP				?= cp
@@ -27,6 +27,8 @@ SYSTEM_CFLAGS	?=
 SYSTEM_CXXFLAGS	?=
 SYSTEM_CPPFLAGS	?=
 SYSTEM_LDFLAGS	?=
+
+LIBDISPATCH_LIBRARIES =
 
 # Target type description, used currently in the .tar.gz name.
 TARGET_TYPE		?=
@@ -50,8 +52,8 @@ CPPFLAGS		+=	-DHAVE_CONFIG_H \
 LDFLAGS			:= $(BOOST_LIBS) $(LDFLAGS) $(SYSTEM_LDFLAGS)
 
 ifeq ($(shell uname -s),Linux)
-	CPPFLAGS	+= -I../lib/swift-corelibs-libdispatch
-	LDFLAGS		:= ../lib/swift-corelibs-libdispatch/build/src/libdispatch.a ../lib/swift-corelibs-libdispatch/build/src/BlocksRuntime/libBlocksRuntime.a $(LDFLAGS)
+	CPPFLAGS				+= -I../lib/swift-corelibs-libdispatch
+	LIBDISPATCH_LIBRARIES	:= ../lib/swift-corelibs-libdispatch/build/src/libdispatch.a ../lib/swift-corelibs-libdispatch/build/src/BlocksRuntime/libBlocksRuntime.a
 endif
 
 

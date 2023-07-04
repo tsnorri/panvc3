@@ -15,7 +15,7 @@ clean:
 	$(RM) $(OBJECTS) index_msa cmdline.h cmdline.c
 
 index_msa: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-llvm/libbio.a $(LDFLAGS)
+	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-llvm/libbio.a $(LIBDISPATCH_LIBRARIES) $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h

@@ -22,7 +22,7 @@ clean:
 	$(RM) $(OBJECTS) project_alignments cmdline.h cmdline.c
 
 project_alignments: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-gcc/libbio.a ../libpanvc3/libpanvc3.a $(LDFLAGS)
+	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LIBDISPATCH_LIBRARIES) $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h
