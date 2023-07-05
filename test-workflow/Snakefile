@@ -1,7 +1,5 @@
 # vim: syntax=snakefile
 
-import sys
-
 
 rule all:
 	input:		"alignments/alignments.mapq-recalculated.sam.gz"
@@ -62,7 +60,7 @@ rule bowtie_align_reads:
 	shell:		"bowtie2 --threads {threads} -k 6 -1 {input.reads_1} -2 {input.reads_2} -x index-output/index | gzip > {output}"
 
 
-rule project_alignments_bowtie:
+rule project_alignments:
 	message:	"Projecting the alignments"
 	conda:		"environment.yaml"
 	threads:	workflow.cores
@@ -72,8 +70,7 @@ rule project_alignments_bowtie:
 				msa_index			= "index-output/msa-index.dat",
 				seq_output_order	= "sequence-output-order.txt"
 	output:		"alignments/alignments.projected.sam.gz"
-	shell:
-				" panvc3_project_alignments"
+	shell:		"panvc3_project_alignments"
 				" --alignments={input.alignments}"
 				" --msa-index={input.msa_index}"
 				" --reference={input.reference}"
@@ -86,12 +83,11 @@ rule project_alignments_bowtie:
 				" | gzip > {output}"
 
 
-rule recalculate_mapq_bowtie:
+rule recalculate_mapq:
 	message:	"Recalculating MAPQ"
 	conda:		"environment.yaml"
 	input:		"alignments/alignments.projected.qname-sorted.bam"
 	output:		"alignments/alignments.mapq-recalculated.sam.gz"
-	shell:
-				" panvc3_recalculate_mapq"
+	shell:		"panvc3_recalculate_mapq"
 				" --alignments={input}"
 				" | gzip > {output}"
