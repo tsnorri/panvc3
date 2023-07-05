@@ -204,6 +204,12 @@ namespace panvc3 {
 				m_compressed_offsets.emplace_back(uncompressed_offset, compressed_offset);
 			}
 
+			if (is_first)
+			{
+				did_add = true;
+				m_compressed_offsets.emplace_back(0, 0);
+			}
+
 			libbio_always_assert(std::is_sorted(m_compressed_offsets.begin(), m_compressed_offsets.end(), gzi_offset_pair_cmp{}));
 			libbio_always_assert_eq(count + did_add, m_compressed_offsets.size());
 		}
