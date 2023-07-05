@@ -1,0 +1,9 @@
+channels:
+- tsnorri
+- conda-forge
+- bioconda
+dependencies:
+- bowtie2=2.5.1
+- bzip2>=1.0.8
+- panvc3=3f8e5a158d7a92aeddf87db67af873f32d98813e
+- samtools=1.17

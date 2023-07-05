@@ -1,0 +1,97 @@
+# vim: syntax=snakefile
+
+import sys
+
+
+rule all:
+	input:		"alignments/alignments.mapq-recalculated.sam.gz"
+
+
+rule sort_sam_gz:
+	message:	"Sorting the alignments"
+	conda:		"environment.yaml"
+	threads:	workflow.cores
+	input:		"{alignments}.sam.gz"
+	output:		"{alignments}.sorted.bam"
+	shell:		"./set-open-file-limit.sh samtools sort -@ {threads} -o {output} {input}"
+
+
+rule sort_by_qname_sam_gz:
+	message:	"Sorting the alignments by QNAME"
+	conda:		"environment.yaml"
+	threads:	workflow.cores
+	input:		"{alignments}.sam.gz"
+	output:		"{alignments}.qname-sorted.bam"
+	shell:		"./set-open-file-limit.sh samtools sort -n -@ {threads} -o {output} {input}"
+
+
+rule build_msa_index:
+	message:	"Building the MSA index"
+	conda:		"environment.yaml"
+	input:		"index-input/input.tsv"
+	output:
+				index			= "index-output/msa-index.dat",
+				unaligned_fasta	= "index-output/unaligned.fa"
+	shell:		"panvc3_index_msa --build-index --sequence-inputs={input} --msa-index-output={output.index} --output-fasta --pipe-input='bzip2 -d -c' > {output.unaligned_fasta}"
+
+
+rule build_bowtie_index:
+	message:	"Indexing the reference for Bowtie 2"
+	conda:		"environment.yaml"
+	threads:	workflow.cores
+	input:		"index-output/unaligned.fa"
+	output:		
+				"index-output/index.1.bt2",
+				"index-output/index.2.bt2",
+				"index-output/index.3.bt2",
+				"index-output/index.4.bt2",
+				"index-output/index.rev.1.bt2",
+				"index-output/index.rev.2.bt2"
+	shell:		"bowtie2-build --threads {threads} {input} index-output/index"
+
+
+rule bowtie_align_reads:
+	message:	"Aligning reads with Bowtie 2"
+	conda:		"environment.yaml"
+	threads:	workflow.cores
+	input:
+				index_1	= "index-output/index.1.bt2",
+				reads_1	= "reads/left.fq.gz",
+				reads_2	= "reads/right.fq.gz"
+	output:		"alignments/alignments.sam.gz"
+	shell:		"bowtie2 --threads {threads} -k 6 -1 {input.reads_1} -2 {input.reads_2} -x index-output/index | gzip > {output}"
+
+
+rule project_alignments_bowtie:
+	message:	"Projecting the alignments"
+	conda:		"environment.yaml"
+	threads:	workflow.cores
+	input:		
+				alignments			= "alignments/alignments.sorted.bam",
+				reference			= "genome/genome.fa.gz",
+				msa_index			= "index-output/msa-index.dat",
+				seq_output_order	= "sequence-output-order.txt"
+	output:		"alignments/alignments.projected.sam.gz"
+	shell:
+				" panvc3_project_alignments"
+				" --alignments={input.alignments}"
+				" --msa-index={input.msa_index}"
+				" --reference={input.reference}"
+				" --reference-msa-id=REF"
+				" --ref-id-separator=/"
+				" --reference-order-input={input.seq_output_order}"
+				" --record-index-tag=XI"
+				" --preserve-tag=XS"
+				" --preserve-tag=YS"
+				" | gzip > {output}"
+
+
+rule recalculate_mapq_bowtie:
+	message:	"Recalculating MAPQ"
+	conda:		"environment.yaml"
+	input:		"alignments/alignments.projected.qname-sorted.bam"
+	output:		"alignments/alignments.mapq-recalculated.sam.gz"
+	shell:
+				" panvc3_recalculate_mapq"
+				" --alignments={input}"
+				" | gzip > {output}"
