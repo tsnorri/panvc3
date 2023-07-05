@@ -1106,6 +1106,24 @@ namespace {
 		auto const &input_ref_id_info(aln_input_header.ref_id_info);
 		auto &output_ref_id_info(aln_output_header.ref_id_info);
 		auto &output_ref_dict(aln_output_header.ref_dict);
+
+		// Parse the chromosome and sequence ids. (We need them in case the reference output order has been given.)
+		std::vector <std::tuple <std::string_view, std::string_view>> input_ref_chr_seq_ids;
+		input_ref_chr_seq_ids.reserve(input_ref_ids.size());
+		for (auto const &input_ref_id_ : input_ref_ids)
+		{
+			std::string_view const input_ref_id(input_ref_id_);
+			auto const separator_pos(input_ref_id.find_first_of(ref_id_separator));
+			if (std::string_view::npos == separator_pos)
+			{
+				std::cerr << "ERROR: Separator '" << ref_id_separator << "' not found in reference ID '" << input_ref_id << "'.\n";
+				std::exit(EXIT_FAILURE);
+			}
+			
+			auto const chr_id(input_ref_id.substr(0, separator_pos));
+			auto const seq_id(input_ref_id.substr(1 + separator_pos));
+			input_ref_chr_seq_ids.emplace_back(chr_id, seq_id);
+		}
 		
 		{
 			std::map <std::string, std::size_t, lb::compare_strings_transparent> unique_ref_ids;
@@ -1121,6 +1139,11 @@ namespace {
 			
 			if (ref_order_path)
 			{
+				// Get the distinct chromosome identifiers.
+				std::set <std::string_view> unique_chr_ids;
+				for (auto const &tup : input_ref_chr_seq_ids)
+					unique_chr_ids.emplace(std::get <0>(tup));
+
 				// Read the reference names.
 				lb::file_istream stream;
 				std::string buffer;
@@ -1129,9 +1152,20 @@ namespace {
 				std::size_t idx{};
 				while (std::getline(stream, buffer))
 				{
+					std::string_view const ref_id(buffer);
+					if (!unique_chr_ids.contains(ref_id))
+					{
+						std::cerr << "WARNING: Identifier ‘" << buffer << "’ specified in reference name order but does not appear in the alignments.\n";
+						continue;
+					}
+
 					auto const res(output_ref_name_order.emplace(buffer, output_ref_name_value(idx, false)));
 					if (!res.second)
+					{
 						std::cerr << "WARNING: Identifier ‘" << buffer << "’ specified in reference name order more than once.\n";
+						continue;
+					}
+
 					++idx;
 				}
 			}
@@ -1140,18 +1174,9 @@ namespace {
 			// also number them.
 			{
 				std::size_t next_output_ref_idx{output_ref_name_order.size()};
-				for (auto const &[input_ref_idx, input_ref_id_] : rsv::enumerate(input_ref_ids))
+				for (auto const &[input_ref_idx, tup] : rsv::enumerate(input_ref_chr_seq_ids))
 				{
-					std::string_view const input_ref_id(input_ref_id_);
-					auto const separator_pos(input_ref_id.find_first_of(ref_id_separator));
-					if (std::string_view::npos == separator_pos)
-					{
-						std::cerr << "ERROR: Separator '" << ref_id_separator << "' not found in reference ID '" << input_ref_id << "'.\n";
-						std::exit(EXIT_FAILURE);
-					}
-					
-					auto const chr_id(input_ref_id.substr(0, separator_pos));
-					auto const seq_id(input_ref_id.substr(1 + separator_pos));
+					auto const &[chr_id, seq_id] = tup;
 					auto const it(unique_ref_ids.find(chr_id));
 					std::size_t output_ref_idx{};
 					if (unique_ref_ids.end() == it)
