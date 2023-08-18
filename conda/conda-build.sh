@@ -2,4 +2,4 @@
 
 set -euxo pipefail
 
-conda-build -c conda-forge .
+conda build -c conda-forge .
