@@ -10,6 +10,10 @@ Running a variant calling workflow that utilises PanVC consists of the following
 
 The founder sequences may be generated with [vcf2multialign](https://github.com/tsnorri/vcf2multialign).
 
+## Testing
+
+A simple workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 automatically from [Anaconda](https://anaconda.org).
+
 ## Contents
 
 - [index_msa](index-msa) builds a co-ordinate transformation data structure from a multiple sequence alignment, as well as the sequences as unaligned FASTA to be used as input for a read aligner.
@@ -59,7 +63,3 @@ After installing the prerequisites, please do the following:
 
 1. Create a file called `local.mk` in the root of the cloned repository to specify build variables. The file [conda/local.mk.m4](conda/local.mk.m4) may be used as a starting point.
 2. Run Make with e.g. `make -j16`.
-
-## Testing
-
-Simple test data are provided in the [test-workflow](test-workflow) subdirectory.
