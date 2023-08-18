@@ -21,7 +21,7 @@ A simple workflow and test data are provided in the [test-workflow](test-workflo
 - [recalculate_mapq](recalculate-mapq) recalculates the mapping qualities of the alignments given as input, taking into account the projected co-ordinate of each alignment.
 - [subset_alignments](subset-alignments) subsets the given alignments by some criteria, e.g. selecting the (paired) alignment with the best mapping quality for each read.
 - [count_supporting_reads](count-supporting-reads) counts the number of aligned reads that support some known variants. From the output, reference bias can be calculated with [calculate_reference_bias.py](count-supporting-reads/calculate_reference_bias.py).
-- [rewrite_cigar](rewrite-cigar) converts sequence match operations in CIGAR strings (`=` and `X`) to alignment match operations (`M`).
+- [rewrite_cigar](rewrite-cigar) replaces sequence match operations in CIGAR strings (`=` and `X`) with alignment match operations (`M`) and vice-versa.
 
 Please use the `--help` option with each of the tools for usage. See also the [workflow written for the test data](test-workflow/Snakefile).
 
