@@ -2,6 +2,10 @@
 
 This directory contains a simple test workflow that uses PanVC 3 with [Bowtie 2](https://bowtie-bio.sourceforge.net/bowtie2/). The provided input consists of simulated data. The workflow can be run with Snakemake with e.g. `./run-snakemake.sh`.
 
+## Requirements
+
+* [Snakemake](https://snakemake.github.io/) 7.22.0 or newer.
+
 ## Inputs
 
 * *genome/genome.fa.gz* a (very) simple test genome generated with http://www.faculty.ucr.edu/~mmaduro/random.htm.
