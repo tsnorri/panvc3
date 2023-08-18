@@ -15,7 +15,7 @@ This directory contains a simple test workflow that uses PanVC 3 with [Bowtie 2
 
 ## Outputs
 
-The aligned reads will be written to `alignments/alignments.mapq-recalculated.sam.gz`.
+The aligned reads projected to the test genome co-ordinates will be written to `alignments/alignments.mapq-recalculated.sam.gz`.
 
 ## Notes
 
