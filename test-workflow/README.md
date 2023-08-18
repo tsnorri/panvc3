@@ -1,6 +1,6 @@
-# Test workflow for PanVC 3
+# Test workflow for PanVC 3
 
-This directory contains a simple test workflow that uses PanVC 3 with [Bowtie 2](https://bowtie-bio.sourceforge.net/bowtie2/). The provided input consists of simulated data. The workflow can be run with Snakemake with e.g. `./run-snakemake.sh`.
+This directory contains a simple test workflow that uses PanVC 3 with [Bowtie 2](https://bowtie-bio.sourceforge.net/bowtie2/). The provided input consists of simulated data. The workflow can be run with Snakemake with e.g. `./run-snakemake.sh`.
 
 ## Inputs
 
