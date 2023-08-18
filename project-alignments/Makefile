@@ -25,6 +25,7 @@ project_alignments: $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LIBDISPATCH_LIBRARIES) $(LDFLAGS)
 
 main.c: cmdline.c
+project_alignments.cc: cmdline.c
 cmdline.c: config.h
 
 include $(MAKEFILE_DIR)/../make/config.mk
