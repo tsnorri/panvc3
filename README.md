@@ -1,6 +1,6 @@
-# PanVC 3
+# PanVC 3
 
-PanVC 3 is a set of tools to be used as part of a variant calling workflow that uses short reads as its input. The reads are aligned to an index generated from a multiple sequence alignment. A suitable index may be built from founder sequences.
+PanVC 3 is a set of tools to be used as part of a variant calling workflow that uses short reads as its input. The reads are aligned to an index generated from a multiple sequence alignment. A suitable index may be built from founder sequences.
 
 Running a variant calling workflow that utilises PanVC consists of the following phases:
 
@@ -12,7 +12,7 @@ The founder sequences may be generated with [vcf2multialign](https://github.com/
 
 ## Testing
 
-A simple workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 automatically from [Anaconda](https://anaconda.org).
+A simple workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 automatically from [Anaconda](https://anaconda.org).
 
 ## Contents
 
@@ -27,7 +27,7 @@ Please use the `--help` option with each of the tools for usage. See also the [w
 
 ## Installing
 
-Binaries for Linux on x86-64 are available on [Anaconda](https://anaconda.org). PanVC 3 may be installed with `conda install -c tsnorri panvc3=3f8e5a158d7a92aeddf87db67af873f32d98813e`.
+Binaries for Linux on x86-64 are available on [Anaconda](https://anaconda.org). PanVC 3 may be installed with `conda install -c tsnorri panvc3=3f8e5a158d7a92aeddf87db67af873f32d98813e`.
 
 ## Building
 
@@ -44,7 +44,7 @@ Conda-build will then report the location of the package from which binaries may
 
 ### By hand
 
-The following software and libraries are required to build PanVC 3. The tested versions are also listed.
+The following software and libraries are required to build PanVC 3. The tested versions are also listed.
 
 - [Boost 1.82.0](https://www.boost.org)
 - [libbz2 1.0.8](https://sourceware.org/bzip2/)
