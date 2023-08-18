@@ -1,5 +1,8 @@
 # vim: syntax=snakefile
 
+from snakemake.utils import min_version
+min_version("6.0")
+
 
 rule all:
 	input:		"alignments/alignments.mapq-recalculated.sam.gz"
