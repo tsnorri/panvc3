@@ -22,8 +22,8 @@ SYSTEM_CXXFLAGS	=
 LLVM_CFLAGS		= -fblocks
 LLVM_CXXFLAGS	= -fblocks -nostdinc++
 
-GCC_LDFLAGS		= -pthread -lz -lbz2 -lm -lc -ldl
-LLVM_LDFLAGS	= -fblocks -pthread -lz -lbz2 -lm -lc -ldl
+GCC_LDFLAGS		= -L CONDA_PREFIX/lib -pthread -lz -lbz2 -lm -lc -ldl
+LLVM_LDFLAGS	= -L CONDA_PREFIX/lib -pthread -lz -lbz2 -lm -lc -ldl -fblocks
 
 LIBDISPATCH_CFLAGS      = 
 LIBDISPATCH_CXXFLAGS    = 
