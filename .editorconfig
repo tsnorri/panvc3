@@ -1,4 +1,4 @@
-[*.{hh,cc,ggo,mk}]
+[*.{hh,cc,ggo,mk,m4,sh},Snakefile]
 charset = utf-8
 indent_style = tab
 indent_size = 4
