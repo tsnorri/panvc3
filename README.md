@@ -12,7 +12,7 @@ The founder sequences may be generated with [vcf2multialign](https://github.com/
 
 ## Testing
 
-A simple workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 automatically from [Anaconda](https://anaconda.org).
+A simple workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 as well as other required software automatically from [Anaconda](https://anaconda.org).
 
 ## Contents
 
