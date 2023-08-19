@@ -27,7 +27,7 @@ Please use the `--help` option with each of the tools for usage. See also the [w
 
 ## Installing
 
-Binaries for Linux on x86-64 are available on [Anaconda](https://anaconda.org). PanVC 3 may be installed with `conda install -c tsnorri panvc3=3f8e5a158d7a92aeddf87db67af873f32d98813e`.
+Binaries for Linux on x86-64 are available on [Anaconda](https://anaconda.org). PanVC 3 may be installed with `conda install -c tsnorri -c conda-forge panvc3=v1.0`.
 
 ## Building
 
