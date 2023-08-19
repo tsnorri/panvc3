@@ -27,7 +27,7 @@ Please use the `--help` option with each of the tools for usage. See also the [w
 
 ## Installing
 
-Binaries for Linux on x86-64 are available on [Anaconda](https://anaconda.org). PanVC 3 may be installed with `conda install -c tsnorri -c conda-forge panvc3=v1.0`.
+Binaries for Linux on x86-64 are available on [Anaconda](https://anaconda.org). PanVC 3 may be installed with `conda install -c tsnorri -c conda-forge panvc3=v1.0`. [glibc](https://www.gnu.org/software/libc/) 2.28 or newer is required. (`ldd --version` may be used to check the version installed with your operating system.)
 
 ## Building
 
@@ -35,7 +35,7 @@ To clone the repository with submodules, please use `git clone --recursive https
 
 ### With [conda-build](https://docs.conda.io/projects/conda-build/en/stable/index.html)
 
-A conda package can be built with conda-build as follows. The build script has been tested with conda-build 3.25.0.
+A conda package can be built with conda-build as follows. The build script has been tested with conda-build 3.25.0. [glibc](https://www.gnu.org/software/libc/) 2.28 or newer is required.
 
 1. `cd conda`
 2. `./conda-build.sh`
