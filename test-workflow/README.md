@@ -4,6 +4,7 @@ This directory contains a simple test workflow that uses PanVC 3 with [Bowtie 
 
 ## Requirements
 
+* [glibc](https://www.gnu.org/software/libc/) 2.28 or newer.
 * [Snakemake](https://snakemake.github.io/) 7.22.0 or newer.
 
 ## Running
