@@ -4,8 +4,7 @@ This directory contains a simple test workflow that uses PanVC 3 with [Bowtie 
 
 ## Requirements
 
-* Linux on x86-64 to use the binaries available in [Anaconda](https://anaconda.org).
-* [glibc](https://www.gnu.org/software/libc/) 2.28 or newer. (`ldd --version` may be used to check the version installed with your operating system.)
+* Linux on x86-64 and [glibc](https://www.gnu.org/software/libc/) 2.28 or newer to use the binaries available in [Anaconda](https://anaconda.org). (`ldd --version` may be used to check the version of glibc installed with your operating system.)
 * [Snakemake](https://snakemake.github.io/) 7.22.0 or newer.
 
 ## Running
