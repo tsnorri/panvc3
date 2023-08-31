@@ -13,7 +13,7 @@ LLVM_CPPFLAGS			?=
 LLVM_CFLAGS				?= -fblocks -U__STDC_HOSTED__ $(CLANG_INCLUDES)
 LLVM_CXXFLAGS			?= -fblocks -nostdinc++ -U__STDC_HOSTED__ $(CLANG_INCLUDES)
 LLVM_LIBGCC_LDFLAGS		?= -lgcc_s -lgcc
-LLVM_LDFLAGS			?= -stdlib=libc++ -nodefaultlibs $(LIBCXX_ROOT)/lib/libc++.a $(LIBCXX_ROOT)/lib/libc++abi.a -lpthread -lbsd -lz -ldl -lm -lc -lrt $(CLANG_LIBGCC_LDFLAGS) $(CLANG_LDFLAGS)
+LLVM_LDFLAGS			?= -stdlib=libc++ -nodefaultlibs $(LIBCXX_ROOT)/lib/libc++.a $(LIBCXX_ROOT)/lib/libc++abi.a -lpthread -lbsd -lz -ldl -lm -lc -lrt $(LLVM_LIBGCC_LDFLAGS)
 CPPFLAGS				?= $(LLVM_CPPFLAGS)
 CFLAGS					?= $(LLVM_CFLAGS)
 CXXFLAGS				?= $(LLVM_CXXFLAGS)
