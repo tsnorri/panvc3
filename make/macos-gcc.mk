@@ -8,8 +8,8 @@ ISYSROOT			?= -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/Mac
 
 CPPFLAGS			?= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_STACKTRACE_USE_NOOP -DLIBBIO_NO_DISPATCH
 LDFLAGS				?= -lz $(GCC_LDFLAGS)
-WARNING_FLAGS_		= -Wno-deprecated-builtins
-WARNING_CXXFLAGS_	= -Wno-interference-size
+WARNING_FLAGS_		+= -Wno-deprecated-builtins
+WARNING_CXXFLAGS_	+= -Wno-interference-size
 
 SYSTEM_CFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) $(ISYSROOT)
 SYSTEM_CXXFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -nostdinc++ $(GCC_INCLUDES) $(ISYSROOT)

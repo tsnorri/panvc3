@@ -8,6 +8,7 @@ CLANG				?= $(CLANG_ROOT)/bin/clang$(CLANG_SUFFIX)
 CLANGXX				?= $(CLANG_ROOT)/bin/clang++$(CLANG_SUFFIX)
 CC					= $(CLANG)
 CXX					= $(CLANGXX)
+WARNING_CXXFLAGS_	+= -Wno-redundant-consteval-if
 
 BOOST_ROOT_LLVM		?= /usr
 BOOST_ROOT			?= $(BOOST_ROOT_LLVM)

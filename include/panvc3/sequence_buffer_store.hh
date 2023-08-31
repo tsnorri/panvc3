@@ -15,7 +15,7 @@ namespace panvc3 {
 	class sequence_buffer
 	{
 		friend class sequence_buffer_store;
-
+	
 	public:
 		typedef std::vector <char>	buffer_type;
 	

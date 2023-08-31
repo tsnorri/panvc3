@@ -7,7 +7,7 @@ ISYSROOT			?= -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/Mac
 
 # Make Boost not use std::unary_function and std::binary_function with BOOST_NO_CXX98_FUNCTION_BASE. (These have been deprecated.)
 # Boost (as of 1.80.0) correctly defines the macro for libstdc++ but for some reason does not for libc++.
-CPPFLAGS			?= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_NO_CXX98_FUNCTION_BASE -DBOOST_STACKTRACE_USE_NOOP
+CPPFLAGS			?= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_STACKTRACE_USE_NOOP
 LDFLAGS				?= -stdlib=libc++ -lz
 
 SYSTEM_CFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) $(ISYSROOT)
