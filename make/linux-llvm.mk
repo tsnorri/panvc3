@@ -19,7 +19,7 @@ CFLAGS					?= $(LLVM_CFLAGS)
 CXXFLAGS				?= $(LLVM_CXXFLAGS)
 LDFLAGS					?= $(LLVM_LDFLAGS)
 
-BOOST_LIBS				?= $(BOOST_ROOT)/lib/libboost_iostreams.a
+BOOST_LIBS				?= $(BOOST_LIBDIR)/libboost_iostreams.a
 
 #SYSTEM_CFLAGS += -fsanitize=thread
 #SYSTEM_CXXFLAGS += -fsanitize=thread

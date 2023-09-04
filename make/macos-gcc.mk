@@ -15,4 +15,4 @@ SYSTEM_CFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) $(ISYSROOT)
 SYSTEM_CXXFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -nostdinc++ $(GCC_INCLUDES) $(ISYSROOT)
 SYSTEM_LDFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -L$(GCC_ROOT)/lib -Wl,-rpath,$(GCC_ROOT)/lib
 
-BOOST_LIBS			?= -L$(BOOST_ROOT)/lib -lboost_iostreams
+BOOST_LIBS			?= -L$(BOOST_LIBDIR) -lboost_iostreams

@@ -14,7 +14,7 @@ SYSTEM_CFLAGS		?= $(GCC_INCLUDES)
 SYSTEM_CXXFLAGS		?= -nostdinc++ $(GCC_INCLUDES)
 SYSTEM_LDFLAGS		?= -L$(GCC_ROOT)/lib -Wl,-rpath,$(GCC_ROOT)/lib
 
-#BOOST_LIBS			?= $(BOOST_ROOT)/lib/libboost_iostreams.a
+#BOOST_LIBS			?= $(BOOST_LIBDIR)/libboost_iostreams.a
 BOOST_LIBS			?= -lboost_iostreams
 
 #CFLAGS += -fsanitize=thread -fsanitize=undefined
