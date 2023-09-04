@@ -7,6 +7,9 @@ include  $(MAKEFILE_DIR)/../make/common.mk
 .PRECIOUS: 
 
 OBJECTS		=	cmdline.o \
+				index_handling.o \
+				index_vector_builder.o \
+				input_processor.o \
 				main.o
 
 all: index_msa

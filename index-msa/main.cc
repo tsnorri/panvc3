@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -15,46 +15,15 @@
 #include <string_view>
 #include <vector>
 #include "cmdline.h"
+#include "index_handling.hh"
+#include "input_processor.hh"
 
 namespace lb	= libbio;
 namespace fs	= std::filesystem;
+namespace mi	= panvc3::msa_indices;
 
 
 namespace {
-
-	struct sequence_entry
-	{
-		std::string	seq_id;
-		std::string	path;
-
-		sequence_entry(std::string const &seq_id_, std::string const &path_):
-			seq_id(seq_id_),
-			path(path_)
-		{
-		}
-	};
-	
-	struct chr_entry
-	{
-		std::string						chr_id;
-		std::vector <sequence_entry>	sequence_entries;
-		
-		explicit chr_entry(std::string const &chr_id_):
-			chr_id(chr_id_)
-		{
-		}
-		
-		bool operator<(chr_entry const &other) const { return chr_id < other.chr_id; }
-	};
-	
-	typedef std::vector <chr_entry> chr_entry_vector;
-	
-	struct chr_entry_cmp
-	{
-		bool operator()(chr_entry const &lhs, std::string const &rhs) const { return lhs.chr_id < rhs; }
-		bool operator()(std::string const &lhs, chr_entry const &rhs) const { return lhs < rhs.chr_id; }
-	};
-	
 	
 	struct sigchld_handler final : public lb::sigchld_handler
 	{
@@ -89,69 +58,10 @@ namespace {
 	}
 	
 	
-	template <typename t_type, typename t_cmp>
-	t_type &find_or_insert(std::vector <t_type> &vec, std::string const &key, t_cmp const &cmp)
-	{
-		auto const rng(std::equal_range(vec.begin(), vec.end(), key, cmp));
-		if (rng.first == rng.second)
-			return *vec.emplace(rng.second, key);
-		else
-			return *rng.first;
-	}
-	
-	
-	panvc3::msa_index::chr_entry &find_msa_chr_entry(panvc3::msa_index &msa_index, std::string const &chr_id)
-	{
-		panvc3::msa_index::chr_entry_cmp cmp;
-		return find_or_insert(msa_index.chr_entries, chr_id, cmp);
-	}
-	
-	
-	chr_entry &find_chr_entry(chr_entry_vector &vec, std::string const &chr_id)
-	{
-		chr_entry_cmp cmp;
-		return find_or_insert(vec, chr_id, cmp);
-	}
-	
-	
-	void read_input_entry(std::size_t const lineno, std::string const &entry, std::string &chr_id, std::string &seq_id, std::string &path)
-	{
-		std::string_view const &entry_sv(entry);
-		std::size_t start(0);
-
-		std::array dsts{&chr_id, &seq_id};
-		
-		for (auto *dst_ptr : dsts)
-		{
-			auto const tab_pos(entry_sv.find('\t', start));
-			if (std::string::npos == tab_pos)
-			{
-				std::cerr << "ERROR: Parse error in input on line " << lineno << ".\n";
-				std::exit(EXIT_FAILURE);
-			}
-			
-			*dst_ptr = entry_sv.substr(start, tab_pos - start);
-			start = 1 + tab_pos;
-		}
-		
-		path = entry_sv.substr(start);
-	}
-
-
-	void load_msa_index(char const *path, panvc3::msa_index &msa_index)
-	{
-		lb::log_time(std::cerr) << "Loading the input MSA index…\n";
-		lb::file_istream stream;
-		lb::open_file_for_reading(path, stream);
-		cereal::PortableBinaryInputArchive archive(stream);
-		archive(msa_index);
-	}
-
-
 	void list_index_contents(char const *path)
 	{
 		panvc3::msa_index msa_index;
-		load_msa_index(path, msa_index);
+		mi::load_msa_index(path, msa_index);
 		
 		for (auto const &chr_entry : msa_index.chr_entries)
 		{
@@ -179,7 +89,7 @@ namespace {
 	{
 		auto const msa_index{[&](){
 			panvc3::msa_index msa_index;
-			load_msa_index(path, msa_index);
+			mi::load_msa_index(path, msa_index);
 			return msa_index;
 		}()};
 
@@ -278,279 +188,6 @@ namespace {
 			}
 		}
 	}
-
-
-	template <bool t_should_output_seq>
-	std::size_t build_index(
-		std::string const &chr_id,
-		std::string const &seq_id,
-		lb::file_handle &read_handle,
-		std::vector <char> &buffer,
-		sdsl::bit_vector &bv,
-		std::size_t const input_size, // 0 if not known
-		std::size_t const wrap_amt
-	)
-	{
-		// Read the input and output non-gapped fasta.
-		
-		// Prepare for reading.
-		buffer.clear();
-		struct stat sb;
-		read_handle.stat(sb);
-		buffer.resize(sb.st_blksize ?: 4096, 0);
-		
-		bv.clear();
-		bv.resize(input_size ?: sb.st_size, 0);
-		
-		// Output the FASTA header for this sequence.
-		if constexpr (t_should_output_seq)
-			std::cout << '>' << chr_id << '/' << seq_id << '\n';
-		
-		// Read and output the sequence.
-		std::size_t bytes_read{};
-		std::size_t pos{};
-		std::size_t non_gap_count{};
-		while ((bytes_read = read_handle.read(buffer.size(), buffer.data())))
-		{
-			for (std::size_t i(0); i < bytes_read; ++i)
-			{
-				auto const cc(buffer[i]);
-				if ('-' == cc)
-				{
-					// Handle the case where sb.st_size == 0, i.e. reading from a pipe.
-					if (bv.size() <= pos + i)
-						bv.resize(1 + pos + i, 0);
-					
-					bv[pos + i] = 1;
-				}
-				else
-				{
-					if constexpr (t_should_output_seq)
-					{
-						std::cout << cc;
-						++non_gap_count;
-						
-						if (wrap_amt && 0 == non_gap_count % wrap_amt)
-							std::cout << '\n';
-					}
-				}
-			}
-			
-			pos += bytes_read;
-		}
-		
-		// Make the vector long enough in case sb.st_size was zero.
-		bv.resize(pos, 0);
-		if (input_size)
-			libbio_always_assert_eq(pos, input_size);
-		
-		if constexpr (t_should_output_seq)
-		{
-			if (0 == wrap_amt || 0 != non_gap_count % wrap_amt)
-				std::cout << '\n';
-		}
-		
-		return pos;
-	}
-
-
-	struct input_handler
-	{
-		virtual ~input_handler() {}
-
-		virtual void process_input(
-			std::string const &path,
-			std::function <void(lb::file_handle &)> const &cb
-		) = 0;
-	};
-
-
-	struct file_input_handler final : public input_handler
-	{
-		virtual void process_input(
-			std::string const &path,
-			std::function <void(lb::file_handle &)> const &cb
-		) override
-		{
-			lb::file_handle handle(lb::open_file_for_reading(path));
-			cb(handle);
-		}
-	};
-
-
-	class subprocess_input_handler final : public input_handler
-	{
-	public:
-		typedef lb::subprocess <lb::subprocess_handle_spec::STDOUT> subprocess_type;
-
-	protected:
-		std::vector <std::string>	&m_pipe_command;
-
-	public:
-		subprocess_input_handler(std::vector <std::string> &pipe_command):
-			m_pipe_command(pipe_command)
-		{
-			m_pipe_command.emplace_back(); // Add an element for the target path. (See process_input() below.)
-		}
-
-		virtual void process_input(
-			std::string const &path,
-			std::function <void(lb::file_handle &)> const &cb
-		) override
-		{
-			m_pipe_command.back() = path;
-			auto subprocess(subprocess_type::subprocess_with_arguments(m_pipe_command));
-			cb(subprocess.stdout_handle());
-		}
-	};
-	
-	
-	class input_processor
-	{
-	protected:
-		std::string					m_input_path;
-		std::string					m_msa_index_input_path;
-		std::string					m_msa_index_output_path;
-		std::vector <std::string>	m_pipe_command;
-		std::size_t					m_fasta_line_width{};
-		bool						m_should_output_fasta{};
-		
-	public:
-		input_processor(
-			char const *input_path,
-			char const *msa_index_input_path,
-			char const *msa_index_output_path,
-			char const *pipe_input_command,
-			bool const should_output_fasta,
-			std::size_t const fasta_line_width
-		):
-			m_input_path(input_path),
-			m_msa_index_input_path(msa_index_input_path ?: ""),
-			m_msa_index_output_path(msa_index_output_path),
-			m_pipe_command(lb::parse_command_arguments(pipe_input_command)),
-			m_fasta_line_width(fasta_line_width),
-			m_should_output_fasta(should_output_fasta)
-		{
-		}
-		
-
-		void process(input_handler &handler)
-		{
-			panvc3::msa_index msa_index;
-				
-			lb::file_istream path_stream;
-			lb::file_ostream msa_index_stream;
-
-			if (!m_msa_index_input_path.empty())
-				load_msa_index(m_msa_index_input_path.c_str(), msa_index);
-			
-			lb::log_time(std::cerr) << "Loading the input sequences…\n";
-			lb::open_file_for_reading(m_input_path, path_stream);
-			lb::open_file_for_writing(m_msa_index_output_path, msa_index_stream, lb::make_writing_open_mode({lb::writing_open_mode::CREATE})); // FIXME: add overwriting conditionally.
-			cereal::PortableBinaryOutputArchive msa_archive(msa_index_stream);
-			
-			chr_entry_vector chr_entries;
-			
-			// Read the paths.
-			{
-				std::string entry_buffer;
-				std::string chr_id;
-				std::string seq_id;
-				std::string path;
-				std::size_t lineno(1);
-				
-				while (std::getline(path_stream, entry_buffer))
-				{
-					read_input_entry(lineno, entry_buffer, chr_id, seq_id, path);
-					auto &entry(find_chr_entry(chr_entries, chr_id));
-					entry.sequence_entries.emplace_back(seq_id, path);
-					++lineno;
-				}
-			}
-			
-			// Prepare the MSA index.
-			msa_index.chr_entries.reserve(msa_index.chr_entries.size() + chr_entries.size());
-			
-			// Handle the inputs and compress and sort in background.
-			std::vector <char> seq_buffer;
-			lb::dispatch_ptr <dispatch_group_t> main_group(dispatch_group_create());
-			auto global_queue(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
-	
-			for (auto const &chr_entry : chr_entries)
-			{
-				lb::log_time(std::cerr) << "Handling sequences for chromosome " << chr_entry.chr_id << "…\n";
-				
-				lb::dispatch_ptr <dispatch_group_t> chr_group(dispatch_group_create());
-				auto &msa_chr_entry(find_msa_chr_entry(msa_index, chr_entry.chr_id));
-				msa_chr_entry.sequence_entries.reserve(chr_entry.sequence_entries.size());
-				
-				std::size_t input_size{};
-				for (auto const &seq_entry : chr_entry.sequence_entries)
-				{
-					handler.process_input(
-						seq_entry.path,
-						[
-							this,
-							global_queue,
-							&seq_buffer,
-							&chr_entry,
-							&seq_entry,
-							&chr_group,
-							&msa_chr_entry,
-							&input_size
-						](lb::file_handle &handle){
-							sdsl::bit_vector bv;
-							lb::log_time(std::cerr) << "Processing " << seq_entry.path << "…\n";
-
-							if (m_should_output_fasta)
-								input_size = build_index <true>(chr_entry.chr_id, seq_entry.seq_id, handle, seq_buffer, bv, input_size, m_fasta_line_width);
-							else
-								input_size = build_index <false>(chr_entry.chr_id, seq_entry.seq_id, handle, seq_buffer, bv, input_size, m_fasta_line_width);
-							
-							auto &msa_seq_entry(msa_chr_entry.sequence_entries.emplace_back());
-							lb::dispatch_group_async_fn(*chr_group, global_queue, [bv = std::move(bv), &seq_entry, &msa_seq_entry](){
-								msa_seq_entry = panvc3::msa_index::sequence_entry(seq_entry.seq_id, bv);
-							});
-						}
-					);
-				}
-				
-				dispatch_group_enter(*main_group);
-				{
-					auto main_group_(*main_group);
-					dispatch_group_notify(*chr_group, global_queue, ^{
-						std::sort(msa_chr_entry.sequence_entries.begin(), msa_chr_entry.sequence_entries.end());
-						dispatch_group_leave(main_group_);
-					});
-				}
-			}
-			
-			lb::log_time(std::cerr) << "Compressing the MSA index…\n";
-			dispatch_group_wait(*main_group, DISPATCH_TIME_FOREVER);
-			lb::log_time(std::cerr) << "Sorting the remaining index entries…\n";
-			std::sort(msa_index.chr_entries.begin(), msa_index.chr_entries.end());
-			lb::log_time(std::cerr) << "Serialising the MSA index…\n";
-			msa_archive(msa_index);
-			msa_index_stream << std::flush;
-			lb::log_time(std::cerr) << "Done.\n";
-			std::exit(EXIT_SUCCESS);
-		}
-
-
-		void operator()()
-		{
-			if (m_pipe_command.empty())
-			{
-				file_input_handler handler;
-				process(handler);
-			}
-			else
-			{
-				subprocess_input_handler handler(m_pipe_command);
-				process(handler);
-			}
-		}
-	};
 	
 	
 	extern void process(gengetopt_args_info &args_info)
@@ -567,17 +204,40 @@ namespace {
 		}
 		else if (args_info.build_index_given)
 		{
-			static input_processor processor(
-				args_info.sequence_inputs_arg,
-				args_info.msa_index_input_arg,
-				args_info.msa_index_output_arg,
-				args_info.pipe_input_arg,
-				args_info.output_fasta_flag,
-				args_info.fasta_line_width_arg
-			);
+			if (! (args_info.sequence_inputs_given || args_info.sequences_given))
+			{
+				std::cerr << "ERROR: Either --sequence-inputs or --sequences has to be specified.\n";
+				std::exit(EXIT_FAILURE);
+			}
 			
-			auto caller(lb::dispatch(processor));
-			caller.async <>(dispatch_get_main_queue());
+			if (args_info.sequence_inputs_given)
+			{
+				static mi::sequence_list_input_processor processor(
+					args_info.sequence_inputs_arg,
+					args_info.msa_index_input_arg,
+					args_info.msa_index_output_arg,
+					args_info.pipe_input_arg,
+					args_info.output_fasta_flag,
+					args_info.fasta_line_width_arg
+				);
+			
+				auto caller(lb::dispatch(processor));
+				caller.async <>(dispatch_get_main_queue());
+			}
+			else if (args_info.sequences_given)
+			{
+				static mi::a2m_input_processor processor(
+					args_info.sequences_arg,
+					args_info.msa_index_input_arg,
+					args_info.msa_index_output_arg,
+					args_info.pipe_input_arg,
+					args_info.output_fasta_flag,
+					args_info.fasta_line_width_arg
+				);
+			
+				auto caller(lb::dispatch(processor));
+				caller.async <>(dispatch_get_main_queue());
+			}
 		}
 		else
 		{
