@@ -80,6 +80,13 @@ namespace panvc3::msa_indices {
 		using input_processor::input_processor;
 		void operator()() { input_processor::operator()(); } // See above.
 		void process(input_handler &handler) override;
+
+		void index_vector_builder_will_process_sequence(
+			index_vector_builder_a2m_input &input,
+			index_vector_builder &builder,
+			std::string const &chrom,
+			std::string const &seq
+		) override;
 		
 		void index_vector_builder_did_process_sequence(
 			index_vector_builder_a2m_input &input,

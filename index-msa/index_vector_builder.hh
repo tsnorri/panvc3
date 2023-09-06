@@ -55,6 +55,13 @@ namespace panvc3::msa_indices {
 	struct index_vector_builder_a2m_input_delegate
 	{
 		virtual ~index_vector_builder_a2m_input_delegate() {}
+
+		virtual void index_vector_builder_will_process_sequence(
+			index_vector_builder_a2m_input &input,
+			index_vector_builder &builder,
+			std::string const &chrom,
+			std::string const &seq
+		) = 0;
 		
 		virtual void index_vector_builder_did_process_sequence(
 			index_vector_builder_a2m_input &input,
