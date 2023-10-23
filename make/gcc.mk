@@ -11,3 +11,4 @@ CXX					= $(GXX)
 
 BOOST_ROOT_GCC		?= /usr
 BOOST_ROOT			?= $(BOOST_ROOT_GCC)
+BOOST_LIBDIR		?= $(BOOST_ROOT)/lib
