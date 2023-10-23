@@ -37,6 +37,8 @@ CATCH2_HEADERS	= $(shell find lib/libbio/lib/Catch2/include)
 
 
 .PHONY: all clean-all clean clean-dependencies dependencies libbio-tests
+.PRECIOUS: lib/libbio/lib/rapidcheck/build-gcc/librapidcheck.a lib/libbio/lib/rapidcheck/build-llvm/librapidcheck.a
+
 
 all: $(BUILD_PRODUCTS)
 
@@ -68,7 +70,7 @@ dist: $(DIST_TAR_GZ)
 tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
 	$(MAKE) -C tests
 
-libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm
+libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm/tests
 
 alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C alignment-statistics
@@ -114,9 +116,12 @@ lib/libbio/build-%/libbio.a:
 	$(MKDIR) -p lib/libbio/build-$*
 	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../src/Makefile
 
-lib/libbio/build-tests-%/tests: lib/libbio/build-%/libbio.a
+lib/libbio/build-tests-%/tests: lib/libbio/build-%/libbio.a lib/libbio/lib/rapidcheck/build-%/librapidcheck.a
 	$(MKDIR) -p lib/libbio/build-tests-$*
-	VPATH=../tests LIBBIO_PATH=../build-$*/libbio.a $(MAKE) -C lib/libbio/build-tests-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../tests/Makefile
+	VPATH=../tests LIBBIO_PATH=../build-$*/libbio.a RAPIDCHECK_BUILD_DIR="build-$*" $(MAKE) -C lib/libbio/build-tests-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../tests/Makefile tests
+
+lib/libbio/lib/rapidcheck/build-%/librapidcheck.a:
+	RAPIDCHECK_BUILD_DIR="build-$*" $(MAKE) -C lib/libbio -f ../../local.mk -f ../../make/$*.mk -f ../../make/$(OS_NAME)-$*.mk -f Makefile lib/rapidcheck/build-$*/librapidcheck.a
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
