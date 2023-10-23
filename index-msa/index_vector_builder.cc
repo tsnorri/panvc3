@@ -97,6 +97,10 @@ namespace panvc3::msa_indices {
 	
 	bool index_vector_builder_a2m_input::handle_identifier(lb::fasta_reader_base &reader, std::string_view const &sv, std::vector <std::string_view> const &additional_info)
 	{
+		// FIXME: Add check that front() below exists.
+		m_current_chrom = sv;
+		m_current_seq = additional_info.front();
+		m_delegate->index_vector_builder_will_process_sequence(*this, *m_builder, m_current_chrom, m_current_seq);
 		m_builder->begin_sequence(sv, additional_info.front());
 		return true;
 	}

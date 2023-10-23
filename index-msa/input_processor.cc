@@ -202,6 +202,17 @@ namespace panvc3::msa_indices {
 		lb::log_time(std::cerr) << "Done.\n";
 		std::exit(EXIT_SUCCESS);
 	}
+
+
+	void a2m_input_processor::index_vector_builder_will_process_sequence(
+		index_vector_builder_a2m_input &input,
+		index_vector_builder &builder,
+		std::string const &chrom_id,
+		std::string const &seq_id
+	)
+	{
+		lb::log_time(std::cerr) << "Processing " << chrom_id << '/' << seq_id << "…\n";
+	}
 	
 	
 	void a2m_input_processor::index_vector_builder_did_process_sequence(
