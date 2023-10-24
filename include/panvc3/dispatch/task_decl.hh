@@ -86,6 +86,8 @@ namespace panvc3::dispatch {
 	struct parametrised
 	{
 		class task; // Fwd.
+		constexpr static inline std::size_t const TASK_BUFFER_SIZE{4 * sizeof(void *)}; // Enough for “most” cases; holds vptr + shared_ptr + void *.
+		
 		
 		// Not in namespace detail b.c. depends on t_targs and not repeating the struct template seemed easier.
 		typedef void(*indirect_callable_fn_type)(t_args...); // For non-member functions.
@@ -127,17 +129,46 @@ namespace panvc3::dispatch {
 		};
 		
 		
-		// FIXME: add me.
-#if 0
 		template <typename t_fn>
+		requires std::is_invocable_v <t_fn>
 		struct lambda_callable final : public callable
 		{
 			t_fn	fn;
 			
-			void execute()(t_args ... &&args) override { fn(std::forward <t_args>(args)...); }
+			lambda_callable(t_fn &&fn_) requires (std::is_rvalue_reference_v <t_fn> && sizeof(lambda_callable <t_fn>) <= TASK_BUFFER_SIZE):
+				fn(std::move(fn_))
+			{
+			}
+			
+			void execute(t_args && ... args) override { fn(std::forward <t_args>(args)...); }
 			void move_to(std::byte *buffer) override { new(buffer) lambda_callable{std::move(fn)}; }
+			inline void enqueue_transient_async(queue &qq) override;
 		};
-#endif
+		
+		
+		template <typename t_fn>
+		requires std::is_invocable_v <t_fn>
+		struct lambda_ptr_callable final : public callable
+		{
+			std::unique_ptr <t_fn>	fn;
+			
+		private:
+			lambda_ptr_callable(std::unique_ptr <t_fn> &&fn_):
+				fn(std::move(fn_))
+			{
+			}
+			
+		public:
+			lambda_ptr_callable(t_fn &&fn_) requires (std::is_rvalue_reference_v <t_fn> && TASK_BUFFER_SIZE < sizeof(lambda_callable <t_fn>)):
+				lambda_ptr_callable(std::make_unique(std::move(fn_)))
+			{
+			}
+			
+			void execute(t_args && ... args) override { (*fn)(std::forward <t_args>(args)...); }
+			void move_to(std::byte *buffer) override { new(buffer) lambda_ptr_callable{std::move(fn)}; }
+			inline void enqueue_transient_async(queue &qq) override;
+		};
+		
 		
 		// FIXME: add a subclass for non-member functions.
 		
@@ -180,7 +211,7 @@ namespace panvc3::dispatch {
 		class alignas(alignof(std::max_align_t)) task // Take into account the alignment of every possible t_fn and t_target.
 		{
 		private:
-			constexpr static inline std::size_t const BUFFER_SIZE{4 * sizeof(void *)}; // Enough for “most” cases; holds vptr + shared_ptr + void *.
+			constexpr static inline std::size_t const BUFFER_SIZE{TASK_BUFFER_SIZE};
 			static callable &to_callable(std::byte *buffer) { return *reinterpret_cast <callable *>(buffer); }
 			
 		private:
