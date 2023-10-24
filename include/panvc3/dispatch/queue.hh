@@ -141,6 +141,9 @@ namespace panvc3::dispatch {
 		bool run();
 		void stop();
 	};
+	
+	
+	thread_local_queue &main_queue();
 }
 
 #endif

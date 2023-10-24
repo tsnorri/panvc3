@@ -442,4 +442,11 @@ namespace panvc3::dispatch {
 		
 		m_cv.notify_one();
 	}
+	
+	
+	thread_local_queue &main_queue()
+	{
+		static thread_local_queue main_queue;
+		return main_queue;
+	}
 }
