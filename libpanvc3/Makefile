@@ -8,6 +8,8 @@ include  $(MAKEFILE_DIR)/../make/seqan3.mk
 OBJECTS		=	alignment_projector.o \
 				cigar.o \
 				compressed_fasta_reader.o \
+				dispatch.o \
+				dispatch_event.o \
 				indel_run_checker.o \
 				sequence_buffer_store.o
 
