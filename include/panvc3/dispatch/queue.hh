@@ -59,6 +59,8 @@ namespace panvc3::dispatch {
 			m_thread_pool->add_queue(*this);
 		}
 		
+		static parallel_queue &shared_queue();
+		
 		parallel_queue(parallel_queue const &) = delete;
 		parallel_queue(parallel_queue &&) = delete;
 		parallel_queue &operator=(parallel_queue const &) = delete;

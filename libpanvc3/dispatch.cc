@@ -290,6 +290,13 @@ namespace panvc3::dispatch {
 	}
 	
 	
+	parallel_queue &shared_queue()
+	{
+		static parallel_queue queue;
+		return queue;
+	}
+	
+	
 	void parallel_queue::enqueue(queue_item &&item)
 	{
 		m_task_queue.enqueue(std::move(item));
