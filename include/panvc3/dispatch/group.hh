@@ -40,7 +40,7 @@ namespace panvc3::dispatch {
 		void notify(queue &qq, task tt);
 		void wait();
 		
-	private:
+		
 		void enter() { m_count.fetch_add(1, std::memory_order_relaxed); } // Relaxed ordering in increment should be enough; see https://en.cppreference.com/w/cpp/atomic/memory_order#Relaxed_ordering
 		void exit();
 	};
