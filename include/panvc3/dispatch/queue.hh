@@ -109,6 +109,38 @@ namespace panvc3::dispatch {
 		inline void enqueue(queue_item &&item);
 		bool fetch_next_task(queue_item &item);
 	};
+	
+	
+	// Implementation of queue’s interface for running tasks on a given thread.
+	class thread_local_queue final : public queue
+	{
+	private:
+		struct queue_item
+		{
+			task	task_{};
+			group	*group_{};
+		};
+		
+	private:
+		typedef std::queue <queue_item> queue_type;
+		
+	private:
+		queue_type				m_task_queue;
+		std::condition_variable	m_cv;
+		std::mutex				m_mutex;
+		bool					m_should_continue{true};
+		
+	private:
+		void async_(task &&tt);
+		
+	public:
+		void async(task tt) override { async_(std::move(tt)); }
+		void barrier(task tt) override { async_(std::move(tt)); }
+		void group_async(group &gg, task tt) override;
+		
+		bool run();
+		void stop();
+	};
 }
 
 #endif

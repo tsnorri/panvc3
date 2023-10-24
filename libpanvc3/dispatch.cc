@@ -31,13 +31,6 @@ namespace panvc3::dispatch::detail {
 		void move_to(std::byte *buffer) override { new(buffer) serial_queue_executor_callable{*queue}; }
 		inline void enqueue_transient_async(struct queue &qq) override;
 	};
-	
-	
-	void serial_queue_executor_callable::enqueue_transient_async(struct queue &qq)
-	{
-		// For the sake of completeness; just copy *this.
-		qq.async(detail::serial_queue_executor_callable{*queue});
-	}
 }
 
 
@@ -256,7 +249,7 @@ namespace panvc3::dispatch {
 	void group::exit()
 	{
 		auto const res(m_count.fetch_sub(1, std::memory_order_acq_rel));
-		assert(0 != (~NOTIFY_MASK & res));
+		libbio_assert_neq(0, ~NOTIFY_MASK & res);
 		if ((NOTIFY_MASK | 1) == res)
 		{
 			m_queue->async(std::move(m_task));
@@ -276,9 +269,16 @@ namespace panvc3::dispatch {
 	}
 	
 	
+	void detail::serial_queue_executor_callable::enqueue_transient_async(struct queue &qq)
+	{
+		// For the sake of completeness; just copy *this.
+		qq.async(detail::serial_queue_executor_callable{*queue});
+	}
+	
+	
 	void detail::serial_queue_executor_callable::execute()
 	{
-		assert(queue);
+		libbio_assert(queue);
 		
 		serial_queue::queue_item item;
 		while (queue->fetch_next_task(item))
@@ -377,5 +377,69 @@ namespace panvc3::dispatch {
 		item = std::move(m_task_queue.front());
 		m_task_queue.pop();
 		return true;
+	}
+	
+	
+	void thread_local_queue::async_(task &&tt)
+	{
+		std::lock_guard lock(m_mutex);
+		m_task_queue.emplace(std::move(tt), nullptr);
+	}
+	
+	
+	void thread_local_queue::group_async(group &gg, task tt)
+	{
+		gg.enter();
+		std::lock_guard lock(m_mutex);
+		m_task_queue.emplace(std::move(tt), &gg);
+	}
+	
+	
+	bool thread_local_queue::run()
+	{
+		std::unique_lock lock(m_mutex, std::defer_lock_t{});
+		while (true)
+		{
+			// Critical section.
+			lock.lock();
+			
+			if (m_should_continue)
+				return m_task_queue.empty();
+			
+			if (!m_task_queue.empty())
+			{
+				// Get the next item from the queue.
+				queue_item item;
+				
+				{
+					using std::swap;
+					swap(item, m_task_queue.front());
+					m_task_queue.pop();
+				}
+				
+				lock.unlock();
+				
+				// Non-critical section; execute the task.
+				item.task_();
+				if (item.group_)
+					item.group_->exit();
+				
+				continue;
+			}
+			
+			// Task queue is empty but we still hold the lock.
+			m_cv.wait(lock);
+		}
+	}
+	
+	
+	void thread_local_queue::stop()
+	{
+		{
+			std::lock_guard lock(m_mutex);
+			m_should_continue = false;
+		}
+		
+		m_cv.notify_one();
 	}
 }

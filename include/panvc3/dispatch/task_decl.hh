@@ -32,7 +32,7 @@ namespace panvc3::dispatch::detail {
 		virtual ~callable() {}
 		virtual void execute(t_args && ...) = 0;
 		virtual void move_to(std::byte *buffer) = 0;
-		virtual void enqueue_transient_async(queue &qq) = 0;
+		virtual void enqueue_transient_async(queue &qq) = 0; // Transient in such a way that the queue does not own the target or hold a strong reference to it.
 		
 		template <typename ... t_args_>
 		void operator()(t_args_ && ... args) { execute(std::forward <t_args_...>(args)...); }

@@ -20,6 +20,7 @@ namespace panvc3::dispatch {
 	{
 		friend class parallel_queue;
 		friend class serial_queue;
+		friend class thread_local_queue;
 		friend class worker_thread_runner;
 		friend struct detail::serial_queue_executor_callable;
 		
