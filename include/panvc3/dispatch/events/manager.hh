@@ -78,6 +78,7 @@ namespace panvc3::dispatch::events {
 		};
 		
 	private:
+		std::vector <struct kevent>		m_event_buffer{};
 		timer_entry_vector				m_timer_entries{};			// Protected by m_timer_mutex.
 		fd_event_source_vector			m_fd_event_sources{};
 		kqueue_handle					m_kqueue{};
@@ -94,47 +95,47 @@ namespace panvc3::dispatch::events {
 			filter_type const filter,
 			queue &qq,
 			file_descriptor_source::task_type &&tt
-		);													// Thread-safe.
+		);														// Thread-safe.
 	
 	public:
-		void setup();										// Not thread-safe.
-		void run();											// Not thread-safe.
+		void setup(std::size_t const event_buffer_size = 16);	// Not thread-safe.
+		void run();												// Not thread-safe.
 		
-		void trigger_event(event_type const evt);			// Thread-safe.
+		void trigger_event(event_type const evt);				// Thread-safe.
 		
 		// NOTE: Currently only one event source of the same type (read or write) is allowed per file descriptor.
 		file_descriptor_source &add_file_descriptor_read_event_source(
 			file_descriptor_type const fd,
 			queue &qq,
 			file_descriptor_source::task_type tt
-		);													// Thread-safe.
+		);														// Thread-safe.
 		
 		file_descriptor_source &add_file_descriptor_write_event_source(
 			file_descriptor_type const fd,
 			queue &qq,
 			file_descriptor_source::task_type tt
-		);													// Thread-safe.
+		);														// Thread-safe.
 		
 		signal_source &add_signal_source(
 			signal_type const sig,
 			queue &qq,
 			signal_source::task_type &&tt
-		);													// Thread-safe.
+		);														// Thread-safe.
 		
 		void remove_file_descriptor_event_source(
 			file_descriptor_source &fdes
-		);													// Thread-safe.
+		);														// Thread-safe.
 		
 		void remove_signal_event_source(
 			signal_source &fdes
-		);													// Thread-safe.
+		);														// Thread-safe.
 		
 		void schedule_timer(
 			timer::duration_type const interval,
 			bool repeats,
 			queue &qq,
 			timer::task_type tt
-		);													// Thread-safe.
+		);														// Thread-safe.
 	};
 }
 

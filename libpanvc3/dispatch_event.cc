@@ -223,8 +223,9 @@ namespace panvc3::dispatch::events {
 	}
 
 
-	void manager::setup()
+	void manager::setup(std::size_t const event_buffer_size)
 	{
+		m_event_buffer.resize(event_buffer_size);
 		m_kqueue.fd = ::kqueue();
 		if (-1 == m_kqueue.fd)
 			throw std::runtime_error{::strerror(errno)};
@@ -275,20 +276,19 @@ namespace panvc3::dispatch::events {
 
 	void manager::run()
 	{
-		std::array <struct kevent, 16> events{};
 		int modified_event_count{};
 	
 		while (true)
 		{
 			// Modify the events if needed and wait.
-			auto const res(::kevent(m_kqueue.fd, events.data(), modified_event_count, events.data(), events.size(), nullptr));
+			auto const res(::kevent(m_kqueue.fd, m_event_buffer.data(), modified_event_count, m_event_buffer.data(), m_event_buffer.size(), nullptr));
 		
 			if (-1 == res)
 				throw std::runtime_error{::strerror(errno)};
 		
 			for (int i(0); i < res; ++i)
 			{
-				auto const &rec(events[i]);
+				auto const &rec(m_event_buffer[i]);
 				switch (rec.filter)
 				{
 					case EVFILT_USER:
@@ -330,7 +330,7 @@ namespace panvc3::dispatch::events {
 			}
 		
 			modified_event_count = 0;
-			modified_event_count += check_timers(events[modified_event_count]);
+			modified_event_count += check_timers(m_event_buffer[modified_event_count]);
 		}
 	}
 	
