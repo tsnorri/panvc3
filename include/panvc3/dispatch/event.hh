@@ -7,6 +7,7 @@
 #define PANVC3_DISPATCH_EVENT_HH
 
 #include <panvc3/dispatch/events/file_descriptor_source.hh>
+#include <panvc3/dispatch/events/signal_source.hh>
 #include <panvc3/dispatch/events/manager.hh>
 #include <panvc3/dispatch/events/timer.hh>
 

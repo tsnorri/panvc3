@@ -60,10 +60,44 @@ namespace panvc3::dispatch::events {
 			retval = &*m_fd_event_sources.emplace_back(
 				file_descriptor_source::make_shared(qq, std::move(tt), fd, filter, identifier)
 			);
+			
+			// Move to the correct place.
+			auto const it(std::upper_bound(m_fd_event_sources.begin(), m_fd_event_sources.end() - 1, identifier, fd_event_listener_cmp{}));
+			using std::swap;
+			swap(it, m_fd_event_sources.end() - 1);
 		}
 		
 		struct kevent kev{};
 		EV_SET(&kev, fd, filter, EV_ADD | EV_ENABLE | EV_RECEIPT | EV_CLEAR, 0, 0, std::bit_cast <void *>(identifier));
+		modify_kqueue(m_kqueue.fd, &kev, 1);
+		return *retval;
+	}
+	
+	
+	// FIXME: This function is quite similar to the one above; consider merging.
+	signal_source &manager::add_signal_source(
+		signal_type const sig,
+		queue &qq,
+		signal_source::task_type &&tt
+	)
+	{
+		// For now we only support one event source per signal.
+		signal_source *retval{};
+		
+		{
+			std::lock_guard{m_signal_es_mutex};
+			retval = &*m_signal_event_sources.emplace_back(
+				signal_source::make_shared(qq, std::move(tt), sig)
+			);
+			
+			// Move to the correct place.
+			auto const it(std::upper_bound(m_signal_event_sources.begin(), m_signal_event_sources.end() - 1, sig, signal_event_listener_cmp{}));
+			using std::swap;
+			swap(it, m_signal_event_sources.end() - 1);
+		}
+		
+		struct kevent kev{};
+		EV_SET(&kev, sig, EVFILT_SIGNAL, EV_ADD | EV_ENABLE | EV_RECEIPT, 0, 0, nullptr);
 		modify_kqueue(m_kqueue.fd, &kev, 1);
 		return *retval;
 	}
@@ -106,8 +140,26 @@ namespace panvc3::dispatch::events {
 		EV_SET(&kev, identifier, filter, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
 		modify_kqueue(m_kqueue.fd, &kev, 1);
 	}
-
-
+	
+	
+	void remove_signal_event_source(signal_source &fdes)
+	{
+		auto const sig{fdes.m_signal};
+	
+		{
+			std::lock_guard lock{m_signal_es_mutex};
+			auto const end(m_signal_event_sources.end());
+			auto const it(std::lower_bound(m_signal_event_sources.begin(), end, sig, signal_event_listener_cmp{}));
+			if (it != end && &fdes == &(**it))
+				m_signal_event_sources.erase(it);
+		}
+		
+		struct kevent kev{};
+		EV_SET(&kev, sig, filter, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
+		modify_kqueue(m_kqueue.fd, &kev, 1);
+	}
+	
+	
 	bool manager::check_timers(struct kevent &timer_event)
 	{
 		duration_type next_firing_time{timer::DURATION_MAX};
@@ -223,8 +275,7 @@ namespace panvc3::dispatch::events {
 
 	void manager::run()
 	{
-		// +1 for EVFILT_TIMER. (Remember to increment for EVFILT_SIGNAL.)
-		std::array <struct kevent, 1 + EVENT_COUNT> events{};
+		std::array <struct kevent, 16> events{};
 		int modified_event_count{};
 	
 		while (true)
@@ -281,5 +332,65 @@ namespace panvc3::dispatch::events {
 			modified_event_count = 0;
 			modified_event_count += check_timers(events[modified_event_count]);
 		}
+	}
+	
+	
+	void install_sigchld_handler(events::manager &mgr, queue &qq, sigchld_handler &handler)
+	{
+		mgr.add_signal_source(SIGCHLD, qq, [](signal_type const){
+			bool did_report_error(false);
+			while (true)
+			{
+				int status(0);
+				auto const pid(::waitpid(-1, &status, WNOHANG | WUNTRACED));
+				if (pid <= 0)
+					break;
+		
+				if (WIFEXITED(status))
+				{
+					auto const exit_status(WEXITSTATUS(status));
+					if (0 != exit_status)
+					{
+						did_report_error = true;
+						char const *reason{nullptr};
+						switch (exit_status)
+						{
+							case 127:
+								reason = "command not found";
+								break;
+					
+							case 126:
+								reason = "command invoked cannot execute";
+								break;
+					
+							case 69: // EX_UNAVAILABLE
+								reason = "service unavailable";
+								break;
+					
+							case 71: // EX_OSERR
+								reason = "unknown error from execvp()";
+								break;
+					
+							case 74: // EX_IOERR
+								reason = "an I/O error occurred";
+								break;
+					
+							default:
+								break;
+						}
+						
+						handler.child_did_exit_with_nonzero_status(pid, exit_status, reason);
+					}
+				}
+				else if (WIFSIGNALED(status))
+				{
+					did_report_error = true;
+					auto const signal_number(WTERMSIG(status));
+					handler.child_received_signal(pid, signal_number);
+				}
+			}
+			
+			handler.finish_handling(did_report_error);
+		});
 	}
 }

@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <panvc3/dispatch/events/file_descriptor_source.hh>
+#include <panvc3/dispatch/events/signal_source.hh>
 #include <panvc3/dispatch/events/timer.hh>
 #include <unistd.h>											// ::close
 #include <utility>											// std::greater, std::to_underlying
@@ -57,14 +58,23 @@ namespace panvc3::dispatch::events {
 		};
 		
 		typedef std::shared_ptr <file_descriptor_source>	fd_event_source_ptr;
+		typedef std::shared_ptr <signal_source>				signal_event_source_ptr;
 		typedef std::vector <timer_entry>					timer_entry_vector;
 		typedef std::vector <fd_event_source_ptr>			fd_event_source_vector;
+		typedef std::vector <signal_event_source_ptr>		signal_event_source_vector;
 		
 		struct fd_event_listener_cmp
 		{
 			bool operator()(fd_event_source_ptr const &lhs, event_listener_identifier_type const rhs) const { return lhs->m_identifier < rhs; }
 			bool operator()(event_listener_identifier_type const lhs, fd_event_source_ptr const &rhs) const { return lhs < rhs->m_identifier; }
-			bool operator()(fd_event_source_ptr const &lhs, fd_event_source_ptr const &rhs) const  { return lhs->m_identifier < rhs->m_identifier; }
+			bool operator()(fd_event_source_ptr const &lhs, fd_event_source_ptr const &rhs) const { return lhs->m_identifier < rhs->m_identifier; }
+		};
+		
+		struct signal_event_listener_cmp
+		{
+			bool operator()(signal_event_source_ptr const &lhs, signal_type const rhs) const { return lhs->m_signal < rhs; }
+			bool operator()(signal_type const lhs, signal_event_source_ptr const &rhs) const { return lhs < rhs->m_signal; }
+			bool operator()(signal_event_source_ptr const &lhs, signal_event_source_ptr const &rhs) const { return lhs->m_signal < rhs->m_signal; }
 		};
 		
 	private:
@@ -75,6 +85,7 @@ namespace panvc3::dispatch::events {
 	
 		std::mutex						m_timer_mutex{};
 		std::mutex						m_fd_es_mutex{};
+		std::mutex						m_signal_es_mutex{}; // FIXME: combine some of the mutexes?
 	
 	private:
 		bool check_timers(struct kevent &timer_event);
@@ -104,8 +115,18 @@ namespace panvc3::dispatch::events {
 			file_descriptor_source::task_type tt
 		);													// Thread-safe.
 		
+		signal_source &add_signal_source(
+			signal_type const sig,
+			queue &qq,
+			signal_source::task_type &&tt
+		);													// Thread-safe.
+		
 		void remove_file_descriptor_event_source(
 			file_descriptor_source &fdes
+		);													// Thread-safe.
+		
+		void remove_signal_event_source(
+			signal_source &fdes
 		);													// Thread-safe.
 		
 		void schedule_timer(

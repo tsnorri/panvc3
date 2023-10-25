@@ -20,6 +20,7 @@ namespace panvc3::dispatch::events {
 	
 	typedef std::int16_t	filter_type;				// Type from struct kevent.
 	typedef int				file_descriptor_type;
+	typedef int				signal_type;
 	
 	
 	struct source
