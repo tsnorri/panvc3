@@ -32,7 +32,7 @@ namespace panvc3::dispatch::detail {
 		virtual ~callable() {}
 		virtual void execute(t_args && ...) = 0;
 		virtual void move_to(std::byte *buffer) = 0;
-		virtual void enqueue_transient_async(queue &qq) = 0; // Transient in such a way that the queue does not own the target or hold a strong reference to it.
+		virtual void enqueue_transient_async(queue &qq) = 0; // Make a trasient version of the callable and execute it asynchronously in the given queue; used by event sources.
 		
 		template <typename ... t_args_>
 		void operator()(t_args_ && ... args) { execute(std::forward <t_args_...>(args)...); }
@@ -130,12 +130,11 @@ namespace panvc3::dispatch {
 		
 		
 		template <typename t_fn>
-		requires std::is_invocable_v <t_fn>
 		struct lambda_callable final : public callable
 		{
 			t_fn	fn;
 			
-			lambda_callable(t_fn &&fn_) requires (std::is_rvalue_reference_v <t_fn> && sizeof(lambda_callable <t_fn>) <= TASK_BUFFER_SIZE):
+			lambda_callable(t_fn &&fn_): //requires std::is_rvalue_reference_v <t_fn>:
 				fn(std::move(fn_))
 			{
 			}
@@ -147,19 +146,16 @@ namespace panvc3::dispatch {
 		
 		
 		template <typename t_fn>
-		requires std::is_invocable_v <t_fn>
 		struct lambda_ptr_callable final : public callable
 		{
 			std::unique_ptr <t_fn>	fn;
 			
-		private:
 			lambda_ptr_callable(std::unique_ptr <t_fn> &&fn_):
 				fn(std::move(fn_))
 			{
 			}
 			
-		public:
-			lambda_ptr_callable(t_fn &&fn_) requires (std::is_rvalue_reference_v <t_fn> && TASK_BUFFER_SIZE < sizeof(lambda_callable <t_fn>)):
+			lambda_ptr_callable(t_fn &&fn_) requires std::is_rvalue_reference_v <t_fn>:
 				lambda_ptr_callable(std::make_unique(std::move(fn_)))
 			{
 			}
@@ -168,6 +164,21 @@ namespace panvc3::dispatch {
 			void move_to(std::byte *buffer) override { new(buffer) lambda_ptr_callable{std::move(fn)}; }
 			inline void enqueue_transient_async(queue &qq) override;
 		};
+		
+		
+		template <typename t_fn>
+		static lambda_callable <t_fn> make_lambda_callable(t_fn &&fn)
+		requires (sizeof(lambda_callable <t_fn>) <= TASK_BUFFER_SIZE)
+		{
+			return lambda_callable{std::forward <t_fn>(fn)};
+		}
+		
+		template <typename t_fn>
+		static lambda_ptr_callable <t_fn> make_lambda_callable(t_fn &&fn)
+		requires (TASK_BUFFER_SIZE < sizeof(lambda_callable <t_fn>))
+		{
+			return lambda_ptr_callable{std::forward <t_fn>(fn)};
+		}
 		
 		
 		// FIXME: add a subclass for non-member functions.
@@ -248,7 +259,8 @@ namespace panvc3::dispatch {
 			template <ClassIndirectTarget <task, t_args...> t_target, indirect_member_callable_fn_t <t_target> t_fn>
 			static task from_member_fn(t_target &&target) { return task{indirect_member_callable <t_target, t_fn>{std::forward <t_target>(target)}}; }
 			
-			// FIXME: handle lambda_task.
+			template <typename t_fn>
+			static task from_lambda(t_fn &&fn) { return make_lambda_callable(std::forward <t_fn>(fn)); }
 			
 			// Move constructor and assignment.
 			task(task &&other) { other.get_callable().move_to(m_buffer); }

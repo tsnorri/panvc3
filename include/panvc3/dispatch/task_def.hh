@@ -41,6 +41,28 @@ namespace panvc3::dispatch {
 	
 	
 	template <typename ... t_args>
+	template <typename t_fn>
+	void parametrised <t_args...>::lambda_callable <t_fn>::enqueue_transient_async(queue &qq)
+	{
+		if constexpr (0 == sizeof...(t_args))
+			qq.async(indirect_member_callable <t_fn>(&fn));
+		else
+			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
+	}
+	
+	
+	template <typename ... t_args>
+	template <typename t_fn>
+	void parametrised <t_args...>::lambda_ptr_callable <t_fn>::enqueue_transient_async(queue &qq)
+	{
+		if constexpr (0 == sizeof...(t_args))
+			qq.async(indirect_member_callable <t_fn>(fn.get()));
+		else
+			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
+	}
+	
+	
+	template <typename ... t_args>
 	parametrised <t_args...>::task::task(empty_callable const &)
 	{
 		static_assert(sizeof(empty_callable) <= BUFFER_SIZE);
