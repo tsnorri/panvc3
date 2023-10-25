@@ -81,6 +81,7 @@ namespace panvc3::dispatch::events {
 		std::vector <struct kevent>		m_event_buffer{};
 		timer_entry_vector				m_timer_entries{};			// Protected by m_timer_mutex.
 		fd_event_source_vector			m_fd_event_sources{};
+		signal_event_source_vector		m_signal_event_sources{};
 		kqueue_handle					m_kqueue{};
 		event_listener_identifier_type	m_fd_event_listener_idx{};
 	

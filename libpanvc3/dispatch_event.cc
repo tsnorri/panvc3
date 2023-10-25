@@ -64,7 +64,7 @@ namespace panvc3::dispatch::events {
 			// Move to the correct place.
 			auto const it(std::upper_bound(m_fd_event_sources.begin(), m_fd_event_sources.end() - 1, identifier, fd_event_listener_cmp{}));
 			using std::swap;
-			swap(it, m_fd_event_sources.end() - 1);
+			swap(*it, *(m_fd_event_sources.end() - 1));
 		}
 		
 		struct kevent kev{};
@@ -93,7 +93,7 @@ namespace panvc3::dispatch::events {
 			// Move to the correct place.
 			auto const it(std::upper_bound(m_signal_event_sources.begin(), m_signal_event_sources.end() - 1, sig, signal_event_listener_cmp{}));
 			using std::swap;
-			swap(it, m_signal_event_sources.end() - 1);
+			swap(*it, *(m_signal_event_sources.end() - 1));
 		}
 		
 		struct kevent kev{};
@@ -142,7 +142,7 @@ namespace panvc3::dispatch::events {
 	}
 	
 	
-	void remove_signal_event_source(signal_source &fdes)
+	void manager::remove_signal_event_source(signal_source &fdes)
 	{
 		auto const sig{fdes.m_signal};
 	
@@ -155,7 +155,7 @@ namespace panvc3::dispatch::events {
 		}
 		
 		struct kevent kev{};
-		EV_SET(&kev, sig, filter, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
+		EV_SET(&kev, sig, EVFILT_SIGNAL, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
 		modify_kqueue(m_kqueue.fd, &kev, 1);
 	}
 	
@@ -337,7 +337,7 @@ namespace panvc3::dispatch::events {
 	
 	void install_sigchld_handler(events::manager &mgr, queue &qq, sigchld_handler &handler)
 	{
-		mgr.add_signal_source(SIGCHLD, qq, [](signal_type const){
+		mgr.add_signal_source(SIGCHLD, qq, signal_source::task_type::from_lambda([&handler](signal_source const &source){
 			bool did_report_error(false);
 			while (true)
 			{
@@ -391,6 +391,6 @@ namespace panvc3::dispatch::events {
 			}
 			
 			handler.finish_handling(did_report_error);
-		});
+		}));
 	}
 }
