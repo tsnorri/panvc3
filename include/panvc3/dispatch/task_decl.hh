@@ -155,8 +155,8 @@ namespace panvc3::dispatch {
 			{
 			}
 			
-			lambda_ptr_callable(t_fn &&fn_) requires std::is_rvalue_reference_v <t_fn>:
-				lambda_ptr_callable(std::make_unique(std::move(fn_)))
+			lambda_ptr_callable(t_fn &&fn_): //requires std::is_rvalue_reference_v <t_fn>:
+				lambda_ptr_callable(std::make_unique <t_fn>(std::move(fn_)))
 			{
 			}
 			
