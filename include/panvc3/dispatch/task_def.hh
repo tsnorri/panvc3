@@ -13,6 +13,10 @@
 
 namespace panvc3::dispatch::detail {
 	
+	template <typename t_type>
+	using add_pointer_to_const_t = std::add_pointer_t <std::add_const_t <t_type>>;
+	
+	
 	template <typename ... t_args>
 	void empty_callable <t_args...>::enqueue_transient_async(queue &qq)
 	{
@@ -42,8 +46,9 @@ namespace panvc3::dispatch::detail {
 	template <typename t_fn, typename ... t_args>
 	void lambda_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
 	{
+		// FIXME: Detect whether the lambda has a non-const operator(), i.e. declared mutable.
 		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <std::add_pointer_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(&fn));
+			qq.async(indirect_member_callable <add_pointer_to_const_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(&fn));
 		else
 			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
 	}
@@ -52,8 +57,9 @@ namespace panvc3::dispatch::detail {
 	template <typename t_fn, typename ... t_args>
 	void lambda_ptr_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
 	{
+		// FIXME: Detect whether the lambda has a non-const operator(), i.e. declared mutable.
 		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <std::add_pointer_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(fn.get()));
+			qq.async(indirect_member_callable <add_pointer_to_const_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(fn.get()));
 		else
 			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
 	}

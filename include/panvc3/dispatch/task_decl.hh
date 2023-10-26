@@ -105,7 +105,12 @@ namespace panvc3::dispatch::detail {
 	template <typename t_target, typename... t_args>
 	struct indirect_member_callable_fn
 	{
-		typedef void(ptr_value_type_t <t_target>::*type)(t_args...); // For member functions.
+		typedef ptr_value_type_t <t_target> value_type;
+		typedef std::conditional_t <
+			std::is_const_v <value_type>,
+			void(value_type::*)(t_args...) const,
+			void(value_type::*)(t_args...)
+		> type; // For member functions.
 	};
 	
 	template <typename t_target, typename ... t_args>
@@ -321,12 +326,12 @@ namespace panvc3::dispatch::detail {
 		// (See note above about task <t_args...>.)
 		template <ClassIndirectCallableTarget <task <t_args...>, t_args...> t_target>
 		/* implicit */ inline task(t_target &&target):
-			task{private_tag <indirect_member_callable_t <std::remove_cvref_t <t_target>>>{}, std::forward <t_target>(target)} {} // operator() by default
+			task{private_tag <indirect_member_callable_t <std::remove_reference_t <t_target>>>{}, std::forward <t_target>(target)} {} // operator() by default
 		
 		// Construct from a callable.
 		template <Callable <t_args...> t_callable>
 		/* implicit */ inline task(t_callable &&callable):
-			task{private_tag <std::remove_cvref_t <t_callable>>{}, std::forward <t_callable>(callable)} {}
+			task{private_tag <std::remove_reference_t <t_callable>>{}, std::forward <t_callable>(callable)} {}
 		
 		// Construct from a target that produces an indirect_member_callable. (I.e. pointer, std::unique_ptr, std::shared_ptr, std::weak_ptr.)
 		// The size check is in the constructor.
