@@ -60,44 +60,11 @@ namespace panvc3::dispatch::detail {
 	
 	
 	template <typename ... t_args>
-	task <t_args...>::task(empty_callable_type const &)
+	template <typename t_callable, typename ... t_args_>
+	task <t_args...>::task(private_tag <t_callable>, t_args_ && ... args)
 	{
-		static_assert(sizeof(empty_callable_type) <= BUFFER_SIZE);
-		new(m_buffer) empty_callable();
-	}
-	
-	
-	template <typename ... t_args>
-	template <ClassIndirectCallableTarget <task <t_args...>, t_args...> t_target>
-	task <t_args...>::task(t_target &&target)
-	{
-		typedef indirect_member_callable_t <std::remove_cvref_t <t_target>> callable_type; // operator() by default.
-		static_assert(sizeof(callable_type) <= BUFFER_SIZE);
-		new(m_buffer) callable_type(std::forward <t_target>(target));
-	}
-	
-	
-	template <typename ... t_args>
-	template <
-		ClassIndirectTarget <task <t_args...>, t_args...> t_target,
-		indirect_member_callable_fn_t <t_target, t_args...> t_fn,
-		typename t_callable
-	>
-	task <t_args...>::task(t_callable &&cc)
-	{
-		typedef std::remove_cvref_t <t_callable> callable_type;
-		static_assert(sizeof(callable_type) <= BUFFER_SIZE);
-		new(m_buffer) callable_type(std::forward <t_callable>(cc));
-	}
-	
-	
-	template <typename ... t_args>
-	template <Callable <t_args...> t_callable>
-	task <t_args...>::task(t_callable &&callable)
-	{
-		typedef std::remove_cvref_t <t_callable> callable_type;
-		static_assert(sizeof(callable_type) <= BUFFER_SIZE);
-		new(m_buffer) callable_type(std::forward <t_callable>(callable));
+		static_assert(sizeof(t_callable) <= BUFFER_SIZE);
+		new(m_buffer) t_callable(std::forward <t_args_>(args)...);
 	}
 	
 	

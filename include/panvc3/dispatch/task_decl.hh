@@ -261,7 +261,7 @@ namespace panvc3::dispatch::detail {
 		
 	private:
 		template <bool = true>
-		void do_execute(t_args && ... args) requires is_weak_ptr_v <t_target>;
+		inline void do_execute(t_args && ... args) requires is_weak_ptr_v <t_target>;
 		
 		template <bool = true>
 		void do_execute(t_args && ... args) requires (!is_weak_ptr_v <t_target>) { ((*target).*t_fn)(std::forward <t_args>(args)...); }
@@ -300,39 +300,39 @@ namespace panvc3::dispatch::detail {
 		std::byte m_buffer[BUFFER_SIZE];
 		
 	private:
-		// For some reason Clang does not think that task (without template parameters) and task <t_args...> in out-of-line function definitions are the same type.
-		template <
-			ClassIndirectTarget <task <t_args...>, t_args...> t_target,
-			indirect_member_callable_fn_t <t_target, t_args...> t_fn,
-			typename t_callable
-		>
-		explicit inline task(t_callable &&callable);
-			
+		template <typename t_type>
+		struct private_tag {};
+		
+		template <typename t_callable, typename ... t_args_>
+		explicit inline task(private_tag <t_callable>, t_args_ && ... args);
+		
 		callable_type &get_callable() { return to_callable(m_buffer); }
 		
 	public:
 		virtual ~task() { get_callable().~callable(); }
 		
-		// Construct from an empty_callable.
-		/* implicit */ inline task(empty_callable_type const &);
-		
 		// Default constructor, produces an empty_callable.
-		task(): task(empty_callable_type{}) {}
+		task(): task{private_tag <empty_callable_type>{}} {}
+		
+		// Construct from an empty_callable.
+		/* implicit */ inline task(empty_callable_type const &): task{private_tag <empty_callable_type>{}} {}
 		
 		// Construct from a target that produces an indirect_member_callable. (I.e. pointer, std::unique_ptr, std::shared_ptr, std::weak_ptr.)
 		// (See note above about task <t_args...>.)
 		template <ClassIndirectCallableTarget <task <t_args...>, t_args...> t_target>
-		/* implicit */ inline task(t_target &&target);
+		/* implicit */ inline task(t_target &&target):
+			task{private_tag <indirect_member_callable_t <std::remove_cvref_t <t_target>>>{}, std::forward <t_target>(target)} {} // operator() by default
 		
 		// Construct from a callable.
 		template <Callable <t_args...> t_callable>
-		/* implicit */ inline task(t_callable &&cc);
+		/* implicit */ inline task(t_callable &&callable):
+			task{private_tag <std::remove_cvref_t <t_callable>>{}, std::forward <t_callable>(callable)} {}
 		
 		// Construct from a target that produces an indirect_member_callable. (I.e. pointer, std::unique_ptr, std::shared_ptr, std::weak_ptr.)
 		// The size check is in the constructor.
 		// (See note above about task <t_args...>.)
 		template <ClassIndirectTarget <task <t_args...>, t_args...> t_target, indirect_member_callable_fn_t <t_target, t_args...> t_fn>
-		static task from_member_fn(t_target &&target) { return task{indirect_member_callable_t <t_target, t_fn>{std::forward <t_target>(target)}}; }
+		static task from_member_fn(t_target &&target) { return task{private_tag <indirect_member_callable_t <t_target, t_fn>>{}, std::forward <t_target>(target)}; }
 		
 		template <typename t_fn>
 		static task from_lambda(t_fn &&fn) { return make_lambda_callable(std::forward <t_fn>(fn)); }
