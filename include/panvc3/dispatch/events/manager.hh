@@ -51,7 +51,7 @@ namespace panvc3::dispatch::events {
 		struct timer_entry
 		{
 			time_point_type					firing_time{};
-			std::shared_ptr <struct timer>	timer{};
+			std::shared_ptr <class timer>	timer{};
 		
 			bool operator<(timer_entry const &other) const { return firing_time < other.firing_time; }
 			bool operator>(timer_entry const &other) const { return firing_time > other.firing_time; }
