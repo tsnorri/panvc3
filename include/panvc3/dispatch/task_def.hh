@@ -125,7 +125,7 @@ namespace panvc3::dispatch {
 	{
 		auto target_(target.lock());
 		if (target_)
-			((*target_).*t_fn)(std::forward <t_args_...>(args)...);
+			((*target_).*t_fn)(std::forward <t_args_>(args)...);
 	}
 }
 
