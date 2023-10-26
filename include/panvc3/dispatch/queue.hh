@@ -21,8 +21,11 @@ namespace panvc3::dispatch {
 	{
 		virtual ~queue() {}
 		virtual void async(task tt) = 0;
-		virtual void barrier(task tt) = 0;
 		virtual void group_async(group &gg, task tt) = 0;
+		
+#if PANVC3_ENABLE_DISPATCH_BARRIER
+		virtual void barrier(task tt) = 0;
+#endif
 	};
 	
 	
@@ -35,7 +38,9 @@ namespace panvc3::dispatch {
 		{
 			task				task_{};
 			group				*group_{};
+#if PANVC3_ENABLE_DISPATCH_BARRIER
 			shared_barrier_ptr	barrier_{};
+#endif
 		};
 		
 	private:
@@ -44,7 +49,9 @@ namespace panvc3::dispatch {
 	private:
 		thread_pool							*m_thread_pool{};
 		queue_type							m_task_queue;
+#if PANVC3_ENABLE_DISPATCH_BARRIER
 		std::atomic <shared_barrier_ptr>	m_current_barrier{std::make_shared <class barrier>()};	// To get atomic store() etc.
+#endif
 		
 	public:
 		parallel_queue(): // Not thread-safe.
@@ -67,12 +74,18 @@ namespace panvc3::dispatch {
 		parallel_queue &operator=(parallel_queue &&) = delete;
 		
 		void async(task tt) override;
-		void barrier(task tt) override;
 		void group_async(group &gg, task tt) override;
+		
+#if PANVC3_ENABLE_DISPATCH_BARRIER
+		void barrier(task tt) override;
+#endif
 		
 	private:
 		inline void enqueue(queue_item &&item);
+		
+#if PANVC3_ENABLE_DISPATCH_BARRIER
 		shared_barrier_ptr current_barrier() const { return m_current_barrier.load(std::memory_order_acquire); }
+#endif
 	};
 	
 	
@@ -103,9 +116,11 @@ namespace panvc3::dispatch {
 		}
 		
 		void async(task tt) override { async_(std::move(tt)); }
-		void barrier(task tt) override { async_(std::move(tt)); }
 		void group_async(group &gg, task tt) override;
 		
+#if PANVC3_ENABLE_DISPATCH_BARRIER
+		void barrier(task tt) override { async_(std::move(tt)); }
+#endif
 	private:
 		void async_(task &&tt);
 		inline void enqueue(queue_item &&item);
@@ -137,8 +152,11 @@ namespace panvc3::dispatch {
 		
 	public:
 		void async(task tt) override { async_(std::move(tt)); }
-		void barrier(task tt) override { async_(std::move(tt)); }
 		void group_async(group &gg, task tt) override;
+		
+#if PANVC3_ENABLE_DISPATCH_BARRIER
+		void barrier(task tt) override { async_(std::move(tt)); }
+#endif
 		
 		bool run();
 		void stop();

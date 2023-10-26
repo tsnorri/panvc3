@@ -6,6 +6,8 @@
 #ifndef PANVC3_DISPATCH_BARRIER_HH
 #define PANVC3_DISPATCH_BARRIER_HH
 
+#if PANVC3_ENABLE_DISPATCH_BARRIER
+
 #include <atomic>
 #include <cstdint>
 #include <limits>	// std::numeric_limits
@@ -94,5 +96,7 @@ namespace panvc3::dispatch {
 		}
 	}
 }
+
+#endif
 
 #endif

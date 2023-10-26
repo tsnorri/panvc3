@@ -84,9 +84,10 @@ namespace panvc3::dispatch {
 					if (queue->m_task_queue.try_dequeue(item))
 					{
 						++executed_queue_items;
-						libbio_assert(item.barrier_);
-					
+						
+#if PANVC3_ENABLE_DISPATCH_BARRIER
 						{
+							libbio_assert(item.barrier_);
 							auto &bb(*item.barrier_);
 							barrier::status_underlying_type state{barrier::NOT_EXECUTED};
 							if (bb.m_state.compare_exchange_strong(state, barrier::EXECUTING, std::memory_order_acq_rel, std::memory_order_acquire))
@@ -139,6 +140,7 @@ namespace panvc3::dispatch {
 								}
 							}
 						}
+#endif
 						
 						item.task_();
 						if (item.group_)
@@ -309,8 +311,10 @@ namespace panvc3::dispatch {
 	{
 		enqueue(queue_item{
 			std::move(tt),
-			nullptr,
-			current_barrier()
+			nullptr
+#if PANVC3_ENABLE_DISPATCH_BARRIER
+			, current_barrier()
+#endif
 		});
 	}
 	
@@ -318,10 +322,17 @@ namespace panvc3::dispatch {
 	void parallel_queue::group_async(group &gg, task tt)
 	{
 		gg.enter();
-		enqueue(queue_item{std::move(tt), &gg, current_barrier()});
+		enqueue(queue_item{
+			std::move(tt),
+			&gg
+#if PANVC3_ENABLE_DISPATCH_BARRIER
+			, current_barrier()
+#endif
+		});
 	}
 	
 	
+#if PANVC3_ENABLE_DISPATCH_BARRIER
 	void parallel_queue::barrier(task tt)
 	{
 		// Prepare the barrier.
@@ -341,6 +352,7 @@ namespace panvc3::dispatch {
 			std::move(bb)
 		});
 	}
+#endif
 	
 	
 	void serial_queue::enqueue(queue_item &&item)
