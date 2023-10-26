@@ -43,7 +43,7 @@ namespace panvc3::dispatch::detail {
 	void lambda_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
 	{
 		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <t_fn, std::tuple <t_args...>, &t_fn::operator()>(&fn));
+			qq.async(indirect_member_callable <std::add_pointer_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(&fn));
 		else
 			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
 	}
@@ -53,7 +53,7 @@ namespace panvc3::dispatch::detail {
 	void lambda_ptr_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
 	{
 		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <t_fn, std::tuple <t_args...>, &t_fn::operator()>(fn.get()));
+			qq.async(indirect_member_callable <std::add_pointer_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(fn.get()));
 		else
 			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
 	}
