@@ -170,14 +170,14 @@ namespace panvc3::dispatch {
 		static lambda_callable <t_fn> make_lambda_callable(t_fn &&fn)
 		requires (sizeof(lambda_callable <t_fn>) <= TASK_BUFFER_SIZE)
 		{
-			return lambda_callable{std::forward <t_fn>(fn)};
+			return lambda_callable <t_fn>{std::forward <t_fn>(fn)};
 		}
 		
 		template <typename t_fn>
 		static lambda_ptr_callable <t_fn> make_lambda_callable(t_fn &&fn)
 		requires (TASK_BUFFER_SIZE < sizeof(lambda_callable <t_fn>))
 		{
-			return lambda_ptr_callable{std::forward <t_fn>(fn)};
+			return lambda_ptr_callable <t_fn>{std::forward <t_fn>(fn)};
 		}
 		
 		
