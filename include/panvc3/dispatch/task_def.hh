@@ -30,7 +30,7 @@ namespace panvc3::dispatch {
 		if constexpr (0 == sizeof...(t_args))
 		{
 			qq.async(indirect_member_callable <typename transient_indirect_target::type, t_fn>(
-				transient_indirect_target::make(target)
+				detail::transient_indirect_target::make(target)
 			));
 		}
 		else
