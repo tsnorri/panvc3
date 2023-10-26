@@ -20,7 +20,7 @@ namespace panvc3::dispatch::events {
 		friend class manager;
 		
 	public:
-		typedef parametrised <signal_source &>::task	task_type;
+		typedef task_t <signal_source &>	task_type;
 	
 	private:
 		signal_type	m_signal{-1};

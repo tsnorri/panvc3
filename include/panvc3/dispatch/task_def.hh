@@ -11,10 +11,10 @@
 #include <stdexcept>					// std::logic_error
 
 
-namespace panvc3::dispatch {
+namespace panvc3::dispatch::detail {
 	
 	template <typename ... t_args>
-	void parametrised <t_args...>::empty_callable::enqueue_transient_async(queue &qq)
+	void empty_callable <t_args...>::enqueue_transient_async(queue &qq)
 	{
 		if constexpr (0 == sizeof...(t_args))
 			qq.async(task{empty_callable{}});
@@ -23,14 +23,13 @@ namespace panvc3::dispatch {
 	}
 	
 	
-	template <typename ... t_args>
-	template <typename t_target, parametrised <t_args...>::template indirect_member_callable_fn_t <t_target> t_fn>
-	void parametrised <t_args...>::indirect_member_callable <t_target, t_fn>::enqueue_transient_async(queue &qq)
+	template <typename t_target, typename ... t_args, indirect_member_callable_fn_argt_t <t_target, std::tuple <t_args...>> t_fn>
+	void indirect_member_callable <t_target, std::tuple <t_args...>, t_fn>::enqueue_transient_async(queue &qq)
 	{
 		if constexpr (0 == sizeof...(t_args))
 		{
-			qq.async(indirect_member_callable <typename transient_indirect_target::type, t_fn>(
-				detail::transient_indirect_target::make(target)
+			qq.async(indirect_member_callable <transient_indirect_target_t <t_target>, std::tuple <t_args...>, t_fn>(
+				make_transient_indirect_target(target)
 			));
 		}
 		else
@@ -40,41 +39,39 @@ namespace panvc3::dispatch {
 	}
 	
 	
-	template <typename ... t_args>
-	template <typename t_fn>
-	void parametrised <t_args...>::lambda_callable <t_fn>::enqueue_transient_async(queue &qq)
+	template <typename t_fn, typename ... t_args>
+	void lambda_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
 	{
 		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <t_fn>(&fn));
+			qq.async(indirect_member_callable <t_fn, std::tuple <t_args...>, &t_fn::operator()>(&fn));
+		else
+			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
+	}
+	
+	
+	template <typename t_fn, typename ... t_args>
+	void lambda_ptr_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
+	{
+		if constexpr (0 == sizeof...(t_args))
+			qq.async(indirect_member_callable <t_fn, std::tuple <t_args...>, &t_fn::operator()>(fn.get()));
 		else
 			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
 	}
 	
 	
 	template <typename ... t_args>
-	template <typename t_fn>
-	void parametrised <t_args...>::lambda_ptr_callable <t_fn>::enqueue_transient_async(queue &qq)
+	task <t_args...>::task(empty_callable_type const &)
 	{
-		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <t_fn>(fn.get()));
-		else
-			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
-	}
-	
-	
-	template <typename ... t_args>
-	parametrised <t_args...>::task::task(empty_callable const &)
-	{
-		static_assert(sizeof(empty_callable) <= BUFFER_SIZE);
+		static_assert(sizeof(empty_callable_type) <= BUFFER_SIZE);
 		new(m_buffer) empty_callable();
 	}
 	
 	
 	template <typename ... t_args>
-	template <ClassIndirectCallableTarget <typename parametrised <t_args...>::task, t_args...> t_target>
-	parametrised <t_args...>::task::task(t_target &&target)
+	template <ClassIndirectCallableTarget <task <t_args...>, t_args...> t_target>
+	task <t_args...>::task(t_target &&target)
 	{
-		typedef indirect_member_callable <std::remove_cvref_t <t_target>> callable_type; // operator() by default.
+		typedef indirect_member_callable_t <std::remove_cvref_t <t_target>> callable_type; // operator() by default.
 		static_assert(sizeof(callable_type) <= BUFFER_SIZE);
 		new(m_buffer) callable_type(std::forward <t_target>(target));
 	}
@@ -82,11 +79,11 @@ namespace panvc3::dispatch {
 	
 	template <typename ... t_args>
 	template <
-		ClassIndirectTarget <typename parametrised <t_args...>::task, t_args...> t_target,
-		parametrised <t_args...>::template indirect_member_callable_fn_t <t_target> t_fn,
+		ClassIndirectTarget <task <t_args...>, t_args...> t_target,
+		indirect_member_callable_fn_t <t_target, t_args...> t_fn,
 		typename t_callable
 	>
-	parametrised <t_args...>::task::task(t_callable &&cc)
+	task <t_args...>::task(t_callable &&cc)
 	{
 		typedef std::remove_cvref_t <t_callable> callable_type;
 		static_assert(sizeof(callable_type) <= BUFFER_SIZE);
@@ -96,7 +93,7 @@ namespace panvc3::dispatch {
 	
 	template <typename ... t_args>
 	template <Callable <t_args...> t_callable>
-	parametrised <t_args...>::task::task(t_callable &&callable)
+	task <t_args...>::task(t_callable &&callable)
 	{
 		typedef std::remove_cvref_t <t_callable> callable_type;
 		static_assert(sizeof(callable_type) <= BUFFER_SIZE);
@@ -105,7 +102,7 @@ namespace panvc3::dispatch {
 	
 	
 	template <typename ... t_args>
-	auto parametrised <t_args...>::task::operator=(task &&other) & -> task &
+	auto task <t_args...>::operator=(task &&other) & -> task &
 	{
 		std::byte buffer[BUFFER_SIZE];
 		to_callable(other.m_buffer).move_to(buffer);
@@ -115,17 +112,13 @@ namespace panvc3::dispatch {
 	}
 	
 	
-	template <typename ... t_args>
-	template <
-		typename t_element,
-		parametrised <t_args...>::template indirect_member_callable_fn_t <t_element *> t_fn
-	>
-	template <typename ... t_args_>
-	void parametrised <t_args...>::execute_ <std::weak_ptr <t_element>, t_fn>::execute(std::weak_ptr <t_element> &target, t_args_ && ... args)
+	template <typename t_target, typename ... t_args, indirect_member_callable_fn_argt_t <t_target, std::tuple <t_args...>> t_fn>
+	template <bool>
+	void indirect_member_callable <t_target, std::tuple <t_args...>, t_fn>::do_execute(t_args && ... args) requires is_weak_ptr_v <t_target>
 	{
 		auto target_(target.lock());
 		if (target_)
-			((*target_).*t_fn)(std::forward <t_args_>(args)...);
+			((*target_).*t_fn)(std::forward <t_args>(args)...);
 	}
 }
 

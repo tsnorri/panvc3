@@ -17,9 +17,9 @@ namespace panvc3::dispatch::events {
 	class timer final : public source_tpl <timer>
 	{
 	public:
-		typedef parametrised <timer &>::task	task_type;
-		typedef std::chrono::steady_clock		clock_type;
-		typedef clock_type::duration			duration_type;
+		typedef task_t <timer &>			task_type;
+		typedef std::chrono::steady_clock	clock_type;
+		typedef clock_type::duration		duration_type;
 	
 		constexpr static inline duration_type const DURATION_MAX{std::numeric_limits <duration_type>::max()};
 	

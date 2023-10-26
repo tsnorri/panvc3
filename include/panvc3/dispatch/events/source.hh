@@ -52,7 +52,7 @@ namespace panvc3::dispatch::events {
 	};
 	
 	
-	template <typename t_self, typename t_task = parametrised <t_self &>::task>
+	template <typename t_self, typename t_task = task_t <t_self &>>
 	class source_tpl :	public source_tpl_ <t_task>,
 						private std::enable_shared_from_this <t_self>
 	{

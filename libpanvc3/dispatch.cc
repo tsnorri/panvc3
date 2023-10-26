@@ -6,13 +6,14 @@
 #include <cmath>				// std::floor
 #include <libbio/assert.hh>
 #include <panvc3/dispatch.hh>
+#include <thread>
 
 namespace chrono	= std::chrono;
 
 
 namespace panvc3::dispatch::detail {
 	
-	struct serial_queue_executor_callable : public parametrised <>::callable
+	struct serial_queue_executor_callable : public callable <>
 	{
 		friend class dispatch::serial_queue;
 	

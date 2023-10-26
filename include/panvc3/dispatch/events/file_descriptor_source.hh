@@ -20,7 +20,7 @@ namespace panvc3::dispatch::events {
 		friend class manager;
 		
 	public:
-		typedef parametrised <file_descriptor_source &>::task	task_type;
+		typedef task_t <file_descriptor_source &>	task_type;
 	
 	private:
 		event_listener_identifier_type	m_identifier{EVENT_LISTENER_IDENTIFIER_MAX};
