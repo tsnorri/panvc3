@@ -13,11 +13,10 @@
 #include <panvc3/dispatch/events/file_descriptor_source.hh>
 #include <panvc3/dispatch/events/signal_source.hh>
 #include <panvc3/dispatch/events/timer.hh>
+#include <sys/event.h>										// struct kevent
 #include <unistd.h>											// ::close
 #include <utility>											// std::greater, std::to_underlying
 #include <vector>
-
-struct kevent; // Fwd.
 
 
 namespace panvc3::dispatch::events {
