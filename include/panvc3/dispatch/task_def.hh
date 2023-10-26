@@ -24,7 +24,7 @@ namespace panvc3::dispatch {
 	
 	
 	template <typename ... t_args>
-	template <typename t_target, parametrised <t_args...>::indirect_member_callable_fn_t <t_target> t_fn>
+	template <typename t_target, parametrised <t_args...>::template indirect_member_callable_fn_t <t_target> t_fn>
 	void parametrised <t_args...>::indirect_member_callable <t_target, t_fn>::enqueue_transient_async(queue &qq)
 	{
 		if constexpr (0 == sizeof...(t_args))
@@ -83,7 +83,7 @@ namespace panvc3::dispatch {
 	template <typename ... t_args>
 	template <
 		ClassIndirectTarget <typename parametrised <t_args...>::task, t_args...> t_target,
-		parametrised <t_args...>::indirect_member_callable_fn_t <t_target> t_fn,
+		parametrised <t_args...>::template indirect_member_callable_fn_t <t_target> t_fn,
 		typename t_callable
 	>
 	parametrised <t_args...>::task::task(t_callable &&cc)
@@ -118,7 +118,7 @@ namespace panvc3::dispatch {
 	template <typename ... t_args>
 	template <
 		typename t_element,
-		parametrised <t_args...>::indirect_member_callable_fn_t <t_element *> t_fn
+		parametrised <t_args...>::template indirect_member_callable_fn_t <t_element *> t_fn
 	>
 	template <typename ... t_args_>
 	void parametrised <t_args...>::execute_ <std::weak_ptr <t_element>, t_fn>::execute(std::weak_ptr <t_element> &target, t_args_ && ... args)
