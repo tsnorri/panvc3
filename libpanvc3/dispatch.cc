@@ -216,7 +216,7 @@ namespace panvc3::dispatch {
 	}
 	
 	
-	void thread_pool::stop()
+	void thread_pool::stop(bool should_wait)
 	{
 		{
 			std::lock_guard lock(m_mutex);
@@ -224,6 +224,18 @@ namespace panvc3::dispatch {
 		}
 		
 		m_cv.notify_all();
+		
+		if (should_wait)
+		{
+			// FIXME: Not particularly efficient.
+			while (true)
+			{
+				auto const count(pool.m_workers.load(std::memory_order_acquire));
+				if (0 == count)
+					break;
+				pool.m_workers.wait(count, std::memory_order_acquire); // Wait until the value is no longer count.
+			}
+		}
 	}
 	
 	
