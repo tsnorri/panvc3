@@ -230,10 +230,10 @@ namespace panvc3::dispatch {
 			// FIXME: Not particularly efficient.
 			while (true)
 			{
-				auto const count(pool.m_workers.load(std::memory_order_acquire));
+				auto const count(m_workers.load(std::memory_order_acquire));
 				if (0 == count)
 					break;
-				pool.m_workers.wait(count, std::memory_order_acquire); // Wait until the value is no longer count.
+				m_workers.wait(count, std::memory_order_acquire); // Wait until the value is no longer count.
 			}
 		}
 	}
