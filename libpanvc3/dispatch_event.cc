@@ -335,6 +335,14 @@ namespace panvc3::dispatch::events {
 	}
 	
 	
+	std::jthread manager::start_thread_and_run()
+	{
+		return std::jthread([this]{
+			run();
+		});
+	}
+	
+	
 	void install_sigchld_handler(events::manager &mgr, queue &qq, sigchld_handler &handler)
 	{
 		mgr.add_signal_source(SIGCHLD, qq, signal_source::task_type::from_lambda([&handler](signal_source const &source){

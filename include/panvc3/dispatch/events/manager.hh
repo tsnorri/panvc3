@@ -14,6 +14,7 @@
 #include <panvc3/dispatch/events/signal_source.hh>
 #include <panvc3/dispatch/events/timer.hh>
 #include <sys/event.h>										// struct kevent
+#include <thread>											// std::jthread
 #include <unistd.h>											// ::close
 #include <utility>											// std::greater, std::to_underlying
 #include <vector>
@@ -100,6 +101,7 @@ namespace panvc3::dispatch::events {
 	public:
 		void setup(std::size_t const event_buffer_size = 16);	// Not thread-safe.
 		void run();												// Not thread-safe.
+		std::jthread start_thread_and_run();					// Not thread-safe.
 		
 		void trigger_event(event_type const evt);				// Thread-safe.
 		
