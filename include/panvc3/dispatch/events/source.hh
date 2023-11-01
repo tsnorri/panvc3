@@ -27,6 +27,7 @@ namespace panvc3::dispatch::events {
 	{
 		virtual ~source() {}
 		virtual event_listener_identifier_type identifier() const = 0;
+		virtual bool is_enabled() const = 0;
 		virtual void disable() = 0;
 		virtual void fire() = 0;
 	};
@@ -50,8 +51,8 @@ namespace panvc3::dispatch::events {
 		}
 	
 	public:
-		event_listener_identifier_type identifier() const { return m_identifier; }
-		bool is_enabled() const { return m_is_enabled.load(std::memory_order_acquire); } // Possibly relaxed would be enough.
+		event_listener_identifier_type identifier() const override { return m_identifier; }
+		bool is_enabled() const override { return m_is_enabled.load(std::memory_order_acquire); } // Possibly relaxed would be enough.
 		void disable() override { m_is_enabled.store(false, std::memory_order_release); }
 	};
 	
