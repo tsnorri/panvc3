@@ -10,6 +10,7 @@
 #include <panvc3/dispatch/fwd.hh>
 #include <panvc3/dispatch/events/source.hh>
 #include <panvc3/dispatch/task_decl.hh>
+#include <sys/event.h>						// EVFILT_SIGNAL
 #include <utility>							// std::forward
 
 
