@@ -15,6 +15,9 @@
 
 namespace panvc3::dispatch::events {
 	
+	class manager; // Fwd.
+	
+	
 	class signal_source final : public source_tpl <signal_source>
 	{
 		friend class manager;
@@ -62,7 +65,7 @@ namespace panvc3::dispatch {
 		virtual void finish_handling(bool const did_report_error) = 0;
 	};
 	
-	void install_sigchld_handler(queue &qq, sigchld_handler &handler);
+	void install_sigchld_handler(events::manager &mgr, queue &qq, sigchld_handler &handler);
 }
 
 #endif
