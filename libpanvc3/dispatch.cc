@@ -226,15 +226,18 @@ namespace panvc3::dispatch {
 		m_cv.notify_all();
 		
 		if (should_wait)
+			wait();
+	}
+	
+	void thread_pool::wait()
+	{
+		// FIXME: Not particularly efficient.
+		while (true)
 		{
-			// FIXME: Not particularly efficient.
-			while (true)
-			{
-				auto const count(m_workers.load(std::memory_order_acquire));
-				if (0 == count)
-					break;
-				m_workers.wait(count, std::memory_order_acquire); // Wait until the value is no longer count.
-			}
+			auto const count(m_workers.load(std::memory_order_acquire));
+			if (0 == count)
+				break;
+			m_workers.wait(count, std::memory_order_acquire); // Wait until the value is no longer count.
 		}
 	}
 	

@@ -47,6 +47,7 @@ namespace panvc3::dispatch {
 		void add_queue(parallel_queue &queue) { m_queues.push_back(&queue); }	// Not thread-safe.
 		void start_workers_if_needed();
 		void stop(bool should_wait = true);
+		void wait();
 		~thread_pool() { stop(); }
 	};
 	
