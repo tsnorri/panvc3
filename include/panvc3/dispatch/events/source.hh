@@ -26,27 +26,31 @@ namespace panvc3::dispatch::events {
 	struct source
 	{
 		virtual ~source() {}
+		virtual event_listener_identifier_type identifier() const = 0;
 		virtual void disable() = 0;
 		virtual void fire() = 0;
 	};
 
 
 	template <typename t_task>
-	struct source_tpl_ :	public source
+	struct source_tpl_ : public source
 	{
 	protected:
-		t_task				m_task{};
-		queue				*m_queue{};
-		std::atomic_bool	m_is_enabled{true};
+		t_task							m_task{};
+		queue							*m_queue{};
+		event_listener_identifier_type	m_identifier{EVENT_LISTENER_IDENTIFIER_MAX};
+		std::atomic_bool				m_is_enabled{true};
 	
 		template <typename t_task_>
-		source_tpl_(queue &qq, t_task_ &&tt):
+		source_tpl_(queue &qq, t_task_ &&tt, event_listener_identifier_type const identifier = 0):
 			m_task(std::forward <t_task_>(tt)),
-			m_queue(&qq)
+			m_queue(&qq),
+			m_identifier(identifier)
 		{
 		}
 	
 	public:
+		event_listener_identifier_type identifier() const { return m_identifier; }
 		bool is_enabled() const { return m_is_enabled.load(std::memory_order_acquire); } // Possibly relaxed would be enough.
 		void disable() override { m_is_enabled.store(false, std::memory_order_release); }
 	};

@@ -20,6 +20,47 @@
 #include <vector>
 
 
+namespace panvc3::dispatch::events::detail {
+	
+	void add_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, filter_type const filter, event_listener_identifier_type const identifier);
+	void remove_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, filter_type const filter);
+	
+	
+	template <typename t_source>
+	class source_handler_tpl
+	{
+	public:
+		typedef t_source						source_type;
+		typedef std::shared_ptr <source_type>	source_ptr;
+		typedef typename source_type::task_type	task_type;
+		
+	private:
+		struct cmp
+		{
+			bool operator()(source_ptr const &lhs, event_listener_identifier_type const rhs) const { return lhs->identifier() < rhs; }
+			bool operator()(event_listener_identifier_type const lhs, source_ptr const &rhs) const { return lhs < rhs->identifier(); }
+			bool operator()(source_ptr const &lhs, source_ptr const &rhs) const { return lhs->identifier() < rhs->identifier(); }
+		};
+		
+	private:
+		std::vector <source_ptr>				m_sources;
+		event_listener_identifier_type			m_listener_idx{};
+		std::mutex								m_mutex{};
+		
+	public:
+		template <typename ... t_args>
+		source_type &add_source(file_descriptor_type const kqfd, queue &qq, task_type &&tt, t_args && ... args);	// Thread-safe.
+		
+		void remove_source(file_descriptor_type const kqfd, source_type &source);									// Thread-safe.
+		void fire(event_listener_identifier_type const identifier);													// Thread-safe.
+	};
+	
+	
+	typedef source_handler_tpl <file_descriptor_source>	file_descriptor_source_handler;
+	typedef source_handler_tpl <signal_source>			signal_source_handler;
+}
+
+
 namespace panvc3::dispatch::events {
 	
 	class manager
@@ -57,88 +98,122 @@ namespace panvc3::dispatch::events {
 			bool operator>(timer_entry const &other) const { return firing_time > other.firing_time; }
 		};
 		
-		typedef std::shared_ptr <file_descriptor_source>	fd_event_source_ptr;
-		typedef std::shared_ptr <signal_source>				signal_event_source_ptr;
 		typedef std::vector <timer_entry>					timer_entry_vector;
-		typedef std::vector <fd_event_source_ptr>			fd_event_source_vector;
-		typedef std::vector <signal_event_source_ptr>		signal_event_source_vector;
-		
-		struct fd_event_listener_cmp
-		{
-			bool operator()(fd_event_source_ptr const &lhs, event_listener_identifier_type const rhs) const { return lhs->m_identifier < rhs; }
-			bool operator()(event_listener_identifier_type const lhs, fd_event_source_ptr const &rhs) const { return lhs < rhs->m_identifier; }
-			bool operator()(fd_event_source_ptr const &lhs, fd_event_source_ptr const &rhs) const { return lhs->m_identifier < rhs->m_identifier; }
-		};
-		
-		struct signal_event_listener_cmp
-		{
-			bool operator()(signal_event_source_ptr const &lhs, signal_type const rhs) const { return lhs->m_signal < rhs; }
-			bool operator()(signal_type const lhs, signal_event_source_ptr const &rhs) const { return lhs < rhs->m_signal; }
-			bool operator()(signal_event_source_ptr const &lhs, signal_event_source_ptr const &rhs) const { return lhs->m_signal < rhs->m_signal; }
-		};
 		
 	private:
-		std::vector <struct kevent>		m_event_buffer{};
-		timer_entry_vector				m_timer_entries{};			// Protected by m_timer_mutex.
-		fd_event_source_vector			m_fd_event_sources{};
-		signal_event_source_vector		m_signal_event_sources{};
-		kqueue_handle					m_kqueue{};
-		event_listener_identifier_type	m_fd_event_listener_idx{};
-	
-		std::mutex						m_timer_mutex{};
-		std::mutex						m_fd_es_mutex{};
-		std::mutex						m_signal_es_mutex{}; // FIXME: combine some of the mutexes?
+		std::vector <struct kevent>				m_event_buffer{};
+		timer_entry_vector						m_timer_entries{};			// Protected by m_timer_mutex.
+		detail::file_descriptor_source_handler	m_fd_source_handler;
+		detail::signal_source_handler			m_signal_source_handler;
+		kqueue_handle							m_kqueue{};
+		std::mutex								m_timer_mutex{};
 	
 	private:
 		bool check_timers(struct kevent &timer_event);
-		inline file_descriptor_source &add_fd_event_source(
-			file_descriptor_type const fd,
-			filter_type const filter,
-			queue &qq,
-			file_descriptor_source::task_type &&tt
-		);														// Thread-safe.
 	
 	public:
-		void setup(std::size_t const event_buffer_size = 16);	// Not thread-safe.
-		void run();												// Not thread-safe.
-		std::jthread start_thread_and_run();					// Not thread-safe.
+		void setup(std::size_t const event_buffer_size = 16);											// Not thread-safe.
+		void run();																						// Not thread-safe.
+		std::jthread start_thread_and_run() { return std::jthread([this]{ run(); }); }					// Not thread-safe.
 		
-		void trigger_event(event_type const evt);				// Thread-safe.
+		void trigger_event(event_type const evt);														// Thread-safe.
 		
 		// NOTE: Currently only one event source of the same type (read or write) is allowed per file descriptor.
+		// FIXME: Fix the above issue e.g. the same way timers are handled, i.e. with listener <<-> kqueue item.
 		file_descriptor_source &add_file_descriptor_read_event_source(
 			file_descriptor_type const fd,
 			queue &qq,
 			file_descriptor_source::task_type tt
-		);														// Thread-safe.
+		) { return m_fd_source_handler.add_source(m_kqueue.fd, qq, std::move(tt), fd, EVFILT_READ); }	// Thread-safe.
 		
 		file_descriptor_source &add_file_descriptor_write_event_source(
 			file_descriptor_type const fd,
 			queue &qq,
 			file_descriptor_source::task_type tt
-		);														// Thread-safe.
+		) { return m_fd_source_handler.add_source(m_kqueue.fd, qq, std::move(tt), fd, EVFILT_WRITE); };	// Thread-safe.
 		
 		signal_source &add_signal_source(
 			signal_type const sig,
 			queue &qq,
 			signal_source::task_type &&tt
-		);														// Thread-safe.
+		) { return m_signal_source_handler.add_source(m_kqueue.fd, qq, std::move(tt), sig); };			// Thread-safe.
 		
 		void remove_file_descriptor_event_source(
-			file_descriptor_source &fdes
-		);														// Thread-safe.
+			file_descriptor_source &es
+		) { m_fd_source_handler.remove_source(m_kqueue.fd, es); }										// Thread-safe.
 		
 		void remove_signal_event_source(
-			signal_source &fdes
-		);														// Thread-safe.
+			signal_source &es
+		) { m_signal_source_handler.remove_source(m_kqueue.fd, es); };									// Thread-safe.
 		
 		void schedule_timer(
 			timer::duration_type const interval,
 			bool repeats,
 			queue &qq,
 			timer::task_type tt
-		);														// Thread-safe.
+		);																								// Thread-safe.
 	};
+}
+
+
+namespace panvc3::dispatch::events::detail {
+	
+	template <typename t_source>
+	template <typename ... t_args>
+	auto source_handler_tpl <t_source>::add_source(file_descriptor_type const kqfd, queue &qq, task_type &&tt, t_args && ... args) -> source_type & // Thread-safe.
+	{
+		source_type *retval{};
+		event_listener_identifier_type identifier{};
+		
+		{
+			std::lock_guard lock{this->m_mutex};
+			identifier = m_listener_idx++;
+			retval = &*m_sources.emplace_back(
+				source_type::make_shared(qq, std::move(tt), identifier, std::forward <t_args>(args)...)
+			);
+			
+			// Move to the correct place. (Likely no need b.c. identifier is strictly increasing.)
+			auto const it(std::upper_bound(m_sources.begin(), m_sources.end() - 1, identifier, cmp{}));
+			std::rotate(it, m_sources.end() - 1, m_sources.end());
+		}
+		
+		auto &retval_(*retval);
+		add_listener(kqfd, retval_.ident(), retval_.filter(), retval_.identifier());
+		return retval_;
+	}
+	
+	
+	template <typename t_source>
+	void source_handler_tpl <t_source>::remove_source(file_descriptor_type const kqfd, source_type &source) // Thread-safe.
+	{
+		auto const ident{source.ident()};
+		auto const filter{source.filter()};
+
+		{
+			std::lock_guard lock{m_mutex};
+			auto const end(m_sources.end());
+			auto const it(std::lower_bound(m_sources.begin(), end, ident, cmp{}));
+			if (it != end && &source == &(**it))
+				m_sources.erase(it);
+		}
+		
+		remove_listener(kqfd, ident, filter);
+	}
+	
+	
+	template <typename t_source>
+	void source_handler_tpl <t_source>::fire(event_listener_identifier_type const identifier) // Thread-safe.
+	{
+		std::lock_guard lock{m_mutex};
+		auto const end(m_sources.end());
+		auto const it(std::lower_bound(m_sources.begin(), end, identifier, cmp{}));
+		if (it != end)
+		{
+			auto &event_source(**it);
+			if (event_source.identifier() == identifier)
+				event_source.fire();
+		}
+	}
 }
 
 #endif

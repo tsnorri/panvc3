@@ -42,123 +42,26 @@ namespace {
 }
 
 
+namespace panvc3::dispatch::events::detail {
+	
+	void add_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, std::uint16_t const filter, event_listener_identifier_type const identifier)
+	{
+		struct kevent kev{};
+		EV_SET(&kev, ident, filter, EV_ADD | EV_ENABLE | EV_RECEIPT | EV_CLEAR, 0, 0, std::bit_cast <void *>(identifier));
+		modify_kqueue(kqfd, &kev, 1);
+	}
+	
+	
+	void remove_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, std::uint16_t const filter)
+	{
+		struct kevent kev{};
+		EV_SET(&kev, ident, filter, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
+		modify_kqueue(kqfd, &kev, 1);
+	}
+}
+
+
 namespace panvc3::dispatch::events {
-	
-	file_descriptor_source &manager::add_fd_event_source(
-		file_descriptor_type const fd,
-		filter_type const filter,
-		queue &qq,
-		file_descriptor_source::task_type &&tt
-	)
-	{
-		file_descriptor_source *retval{};
-		event_listener_identifier_type identifier{};
-		
-		{
-			std::lock_guard lock{m_fd_es_mutex};
-			identifier = m_fd_event_listener_idx++;
-			retval = &*m_fd_event_sources.emplace_back(
-				file_descriptor_source::make_shared(qq, std::move(tt), fd, filter, identifier)
-			);
-			
-			// Move to the correct place.
-			auto const it(std::upper_bound(m_fd_event_sources.begin(), m_fd_event_sources.end() - 1, identifier, fd_event_listener_cmp{}));
-			using std::swap;
-			swap(*it, *(m_fd_event_sources.end() - 1));
-		}
-		
-		struct kevent kev{};
-		EV_SET(&kev, fd, filter, EV_ADD | EV_ENABLE | EV_RECEIPT | EV_CLEAR, 0, 0, std::bit_cast <void *>(identifier));
-		modify_kqueue(m_kqueue.fd, &kev, 1);
-		return *retval;
-	}
-	
-	
-	// FIXME: This function is quite similar to the one above; consider merging.
-	signal_source &manager::add_signal_source(
-		signal_type const sig,
-		queue &qq,
-		signal_source::task_type &&tt
-	)
-	{
-		// For now we only support one event source per signal.
-		signal_source *retval{};
-		
-		{
-			std::lock_guard{m_signal_es_mutex};
-			retval = &*m_signal_event_sources.emplace_back(
-				signal_source::make_shared(qq, std::move(tt), sig)
-			);
-			
-			// Move to the correct place.
-			auto const it(std::upper_bound(m_signal_event_sources.begin(), m_signal_event_sources.end() - 1, sig, signal_event_listener_cmp{}));
-			using std::swap;
-			swap(*it, *(m_signal_event_sources.end() - 1));
-		}
-		
-		struct kevent kev{};
-		EV_SET(&kev, sig, EVFILT_SIGNAL, EV_ADD | EV_ENABLE | EV_RECEIPT, 0, 0, nullptr);
-		modify_kqueue(m_kqueue.fd, &kev, 1);
-		return *retval;
-	}
-	
-	
-	file_descriptor_source &manager::add_file_descriptor_read_event_source(
-		file_descriptor_type const fd,
-		queue &qq,
-		file_descriptor_source::task_type tt
-	)
-	{
-		return add_fd_event_source(fd, EVFILT_READ, qq, std::move(tt));
-	}
-	
-	
-	file_descriptor_source &manager::add_file_descriptor_write_event_source(
-		file_descriptor_type const fd,
-		queue &qq,
-		file_descriptor_source::task_type tt
-	)
-	{
-		return add_fd_event_source(fd, EVFILT_WRITE, qq, std::move(tt));
-	}
-	
-	
-	void manager::remove_file_descriptor_event_source(file_descriptor_source &fdes)
-	{
-		event_listener_identifier_type identifier{};
-		auto const filter{fdes.m_filter};
-	
-		{
-			std::lock_guard lock{m_fd_es_mutex};
-			auto const end(m_fd_event_sources.end());
-			auto const it(std::lower_bound(m_fd_event_sources.begin(), end, fdes.m_identifier, fd_event_listener_cmp{}));
-			if (it != end && &fdes == &(**it))
-				m_fd_event_sources.erase(it);
-		}
-	
-		struct kevent kev{};
-		EV_SET(&kev, identifier, filter, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
-		modify_kqueue(m_kqueue.fd, &kev, 1);
-	}
-	
-	
-	void manager::remove_signal_event_source(signal_source &fdes)
-	{
-		auto const sig{fdes.m_signal};
-	
-		{
-			std::lock_guard lock{m_signal_es_mutex};
-			auto const end(m_signal_event_sources.end());
-			auto const it(std::lower_bound(m_signal_event_sources.begin(), end, sig, signal_event_listener_cmp{}));
-			if (it != end && &fdes == &(**it))
-				m_signal_event_sources.erase(it);
-		}
-		
-		struct kevent kev{};
-		EV_SET(&kev, sig, EVFILT_SIGNAL, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
-		modify_kqueue(m_kqueue.fd, &kev, 1);
-	}
-	
 	
 	bool manager::check_timers(struct kevent &timer_event)
 	{
@@ -302,44 +205,25 @@ namespace panvc3::dispatch::events {
 								continue;
 						}
 					}
-				
+					
 					case EVFILT_READ:
 					case EVFILT_WRITE:
-					{
-						std::lock_guard lock{m_fd_es_mutex};
-						auto const end(m_fd_event_sources.end());
-						auto const it(std::lower_bound(
-							m_fd_event_sources.begin(),
-							end,
-							std::bit_cast <event_listener_identifier_type>(rec.udata),
-							fd_event_listener_cmp{}
-						));
-						if (it != end)
-						{
-							auto &event_source(**it);
-							if (event_source.m_identifier == rec.ident)
-								event_source.fire();
-						}
-					}
-				
+						m_fd_source_handler.fire(std::bit_cast <event_listener_identifier_type>(rec.udata));
+						continue;
+					
 					case EVFILT_SIGNAL:
+						m_signal_source_handler.fire(std::bit_cast <event_listener_identifier_type>(rec.udata));
+						continue;
+					
 					case EVFILT_TIMER:
 					default:
 						continue;
 				}
 			}
-		
+			
 			modified_event_count = 0;
 			modified_event_count += check_timers(m_event_buffer[modified_event_count]);
 		}
-	}
-	
-	
-	std::jthread manager::start_thread_and_run()
-	{
-		return std::jthread([this]{
-			run();
-		});
 	}
 	
 	

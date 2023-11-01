@@ -29,9 +29,10 @@ namespace panvc3::dispatch::events {
 		signal_source(
 			queue &qq,
 			task_type &&tt,
+			event_listener_identifier_type const identifier,
 			signal_type const sig
 		):
-			source_tpl(qq, std::move(tt)),
+			source_tpl(qq, std::move(tt), identifier),
 			m_signal(sig)
 		{
 		}
@@ -41,6 +42,10 @@ namespace panvc3::dispatch::events {
 		make_shared(t_args && ... args) { return std::make_shared <signal_source>(std::forward <t_args>(args)...); }
 		
 		signal_type signal() const { return m_signal; }
+		
+		// Equivalence class in kqueue.
+		signal_type ident() const { return m_signal; }
+		filter_type filter() const { return EVFILT_SIGNAL; }
 	};
 	
 	typedef signal_source::task_type signal_task;
