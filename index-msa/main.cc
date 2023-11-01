@@ -6,10 +6,11 @@
 #include <cereal/archives/portable_binary.hpp>
 #include <filesystem>
 #include <iostream>
-#include <libbio/dispatch.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/subprocess.hh>
+#include <panvc3/dispatch.hh>
+#include <panvc3/dispatch/event.hh>
 #include <panvc3/msa_index.hh>
 #include <string>
 #include <string_view>
@@ -18,14 +19,16 @@
 #include "index_handling.hh"
 #include "input_processor.hh"
 
-namespace lb	= libbio;
-namespace fs	= std::filesystem;
-namespace mi	= panvc3::msa_indices;
+namespace lb		= libbio;
+namespace dispatch	= panvc3::dispatch;
+namespace events	= dispatch::events;
+namespace fs		= std::filesystem;
+namespace mi		= panvc3::msa_indices;
 
 
 namespace {
 	
-	struct sigchld_handler final : public lb::sigchld_handler
+	struct sigchld_handler final : public dispatch::sigchld_handler
 	{
 		void child_did_exit_with_nonzero_status(pid_t const pid, int const exit_status, char const *reason) override
 		{
@@ -48,13 +51,10 @@ namespace {
 	};
 	
 	
-	void install_sigchld_handler()
+	void install_sigchld_handler(events::manager &mgr)
 	{
-		static dispatch_once_t once_token;
-		dispatch_once(&once_token, ^{
-			static sigchld_handler handler;
-			lb::install_dispatch_sigchld_handler(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), handler);
-		});
+		static sigchld_handler handler;
+		dispatch::install_sigchld_handler(mgr, dispatch::parallel_queue::shared_queue(), handler);
 	}
 	
 	
@@ -220,9 +220,8 @@ namespace {
 					args_info.output_fasta_flag,
 					args_info.fasta_line_width_arg
 				);
-			
-				auto caller(lb::dispatch(processor));
-				caller.async <>(dispatch_get_main_queue());
+				
+				dispatch::main_queue().async(&processor);
 			}
 			else if (args_info.sequences_given)
 			{
@@ -234,9 +233,8 @@ namespace {
 					args_info.output_fasta_flag,
 					args_info.fasta_line_width_arg
 				);
-			
-				auto caller(lb::dispatch(processor));
-				caller.async <>(dispatch_get_main_queue());
+				
+				dispatch::main_queue().async(&processor);
 			}
 		}
 		else
@@ -262,11 +260,16 @@ int main(int argc, char **argv)
 		std::exit(EXIT_FAILURE);
 	}
 	
-	install_sigchld_handler();
+	events::manager event_manager;
+	event_manager.setup();
+	auto manager_thread(event_manager.start_thread_and_run());
+	
+	install_sigchld_handler(event_manager);
 	process(args_info);
 	
-	dispatch_main();
-
-	// Not reached.
+	dispatch::main_queue().run();
+	
+	event_manager.stop();
+	// manager_thread gets joined here.
 	return EXIT_SUCCESS;
 }

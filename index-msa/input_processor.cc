@@ -3,12 +3,15 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <libbio/dispatch.hh>
+#include <panvc3/dispatch.hh>
 #include <panvc3/msa_index.hh>
+#include <range/v3/view/zip.hpp>
 #include "index_handling.hh"
 #include "input_processor.hh"
 
-namespace lb	= libbio;
+namespace dispatch	= panvc3::dispatch;
+namespace lb		= libbio;
+namespace rsv		= ranges::views;
 
 
 namespace {
@@ -140,60 +143,59 @@ namespace panvc3::msa_indices {
 		
 		// Handle the inputs and compress and sort in background.
 		std::vector <char> seq_buffer;
-		lb::dispatch_ptr <dispatch_group_t> main_group(dispatch_group_create());
-		auto *global_queue(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
-
-		for (auto const &chr_entry : chr_entries)
+		auto &parallel_queue(dispatch::parallel_queue::shared_queue());
+		dispatch::group main_group;
+		
 		{
-			lb::log_time(std::cerr) << "Handling sequences for chromosome " << chr_entry.chr_id << "…\n";
-			
-			lb::dispatch_ptr <dispatch_group_t> chr_group(dispatch_group_create());
-			auto &msa_chr_entry(find_msa_chr_entry(msa_index, chr_entry.chr_id));
-			msa_chr_entry.sequence_entries.reserve(chr_entry.sequence_entries.size());
-			
-			std::size_t input_size{};
-			for (auto const &seq_entry : chr_entry.sequence_entries)
+			std::vector <dispatch::group> chr_groups(chr_entries.size());
+			for (auto const &&[chr_entry, chr_group] : rsv::zip(chr_entries, chr_groups))
 			{
-				handler.process_input(
-					seq_entry.path,
-					[
-						this,
-						global_queue,
-						&seq_buffer,
-						&chr_entry,
-						&seq_entry,
-						&chr_group,
-						&msa_chr_entry,
-						&input_size
-					](lb::file_handle &handle){
-						sdsl::bit_vector bv;
-						lb::log_time(std::cerr) << "Processing " << seq_entry.path << "…\n";
-						build_index_vector_one_sequence(m_index_vector_builder, chr_entry.chr_id, seq_entry.seq_id, seq_buffer, handle, input_size);
-						
-						auto &msa_seq_entry(msa_chr_entry.sequence_entries.emplace_back());
-						lb::dispatch_group_async_fn(*chr_group, global_queue, [
-							bv = m_index_vector_builder.destination_bit_vector(),
+				lb::log_time(std::cerr) << "Handling sequences for chromosome " << chr_entry.chr_id << "…\n";
+				
+				auto &msa_chr_entry(find_msa_chr_entry(msa_index, chr_entry.chr_id));
+				msa_chr_entry.sequence_entries.reserve(chr_entry.sequence_entries.size());
+				
+				std::size_t input_size{};
+				for (auto const &seq_entry : chr_entry.sequence_entries)
+				{
+					handler.process_input(
+						seq_entry.path,
+						[
+							this,
+							&parallel_queue,
+							&seq_buffer,
+							&chr_entry,
 							&seq_entry,
-							&msa_seq_entry
-						](){
-							msa_seq_entry = panvc3::msa_index::sequence_entry(seq_entry.seq_id, bv);
-						});
-					}
-				);
-			}
-			
-			dispatch_group_enter(*main_group);
-			{
-				auto main_group_(*main_group);
-				dispatch_group_notify(*chr_group, global_queue, ^{
+							&chr_group,
+							&msa_chr_entry,
+							&input_size
+						](lb::file_handle &handle){
+							sdsl::bit_vector bv;
+							lb::log_time(std::cerr) << "Processing " << seq_entry.path << "…\n";
+							build_index_vector_one_sequence(m_index_vector_builder, chr_entry.chr_id, seq_entry.seq_id, seq_buffer, handle, input_size);
+						
+							auto &msa_seq_entry(msa_chr_entry.sequence_entries.emplace_back());
+							parallel_queue.group_async(chr_group, dispatch::task::from_lambda([
+								bv = m_index_vector_builder.destination_bit_vector(),
+								&seq_entry,
+								&msa_seq_entry
+							](){
+								msa_seq_entry = panvc3::msa_index::sequence_entry(seq_entry.seq_id, bv);
+							}));
+						}
+					);
+				}
+				
+				main_group.enter();
+				chr_group.notify(parallel_queue, dispatch::task::from_lambda([&main_group, &msa_chr_entry](){
 					std::sort(msa_chr_entry.sequence_entries.begin(), msa_chr_entry.sequence_entries.end());
-					dispatch_group_leave(main_group_);
-				});
+					main_group.exit();
+				}));
 			}
 		}
 		
 		lb::log_time(std::cerr) << "Compressing the MSA index…\n";
-		dispatch_group_wait(*main_group, DISPATCH_TIME_FOREVER);
+		main_group.wait();
 		lb::log_time(std::cerr) << "Sorting the remaining index entries…\n";
 		std::sort(msa_index.chr_entries.begin(), msa_index.chr_entries.end());
 		lb::log_time(std::cerr) << "Serialising the MSA index…\n";
@@ -224,10 +226,9 @@ namespace panvc3::msa_indices {
 	{
 		// We don’t assume that the entries appear in particular order, e.g. sorted by chromosome;
 		// hence we use only one dispatch group for all operations.
-		lb::dispatch_group_async_fn(
-			*m_main_group,
-			dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-			[this, bv = builder.destination_bit_vector(), chrom_id, seq_id](){ // Copy everything.
+		dispatch::parallel_queue::shared_queue().group_async(
+			m_main_group,
+			dispatch::task::from_lambda([this, bv = builder.destination_bit_vector(), chrom_id, seq_id](){ // Copy everything.
 				auto seq_entry(panvc3::msa_index::sequence_entry(seq_id, bv));
 				
 				{
@@ -235,7 +236,7 @@ namespace panvc3::msa_indices {
 					auto &msa_chr_entry(find_msa_chr_entry(m_msa_index, chrom_id));
 					msa_chr_entry.sequence_entries.emplace_back(std::move(seq_entry));
 				}
-			}
+			})
 		);
 	}
 	
@@ -251,32 +252,29 @@ namespace panvc3::msa_indices {
 			cereal::PortableBinaryOutputArchive msa_archive(msa_index_stream);
 		
 			lb::log_time(std::cerr) << "Loading the input sequences…\n";
-			auto *global_queue(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
+			auto &parallel_queue(dispatch::parallel_queue::shared_queue());
 			index_vector_builder_a2m_input a2m_input;
-		
-			m_main_group.reset(dispatch_group_create());
 		
 			handler.process_input(m_input_path, [this, &a2m_input](lb::file_handle &handle){
 				a2m_input.build(m_index_vector_builder, handle, *this);
 			});
 			lb::log_time(std::cerr) << "Waiting for compressing the MSA index to finish…\n";
-		
-			dispatch_group_wait(*m_main_group, DISPATCH_TIME_FOREVER);
+			
+			m_main_group.wait();
 			lb::log_time(std::cerr) << "Sorting the index entries…\n";
 			std::sort(m_msa_index.chr_entries.begin(), m_msa_index.chr_entries.end());
 			for (auto &chr_entry : m_msa_index.chr_entries)
 			{
 				// Not sure if it’s worth the overhead to parallelise.
-				lb::dispatch_group_async_fn(
-					*m_main_group,
-					dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-					[&chr_entry](){
+				parallel_queue.group_async(
+					m_main_group,
+					dispatch::task::from_lambda([&chr_entry](){
 						std::sort(chr_entry.sequence_entries.begin(), chr_entry.sequence_entries.end());
-					}
+					})
 				);
 			}
 		
-			dispatch_group_wait(*m_main_group, DISPATCH_TIME_FOREVER);
+			m_main_group.wait();
 			lb::log_time(std::cerr) << "Serialising the MSA index…\n";
 			msa_archive(m_msa_index);
 			msa_index_stream << std::flush;

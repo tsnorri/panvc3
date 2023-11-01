@@ -7,7 +7,7 @@
 #define PANVC3_MSA_INDICES_INPUT_PROCESSOR_HH
 
 #include <cstddef>
-#include <libbio/dispatch.hh>
+#include <panvc3/dispatch.hh>
 #include <string>
 #include <vector>
 #include "index_vector_builder.hh"
@@ -72,9 +72,9 @@ namespace panvc3::msa_indices {
 	class a2m_input_processor final : public input_processor, public index_vector_builder_a2m_input_delegate
 	{
 	private:
-		std::mutex								m_msa_index_mutex{};
-		panvc3::msa_index						m_msa_index;
-		libbio::dispatch_ptr <dispatch_group_t> m_main_group;
+		std::mutex				m_msa_index_mutex{};
+		panvc3::msa_index		m_msa_index;
+		panvc3::dispatch::group	m_main_group;
 		
 	public:
 		using input_processor::input_processor;
