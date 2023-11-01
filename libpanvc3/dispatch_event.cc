@@ -198,7 +198,7 @@ namespace panvc3::dispatch::events {
 					{
 						switch (static_cast <event_type>(rec.ident))
 						{
-							case event_type::EXIT:
+							case event_type::STOP:
 								return;
 						
 							case event_type::WAKE_UP:

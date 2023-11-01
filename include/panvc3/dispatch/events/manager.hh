@@ -69,7 +69,7 @@ namespace panvc3::dispatch::events {
 		typedef std::uint32_t event_type_;
 		enum class event_type : event_type_
 		{
-			EXIT	= 0x0,
+			STOP	= 0x0,
 			WAKE_UP	= 0x1
 		};
 	
@@ -117,6 +117,8 @@ namespace panvc3::dispatch::events {
 		std::jthread start_thread_and_run() { return std::jthread([this]{ run(); }); }					// Not thread-safe.
 		
 		void trigger_event(event_type const evt);														// Thread-safe.
+		void wake_up() { trigger_event(event_type::WAKE_UP); }
+		void stop() { trigger_event(event_type::STOP); }
 		
 		// NOTE: Currently only one event source of the same type (read or write) is allowed per file descriptor.
 		// FIXME: Fix the above issue e.g. the same way timers are handled, i.e. with listener <<-> kqueue item.
