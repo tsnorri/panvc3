@@ -79,7 +79,7 @@ namespace panvc3::dispatch::events {
 		typedef clock_type::time_point	time_point_type;
 		typedef std::greater <>			heap_cmp_type;
 	
-		constexpr static inline event_type_ const EVENT_MIN{std::to_underlying(event_type::EXIT)};
+		constexpr static inline event_type_ const EVENT_MIN{std::to_underlying(event_type::STOP)};
 		constexpr static inline event_type_ const EVENT_MAX{std::to_underlying(event_type::WAKE_UP)};
 		constexpr static inline event_type_ const EVENT_COUNT{1 + EVENT_MAX - EVENT_MIN};
 	
