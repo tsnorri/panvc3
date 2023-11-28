@@ -4,6 +4,7 @@ else
 GCC_SUFFIX := -$(GCC_VERSION)
 endif
 
+GCC_ROOT			?= /usr
 GCC					?= $(GCC_ROOT)/bin/gcc$(GCC_SUFFIX)
 GXX					?= $(GCC_ROOT)/bin/g++$(GCC_SUFFIX)
 CC					= $(GCC)
