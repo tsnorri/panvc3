@@ -104,7 +104,7 @@ subset-alignments/subset_alignments: lib/libbio/build-gcc/libbio.a
 
 $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(MKDIR) -p $(DIST_TARGET_DIR)
-	for f in $(BUILD_PRODUCTS); do $(CP) $$f $(DIST_TARGET_DIR); done
+	for f in $(BUILD_PRODUCTS); do if [ $${f##*/} = libpanvc3.a ]; then $(CP) $$f $(DIST_TARGET_DIR); else $(CP) $$f $(DIST_TARGET_DIR)/panvc3_$${f##*/}; fi; done
 	$(CP) README.md $(DIST_TARGET_DIR)
 	$(CP) LICENSE $(DIST_TARGET_DIR)
 	$(CP) lib/swift-corelibs-libdispatch/LICENSE $(DIST_TARGET_DIR)/swift-corelibs-libdispatch-license.txt
