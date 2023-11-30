@@ -51,6 +51,8 @@ clean:
 	$(MAKE) -C index-msa clean
 	$(MAKE) -C libpanvc3 clean
 	$(MAKE) -C project-alignments clean
+	$(MAKE) -C recalculate-mapq clean
+	$(MAKE) -C rewrite-cigar clean
 	$(MAKE) -C split-alignments-by-reference clean
 	$(MAKE) -C subset-alignments clean
 	$(MAKE) -C tests clean
