@@ -6,7 +6,7 @@
 #include <catch2/catch.hpp>
 #include <libbio/file_handling.hh>
 #include <libbio/generic_parser.hh>
-#include <libbio/generic_parser/cigar_field.hh>
+#include <libbio/generic_parser/cigar_field_seqan.hh>
 #include <panvc3/indel_run_checker.hh>
 #include <panvc3/range.hh>
 #include <seqan3/alphabet/quality/phred42.hpp>
