@@ -6,7 +6,7 @@
 #include <catch2/catch.hpp>
 #include <libbio/file_handling.hh>
 #include <libbio/generic_parser.hh>
-#include <libbio/generic_parser/cigar_field.hh>
+#include <libbio/generic_parser/cigar_field_seqan.hh>
 #include <libbio/tuple/slice.hh>
 #include <panvc3/alignment_projector.hh>
 #include "test_additions.hh"
@@ -92,6 +92,9 @@ namespace {
 		template <bool t_should_copy>
 		using value_type = vector_type;
 		
+
+		constexpr void clear_value(vector_type &dst) const { dst.clear(); }
+
 		
 		template <typename t_delimiter, lbp::field_position t_field_position = lbp::field_position::middle_, typename t_range>
 		constexpr inline bool parse(t_range &range, vector_type &dst) const
@@ -111,7 +114,7 @@ namespace {
 			};
 			
 			helper hh{dst};
-			return lbp::fields::parse_sequential <t_delimiter, t_character_filter, t_field_position>(range, hh);
+			return lbp::fields::parse_sequential <t_delimiter, t_character_filter, t_field_position, std::string_view>(range, hh);
 		}
 	};
 	

@@ -61,5 +61,5 @@ The following are needed to build [libdispatch](https://apple.github.io/swift-co
 
 After installing the prerequisites, please do the following:
 
-1. Create a file called `local.mk` in the root of the cloned repository to specify build variables. The file [conda/local.mk.m4](conda/local.mk.m4) may be used as a starting point.
+1. Create a file called `local.mk` in the root of the cloned repository to specify build variables. One of the files [linux-static.local.mk](linux-static.local.mk) and [conda/local.mk.m4](conda/local.mk.m4) may be used as a starting point.
 2. Run Make with e.g. `make -j16`.
