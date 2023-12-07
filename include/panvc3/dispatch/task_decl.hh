@@ -358,6 +358,15 @@ namespace panvc3::dispatch::detail {
 		
 		void enqueue_transient_async(queue &qq) requires (0 == sizeof...(t_args)) { get_callable().enqueue_transient_async(qq); }
 	};
+	
+	
+	// Helper for making a task from a member function (pointer).
+	template <typename t_arg_tuple, auto t_fn, typename t_target>
+	auto task_from_member_fn(t_target &&target)
+	{
+		typedef std::remove_reference_t <t_target> target_type;
+		return libbio::tuples::forward_to <task>::parameters_of_t <t_arg_tuple>::template from_member_fn <target_type, t_fn>(std::forward <t_target>(target));
+	}
 }
 
 
@@ -367,6 +376,9 @@ namespace panvc3::dispatch {
 	using task_t = detail::task <t_args...>;
 	
 	typedef detail::task <> task;
+	
+	template <auto t_fn, typename t_target>
+	auto task_from_member_fn(t_target &&target) { return detail::task_from_member_fn <std::tuple <>, t_fn>(std::forward <t_target>(target)); }
 }
 
 #endif
