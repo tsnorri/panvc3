@@ -6,7 +6,6 @@
 #include <chrono>
 #include <iostream>
 #include <libbio/algorithm/sorted_set_union.hh>
-#include <libbio/dispatch/dispatch_caller.hh>
 #include <libbio/fasta_reader.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
@@ -14,6 +13,7 @@
 #include <libbio/utility.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
+#include <panvc3/dispatch.hh>
 #include <panvc3/sam_tag.hh>
 #include <panvc3/sequence_buffer_store.hh>
 #include <panvc3/spsc_queue.hh>
@@ -29,6 +29,7 @@
 #include "cmdline.h"
 
 namespace chrono	= std::chrono;
+namespace dispatch	= panvc3::dispatch;
 namespace fs		= std::filesystem;
 namespace lb		= libbio;
 namespace ios		= boost::iostreams;
@@ -304,8 +305,6 @@ namespace {
 		typedef project_task <input_processor>						project_task_type;
 		typedef std::map <panvc3::seqan3_sam_tag_type, std::size_t>	tag_count_map;
 		typedef panvc3::spsc_queue <project_task_type, QUEUE_SIZE>	queue_type;
-		typedef lb::dispatch_ptr <dispatch_queue_t>					dispatch_queue_ptr;
-		typedef lb::dispatch_ptr <dispatch_semaphore_t>				semaphore_ptr;
 		typedef	void												(*exit_callback_type)(void);
 		typedef panvc3::compressed_fasta_reader						fasta_reader;
 		typedef fasta_reader::sequence_vector						sequence_vector;
@@ -322,7 +321,8 @@ namespace {
 		fasta_reader					m_fasta_reader;
 		panvc3::sequence_buffer_store	m_reference_buffer_store;
 		
-		dispatch_queue_ptr				m_output_dispatch_queue;
+		dispatch::serial_queue			m_output_dispatch_queue;
+		dispatch::group					m_group;
 		exit_callback_type				m_exit_cb{};
 		
 		queue_type						m_task_queue{};
@@ -388,7 +388,7 @@ namespace {
 			m_realn_range_output(open_stream_with_handle(m_realn_range_handle)),
 			m_fasta_reader(std::move(fasta_reader_)),
 			m_reference_buffer_store(m_aln_output.header().ref_ids().size()),
-			m_output_dispatch_queue(dispatch_queue_create("fi.iki.tsnorri.panvc3.project-alignments.output-queue", DISPATCH_QUEUE_SERIAL)),
+			m_output_dispatch_queue(dispatch::parallel_queue::shared_queue()),
 			m_exit_cb(exit_cb),
 			m_ref_id_mapping(std::move(ref_id_mapping)),
 			m_additional_preserved_tags(std::move(additional_preserved_tags)),
@@ -427,7 +427,7 @@ namespace {
 		input_type const &alignment_input() const { return m_aln_input; }
 		output_type &alignment_output() { return m_aln_output; }
 		output_type const &alignment_output() const { return m_aln_output; }
-		dispatch_queue_t output_dispatch_queue() { return *m_output_dispatch_queue; }
+		dispatch::serial_queue &output_dispatch_queue() { return m_output_dispatch_queue; }
 		std::string const &reference_id_separator() const { return m_ref_id_separator; }
 		std::string const &msa_reference_id() const { return m_msa_ref_id; }
 		reference_id_mapping_type const &reference_id_mapping() const { return m_ref_id_mapping; }
@@ -502,8 +502,7 @@ namespace {
 		
 		static_assert(0 < QUEUE_SIZE);
 		
-		lb::dispatch_ptr <dispatch_group_t> dispatch_group(dispatch_group_create());
-		auto parallel_dispatch_queue(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
+		auto &parallel_dispatch_queue(dispatch::parallel_queue::shared_queue());
 		
 		auto task_idx(m_task_queue.pop_index()); // Reserve one task.
 		std::size_t task_id{};
@@ -599,7 +598,7 @@ namespace {
 				current_task.m_status = project_task_status::processing;
 
 				if (m_should_process_tasks_in_parallel)
-					lb::dispatch(current_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
+					parallel_dispatch_queue.group_async(m_group, dispatch::task_from_member_fn <&project_task_type::process>(&current_task));
 				else
 					current_task.process();
 				
@@ -633,7 +632,7 @@ namespace {
 				last_task.m_task_id = task_id;
 				last_task.m_status = project_task_status::processing;
 				if (m_should_process_tasks_in_parallel)
-					lb::dispatch(last_task).template group_async <&project_task_type::process>(*dispatch_group, parallel_dispatch_queue);
+					parallel_dispatch_queue.group_async(m_group, dispatch::task_from_member_fn <&project_task_type::process>(&last_task));
 				else
 					last_task.process();
 			}
@@ -642,7 +641,7 @@ namespace {
 		// When all the work in the group has been completed,
 		// the record output blocks have already been inserted to the serial queue.
 		if (m_should_process_tasks_in_parallel)
-			lb::dispatch(*this).template group_notify <&input_processor::finish>(*dispatch_group, *m_output_dispatch_queue);
+			m_group.notify(parallel_dispatch_queue, dispatch::task_from_member_fn <&input_processor::finish>(this));
 		else
 			finish();
 	}
@@ -915,7 +914,7 @@ namespace {
 		libbio_assert(project_task_status::processing == m_status.load());
 		m_status = project_task_status::finishing;
 		if (should_process_tasks_in_parallel)
-			lb::dispatch(*this).template async <&project_task::output>(m_input_processor->output_dispatch_queue());
+			m_input_processor->output_dispatch_queue().async(dispatch::task_from_member_fn <&project_task::output>(this));
 		else
 			output();
 	}
@@ -1068,16 +1067,16 @@ namespace {
 	std::unique_ptr <input_processor_base> s_input_processor;
 
 
-	void do_exit(void *)
+	void do_exit()
 	{
 		s_input_processor.reset();
-		std::exit(EXIT_SUCCESS);
+		dispatch::main_queue().stop();
 	}
 
 
 	void do_exit_async()
 	{
-		dispatch_async_f(dispatch_get_main_queue(), nullptr, &do_exit);
+		dispatch::main_queue().async(dispatch::task::from_lambda([](){ do_exit(); }));
 	}
 
 
@@ -1500,7 +1499,7 @@ namespace {
 		);
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
-		lb::dispatch(*s_input_processor).template async <&input_processor_base::process_input>(dispatch_get_main_queue());
+		dispatch::main_queue().async(dispatch::task_from_member_fn <&input_processor_base::process_input>(s_input_processor.get()));
 	}
 }
 
@@ -1527,4 +1526,6 @@ extern "C" void panvc3_project_alignments(int argc, char **argv)
 		std::cerr << "PID: " << getpid() << '\n';
 	
 	process(args_info, argc, argv);
+	
+	dispatch::main_queue().run();
 }

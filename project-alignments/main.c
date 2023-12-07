@@ -3,7 +3,6 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <libbio/dispatch/dispatch_compat.h>
 #include <stdlib.h> // EXIT_SUCCESS
 
 // The compiler (as of GCC 12) seems to optimise process() in project_alignments.cc
@@ -18,8 +17,5 @@ extern void panvc3_project_alignments(int argc, char **argv);
 int main(int argc, char **argv)
 {
 	panvc3_project_alignments(argc, argv);
-	dispatch_main();
-	
-	// Not reached.
-	return EXIT_SUCCESS;
+	return 0;
 }
