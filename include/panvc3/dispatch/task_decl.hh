@@ -360,7 +360,7 @@ namespace panvc3::dispatch::detail {
 	};
 	
 	
-	// Helper for making a task from a member function (pointer).
+	// Convenience function for making a task from a member function (pointer).
 	template <typename t_arg_tuple, auto t_fn, typename t_target>
 	auto task_from_member_fn(t_target &&target)
 	{
