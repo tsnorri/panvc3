@@ -12,7 +12,7 @@ WARNING_FLAGS_		+= -Wno-deprecated-builtins
 WARNING_CXXFLAGS_	+= -Wno-interference-size
 
 SYSTEM_CFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) $(ISYSROOT)
-SYSTEM_CXXFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -nostdinc++ $(GCC_INCLUDES) $(ISYSROOT)
+SYSTEM_CXXFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) $(GCC_INCLUDES) $(ISYSROOT)
 SYSTEM_LDFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -L$(GCC_ROOT)/lib -Wl,-rpath,$(GCC_ROOT)/lib
 
 BOOST_LIBS			?= -L$(BOOST_LIBDIR) -lboost_iostreams
