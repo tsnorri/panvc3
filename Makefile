@@ -37,6 +37,8 @@ CATCH2_HEADERS	= $(shell find lib/libbio/lib/Catch2/include)
 
 
 .PHONY: all clean-all clean clean-dependencies dependencies libbio-tests
+.PRECIOUS: lib/libbio/lib/rapidcheck/build-gcc/librapidcheck.a lib/libbio/lib/rapidcheck/build-llvm/librapidcheck.a
+
 
 all: $(BUILD_PRODUCTS)
 
@@ -49,6 +51,8 @@ clean:
 	$(MAKE) -C index-msa clean
 	$(MAKE) -C libpanvc3 clean
 	$(MAKE) -C project-alignments clean
+	$(MAKE) -C recalculate-mapq clean
+	$(MAKE) -C rewrite-cigar clean
 	$(MAKE) -C split-alignments-by-reference clean
 	$(MAKE) -C subset-alignments clean
 	$(MAKE) -C tests clean
@@ -68,7 +72,7 @@ dist: $(DIST_TAR_GZ)
 tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
 	$(MAKE) -C tests
 
-libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm
+libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm/tests
 
 alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C alignment-statistics
@@ -102,7 +106,8 @@ subset-alignments/subset_alignments: lib/libbio/build-gcc/libbio.a
 
 $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(MKDIR) -p $(DIST_TARGET_DIR)
-	for f in $(BUILD_PRODUCTS); do $(CP) $$f $(DIST_TARGET_DIR); done
+	for f in $(BUILD_PRODUCTS); do if [ $${f##*/} = libpanvc3.a ]; then $(CP) $$f $(DIST_TARGET_DIR); else $(CP) $$f $(DIST_TARGET_DIR)/panvc3_$${f##*/}; fi; done
+	$(CP) count-supporting-reads/calculate_reference_bias.py $(DIST_TARGET_DIR)/panvc3_calculate_reference_bias.py
 	$(CP) README.md $(DIST_TARGET_DIR)
 	$(CP) LICENSE $(DIST_TARGET_DIR)
 	$(CP) lib/swift-corelibs-libdispatch/LICENSE $(DIST_TARGET_DIR)/swift-corelibs-libdispatch-license.txt
@@ -114,9 +119,12 @@ lib/libbio/build-%/libbio.a:
 	$(MKDIR) -p lib/libbio/build-$*
 	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../src/Makefile
 
-lib/libbio/build-tests-%/tests: lib/libbio/build-%/libbio.a
+lib/libbio/build-tests-%/tests: lib/libbio/build-%/libbio.a lib/libbio/lib/rapidcheck/build-%/librapidcheck.a
 	$(MKDIR) -p lib/libbio/build-tests-$*
-	VPATH=../tests LIBBIO_PATH=../build-$*/libbio.a $(MAKE) -C lib/libbio/build-tests-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../tests/Makefile
+	VPATH=../tests LIBBIO_PATH=../build-$*/libbio.a RAPIDCHECK_BUILD_DIR="build-$*" $(MAKE) -C lib/libbio/build-tests-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../tests/Makefile tests
+
+lib/libbio/lib/rapidcheck/build-%/librapidcheck.a:
+	RAPIDCHECK_BUILD_DIR="build-$*" $(MAKE) -C lib/libbio -f ../../local.mk -f ../../make/$*.mk -f ../../make/$(OS_NAME)-$*.mk -f Makefile lib/rapidcheck/build-$*/librapidcheck.a
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk

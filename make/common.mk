@@ -33,10 +33,6 @@ LIBDISPATCH_LIBRARIES =
 # Target type description, used currently in the .tar.gz name.
 TARGET_TYPE		?=
 
-BOOST_ROOT		?= /usr
-BOOST_INCLUDE	?= -I$(BOOST_ROOT)/include
-BOOST_LIBDIR	?= $(BOOST_ROOT)/lib
-
 CFLAGS			+= -std=c99   $(OPT_FLAGS) $(WARNING_FLAGS) $(SYSTEM_CFLAGS)
 CXXFLAGS		+= -std=c++2b $(OPT_FLAGS) $(WARNING_FLAGS) $(WARNING_CXXFLAGS) $(SYSTEM_CXXFLAGS)
 CPPFLAGS		+=	-DHAVE_CONFIG_H \

@@ -4,6 +4,7 @@ else
 GCC_SUFFIX := -$(GCC_VERSION)
 endif
 
+GCC_ROOT			?= /usr
 GCC					?= $(GCC_ROOT)/bin/gcc$(GCC_SUFFIX)
 GXX					?= $(GCC_ROOT)/bin/g++$(GCC_SUFFIX)
 CC					= $(GCC)
@@ -11,3 +12,7 @@ CXX					= $(GXX)
 
 BOOST_ROOT_GCC		?= /usr
 BOOST_ROOT			?= $(BOOST_ROOT_GCC)
+BOOST_INCLUDE_GCC	?= -I$(BOOST_ROOT)/include
+BOOST_INCLUDE		?= $(BOOST_INCLUDE_GCC)
+BOOST_LIBDIR_GCC	?= $(BOOST_ROOT)/lib
+BOOST_LIBDIR		?= $(BOOST_LIBDIR_GCC)
