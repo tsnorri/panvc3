@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -8,6 +8,7 @@
 #include <libbio/generic_parser.hh>
 #include <libbio/generic_parser/cigar_field_seqan.hh>
 #include <libbio/tuple/slice.hh>
+#include <panvc3/cigar_eq.hh>
 #include <panvc3/rewrite_cigar.hh>
 #include "test_additions.hh"
 
@@ -65,10 +66,10 @@ namespace {
 		panvc3::sequence_entry_pair const &seq_entry_pair,
 		t_query_seq const &query_seq,				// Typically std::vector <seqan3::dna5>
 		t_dst_seq const &dst_seq,
-		panvc3::cigar_buffer &destination
+		panvc3::cigar_buffer_seqan3 &destination
 	)
 	{
-		return panvc3::rewrite_cigar(src_pos, cigar_seq, std::get <0>(seq_entry_pair), std::get <1>(seq_entry_pair), query_seq, dst_seq, destination);
+		return panvc3::rewrite_cigar <panvc3::cigar_adapter_seqan3>(src_pos, cigar_seq, std::get <0>(seq_entry_pair), std::get <1>(seq_entry_pair), query_seq, dst_seq, destination);
 	}
 	
 	
@@ -170,7 +171,7 @@ SCENARIO("rewrite_cigar() can handle predefined inputs", "[rewrite_cigar]")
 						
 						WHEN("the CIGAR string is rewritten")
 						{
-							panvc3::cigar_buffer buffer;
+							panvc3::cigar_buffer_seqan3 buffer;
 							auto const dst_pos(rewrite_cigar(src_pos, cigar, seq_entry_pair, query, dst, buffer));
 							
 							THEN("the new position and the rewritten CIGAR match the expected")
@@ -180,7 +181,7 @@ SCENARIO("rewrite_cigar() can handle predefined inputs", "[rewrite_cigar]")
 								INFO("expected_cigar:   " << tests::to_readable(expected_cigar));
 								INFO("actual:           " << tests::to_readable(buffer.operations()));
 								CHECK(expected_dst_pos == dst_pos);
-								CHECK(panvc3::cigar_eq <true>(expected_cigar, buffer.operations()));
+								CHECK(panvc3::cigar_eq_seqan3 <true>(expected_cigar, buffer.operations()));
 							}
 						}
 					}

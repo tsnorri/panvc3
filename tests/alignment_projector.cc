@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -9,6 +9,7 @@
 #include <libbio/generic_parser/cigar_field_seqan.hh>
 #include <libbio/tuple/slice.hh>
 #include <panvc3/alignment_projector.hh>
+#include <panvc3/cigar_eq.hh>
 #include "test_additions.hh"
 
 namespace lb	= libbio;
@@ -60,7 +61,7 @@ namespace {
 	
 	template <typename t_cigar, typename t_query_seq, typename t_dst_seq>
 	std::size_t project_alignment(
-		panvc3::alignment_projector &projector,
+		panvc3::alignment_projector_seqan3 &projector,
 		std::size_t const src_pos,							// Position in the source reference.
 		panvc3::sequence_entry_pair const &seq_entry_pair,
 		t_query_seq const &query_seq,						// Typically std::vector <seqan3::dna5>
@@ -222,7 +223,7 @@ SCENARIO("alignment_projector can re-align predefined inputs")
 							quality_seq.clear();
 							quality_seq.resize(query.size(), panvc3::max_letter <quality_alphabet>());
 							
-							panvc3::alignment_projector projector;
+							panvc3::alignment_projector_seqan3 projector;
 							auto const actual_dst_pos(project_alignment(projector, src_pos, seq_entry_pair, query, quality_seq, cigar, dst));
 							
 							THEN("the new position and the rewritten CIGAR match the expected")
@@ -234,7 +235,7 @@ SCENARIO("alignment_projector can re-align predefined inputs")
 								INFO("expected_cigar:   " << tests::to_readable(expected_cigar));
 								INFO("actual_cigar:     " << tests::to_readable(actual_cigar));
 								CHECK(expected_dst_pos == actual_dst_pos);
-								CHECK(panvc3::cigar_eq <true>(expected_cigar, actual_cigar));
+								CHECK(panvc3::cigar_eq_seqan3 <true>(expected_cigar, actual_cigar));
 							}
 						}
 					}

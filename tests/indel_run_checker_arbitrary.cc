@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -27,6 +27,10 @@ using seqan3::operator""_cigar_operation;
 
 
 namespace {
+	
+	typedef panvc3::cigar_adapter_seqan3	cigar_adapter_type;
+	typedef cigar_adapter_type::vector_type	cigar_vector;
+	typedef cigar_adapter_type::count_type	cigar_count_type;
 	
 	constexpr static std::uint8_t cigar_op_count{9}; // M, I, D, N, S, H, P , =, and X.
 	
@@ -84,7 +88,7 @@ namespace {
 		{
 		}
 		
-		cigar_(seqan3::cigar::operation const op, panvc3::cigar_count_type const count)
+		cigar_(seqan3::cigar::operation const op, cigar_count_type const count)
 		{
 			value = op;
 			value = count;
@@ -127,7 +131,7 @@ namespace {
 	
 	struct run_base
 	{
-		panvc3::cigar_vector content{};
+		cigar_vector content{};
 		
 	protected:
 		~run_base() {} // Destruction only allowed via subclasses.
@@ -159,7 +163,7 @@ namespace {
 	// For converting from run_base.
 	struct run
 	{
-		panvc3::cigar_vector	content{};
+		cigar_vector			content{};
 		run_type				type{run_type::no_op};
 		
 		template <typename t_run>
@@ -229,7 +233,7 @@ namespace {
 		return rc::gen::scale(
 			t_run::scale,
 			rc::gen::construct <t_run>(
-				rc::gen::container <panvc3::cigar_vector>( // Produce the vector of seqan3::cigar needed by t_run.
+				rc::gen::container <cigar_vector>( // Produce the vector of seqan3::cigar needed by t_run.
 					rc::gen::map( // fmap from generator of cigar to generator of seqan3::cigar.
 						rc::gen::arbitrary <typename t_run::cigar_type>(),
 						[](auto const wrapped){ return wrapped.value; }
@@ -284,7 +288,7 @@ namespace {
 			}
 		}
 		
-		void copy_operations(panvc3::cigar_vector &dst) const
+		void copy_operations(cigar_vector &dst) const
 		{
 			dst.clear();
 			for (auto const &run : runs)
@@ -326,7 +330,7 @@ namespace rc {
 		{
 			return gen::construct <cigar_ <t_op>>(
 				gen::elementOf(t_op::allowed_operations),
-				gen::inRange <panvc3::cigar_count_type>(1, 15)
+				gen::inRange <cigar_count_type>(1, 15)
 			);
 		}
 	};
@@ -435,7 +439,7 @@ namespace rc {
 	{
 		static Gen <non_indel_run> arbitrary()
 		{
-			// fmap the result of the Markov chain to panvc3::cigar_vector.
+			// fmap the result of the Markov chain to cigar_vector.
 			// We can’t fmap the instances of cigar directly to seqan3::cigar b.c.
 			// the Markov chain needs access to the previous element(s). 
 			return gen::construct <non_indel_run>(
@@ -445,7 +449,7 @@ namespace rc {
 						gen::arbitrary <non_indel_markov_chain_type>()
 					),
 					[](auto const &chain){
-						panvc3::cigar_vector retval;
+						cigar_vector retval;
 						if (chain.values.empty())
 							return retval;
 						
@@ -494,12 +498,12 @@ TEST_CASE("indel_run_checker can process an arbitrary runs of CIGAR operations",
 			// Tag by indel run count.
 			RC_TAG(ranges::count_if(input.runs, [](auto const &run){ return run_type::indel == run.type; }));
 			
-			panvc3::cigar_vector cigar_seq;
+			cigar_vector cigar_seq;
 			input.copy_operations(cigar_seq);
 			INFO("Runs:  " << input.runs);
 			INFO("CIGAR: " << tests::to_readable(cigar_seq));
 			
-			panvc3::indel_run_checker checker;
+			panvc3::indel_run_checker_seqan3 checker;
 			checker.reset(cigar_seq, 0);
 			while (checker.find_next_range_for_realigning())
 			{

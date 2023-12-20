@@ -1,11 +1,12 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
 #include <catch2/catch.hpp>
 #include <libbio/assert.hh>
 #include <panvc3/cigar.hh>
+#include <panvc3/cigar_eq.hh>
 #include <range/v3/view/concat.hpp>
 #include <range/v3/view/drop_exactly.hpp>
 #include <range/v3/view/enumerate.hpp>
@@ -65,8 +66,8 @@ namespace {
 	}
 	
 	
-	typedef panvc3::cigar_count_type		cigar_count_type;
-	typedef std::vector <cigar_count_type>	cigar_count_vector;
+	typedef panvc3::cigar_adapter_seqan3::count_type	cigar_count_type;
+	typedef std::vector <cigar_count_type>				cigar_count_vector;
 	
 	
 	constexpr static auto const cigar_non_indel_operations(std::to_array({
@@ -477,7 +478,7 @@ SCENARIO("cigar_eq() can handle simple non-matching sequences", "[cigar_eq]")
 		{
 			THEN("the result is false")
 			{
-				CHECK(!panvc3::cigar_eq(lhs, rhs));
+				CHECK(!panvc3::cigar_eq_seqan3(lhs, rhs));
 			}
 		}
 	}
@@ -506,12 +507,12 @@ SCENARIO("cigar_eq() can handle padding", "[cigar_eq]")
 		{
 			THEN("the result is false when P ends a run")
 			{
-				CHECK(!panvc3::cigar_eq <false>(lhs, rhs));
+				CHECK(!panvc3::cigar_eq_seqan3 <false>(lhs, rhs));
 			}
 			
 			THEN("the result is true when P does not end a run")
 			{
-				CHECK(panvc3::cigar_eq <true>(lhs, rhs));
+				CHECK(panvc3::cigar_eq_seqan3 <true>(lhs, rhs));
 			}
 		}
 	}
@@ -539,12 +540,12 @@ TEST_CASE("cigar_eq() can compare arbitrary matching sequences", "[cigar_eq]")
 				RC_CLASSIFY(sequence_pair_has_all_parts);
 			}
 			
-			if (!panvc3::cigar_eq(seq_pair.lhs(), seq_pair.rhs()))
+			if (!panvc3::cigar_eq_seqan3(seq_pair.lhs(), seq_pair.rhs()))
 				RC_FAIL("cigar_eq() returned for the matching pair");
 			
 			for (auto const &[idx, seq_pair] : rsv::enumerate(test_input.non_matching_pairs))
 			{
-				if (panvc3::cigar_eq(seq_pair.lhs(), seq_pair.rhs()))
+				if (panvc3::cigar_eq_seqan3(seq_pair.lhs(), seq_pair.rhs()))
 				{
 					std::stringstream os;
 					os << "cigar_eq() returned true for the non-matching pair " << idx;

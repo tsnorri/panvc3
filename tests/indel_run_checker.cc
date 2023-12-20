@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -34,9 +34,11 @@ namespace {
 	
 	struct run
 	{
-		typedef panvc3::range	range;
+		typedef panvc3::range					range;
+		typedef panvc3::cigar_adapter_seqan3	adapter_type;
+		typedef adapter_type::vector_type		cigar_vector;
 		
-		panvc3::cigar_vector	expected_cigar;
+		cigar_vector			expected_cigar;
 		range					expected_query_range;
 		range					expected_ref_range;
 		bool					is_indel_run{};
@@ -164,7 +166,7 @@ SCENARIO("indel_run_checker can handle predefined inputs")
 			// cigar_input_tag marks the end of input for one test.
 			SECTION(section_name)
 			{
-				panvc3::indel_run_checker checker;
+				panvc3::indel_run_checker_seqan3 checker;
 				checker.reset(cigar_seq, 0);
 				
 				std::size_t idx{};

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -8,6 +8,7 @@
 #include <catch2/catch.hpp>
 #include <libbio/assert.hh>
 #include <libbio/fmap.hh>
+#include <panvc3/cigar_eq.hh>
 #include <panvc3/rewrite_cigar.hh>
 #include <range/v3/view/concat.hpp>
 #include <range/v3/view/reverse.hpp>
@@ -25,6 +26,10 @@ using seqan3::operator""_cigar_operation;
 
 
 namespace {
+	
+	typedef panvc3::cigar_adapter_seqan3	adapter_type;
+	typedef adapter_type::vector_type		cigar_vector;
+	
 	
 	template <typename t_type>
 	using pair = std::tuple <t_type, t_type>;
@@ -318,7 +323,7 @@ namespace {
 		
 		
 		std::vector <nucleotide>	segment;
-		panvc3::cigar_vector		cigar;
+		cigar_vector				cigar;
 		
 		static std::size_t expected_sequence_length(std::vector <operation> const &ops)
 		{
@@ -336,7 +341,7 @@ namespace {
 		{
 			// Since soft clipping is the only consuming operation here,
 			// the caller should use rc::gen::mapcat to get a sequence of the appropriate length.
-			panvc3::cigar_buffer cigar_buffer;
+			panvc3::cigar_buffer_seqan3 cigar_buffer;
 			for (auto const op : operations_)
 			{
 				switch (op.value)
@@ -398,8 +403,8 @@ namespace {
 		
 		// MSA.
 		std::vector <triplet <gapped_nucleotide>>	sequence;
-		panvc3::cigar_vector						input_cigar;
-		panvc3::cigar_vector						expected_cigar;
+		cigar_vector								input_cigar;
+		cigar_vector								expected_cigar;
 		std::vector <operation>						operations; // For debugging.
 		
 		
@@ -470,8 +475,8 @@ namespace {
 			operations(operations_)
 		{
 			// The caller should use rc::gen::mapcat to get a sequence of the appropriate length.
-			panvc3::cigar_buffer input_cigar_buffer;
-			panvc3::cigar_buffer expected_cigar_buffer;
+			panvc3::cigar_buffer_seqan3 input_cigar_buffer;
+			panvc3::cigar_buffer_seqan3 expected_cigar_buffer;
 			std::size_t pos{};
 			for (auto const op : operations_)
 			{
@@ -1062,7 +1067,7 @@ TEST_CASE("rewrite_cigar() can process an arbitrary MSA", "[rewrite_cigar]")
 			panvc3::sequence_entry_pair seq_entries;
 			panvc3::make_sequence_entry_pair(src_aligned, dst_aligned, seq_entries);
 			
-			panvc3::cigar_buffer dst_cigar_buffer;
+			panvc3::cigar_buffer_seqan3 dst_cigar_buffer;
 			auto const dst_pos(panvc3::rewrite_cigar(
 				src_pos,
 				input_cigar,
@@ -1074,7 +1079,7 @@ TEST_CASE("rewrite_cigar() can process an arbitrary MSA", "[rewrite_cigar]")
 			));
 			
 			auto const &actual_cigar(dst_cigar_buffer.operations());
-			if (dst_pos != expected_dst_pos || !panvc3::cigar_eq(expected_cigar, actual_cigar))
+			if (dst_pos != expected_dst_pos || !panvc3::cigar_eq_seqan3(expected_cigar, actual_cigar))
 			{
 				std::stringstream os;
 				os << "Failed.\n";
