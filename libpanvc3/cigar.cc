@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -8,9 +8,10 @@
 namespace lb	= libbio;
 
 
-namespace panvc3 {
-
-	void collapse_cigar_operations(/* inout */ cigar_vector &ops)
+namespace {
+	
+	template <typename t_vector, typename t_adapter>
+	void collapse_cigar_operations_(/* inout */ t_vector &ops, t_adapter &&adapter)
 	{
 		// Essentially a conditional copy.
 		auto const begin(ops.begin());
@@ -23,18 +24,16 @@ namespace panvc3 {
 		// copy to the next place (i.e. *(it + 1) = *it_).
 		while (it_ != end)
 		{
-			using seqan3::get;
-
 			auto &curr_item(*it);
-			auto const curr_op(get <1>(curr_item));
+			auto const curr_op(adapter.operation(curr_item));
 			auto const next_item(*it_);
-			auto const next_op(get <1>(next_item));
+			auto const next_op(adapter.operation(next_item));
 
 			if (curr_op == next_op)
 			{
-				auto const curr_count(get <0>(curr_item));
-				auto const next_count(get <0>(next_item));
-				curr_item = curr_count + next_count;
+				auto const curr_count(adapter.count(curr_item));
+				auto const next_count(adapter.count(next_item));
+				adapter.assign(curr_item, curr_count + next_count);
 				++it_;
 			}
 			else
@@ -49,48 +48,19 @@ namespace panvc3 {
 		// Remove the excess items.
 		ops.resize(std::distance(begin, it + 1));
 	}
+}
 
+
+namespace panvc3 {
 	
-	void cigar_buffer::clear()
+	void collapse_cigar_operations(/* inout */ cigar_adapter_libbio::vector_type &ops)
 	{
-		m_is_first = true;
-		m_operations.clear();
+		collapse_cigar_operations_(ops, cigar_adapter_libbio{});
 	}
 	
 	
-	void cigar_buffer::push_back(seqan3::cigar::operation const op, cigar_count_type count)
+	void collapse_cigar_operations(/* inout */ cigar_adapter_seqan3::vector_type &ops)
 	{
-		using seqan3::get;
-		
-		if (0 == count)
-			return;
-		
-		if (m_is_first)
-		{
-			m_is_first = false;
-			m_current_op = op;		// Assigns to one component.
-			m_current_op = count;
-		}
-		else if (get <1>(m_current_op) == op)
-		{
-			// The alphabet instance cannot be modified directly.
-			count += get <0>(m_current_op);		// Converts magically to integral?
-			m_current_op = count;				// Assigns to one component.
-		}
-		else
-		{
-			if (get <0>(m_current_op))
-				m_operations.emplace_back(m_current_op);
-			m_current_op = op;
-			m_current_op = count;
-		}
-	}
-	
-	
-	void cigar_buffer::finish()
-	{
-		using seqan3::get;
-		if (!m_is_first && get <0>(m_current_op))
-			m_operations.emplace_back(m_current_op);
+		collapse_cigar_operations_(ops, cigar_adapter_seqan3{});
 	}
 }

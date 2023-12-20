@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -15,7 +15,7 @@
 
 namespace panvc3 {
 	
-	template <typename t_cigar, typename t_query_seq, typename t_dst_seq>
+	template <typename t_adapter, typename t_cigar, typename t_query_seq, typename t_dst_seq>
 	std::size_t rewrite_cigar(
 		std::size_t src_pos,						// Position in the source reference.
 		t_cigar const &cigar_seq,
@@ -23,7 +23,7 @@ namespace panvc3 {
 		msa_index::sequence_entry const &dst_entry,
 		t_query_seq const &query_seq,				// Typically std::vector <seqan3::dna5>
 		t_dst_seq const &dst_seq,
-		cigar_buffer &destination
+		cigar_buffer_tpl <t_adapter> &destination
 	)
 	{
 		// Algorithm
@@ -45,8 +45,7 @@ namespace panvc3 {
 		//          If the operation is M, =, or X, the query character is compared to the target sequence
 		//          character and the operation is changed to = or X accordingly.
 		
-		using seqan3::operator""_cigar_operation;
-		
+		t_adapter adapter{};
 		std::size_t query_pos{};										// Position in the query (read).
 		auto const aln_pos(src_entry.aligned_position(src_pos));		// Convert to an aligned position.
 		auto prev_excess(dst_entry.project_aligned_position(aln_pos));	// May be zero.
@@ -58,12 +57,7 @@ namespace panvc3 {
 		destination.clear();
 		for (auto const &cigar_item : cigar_seq)
 		{
-			using seqan3::get;
-			
-			auto const op_count(get <0>(cigar_item));
-			auto const operation(get <1>(cigar_item));
-			auto const operation_(operation.to_char());
-			
+			auto const &[op_count, operation, operation_] = adapter.unpack(cigar_item);
 			switch (operation_)
 			{
 				case 'I':	// Insertion, consumes query.
@@ -82,18 +76,18 @@ namespace panvc3 {
 				case 'X':	// Mismatch, consumes both.
 				{
 					// Process one character at a time.
-					for (cigar_count_type i(0); i < op_count; ++i)
+					for (typename t_adapter::count_type i(0); i < op_count; ++i)
 					{
 						// Add a deletion if needed.
 						auto const aln_pos(src_entry.gap_positions_select0_support(1 + src_pos));	// Convert to an aligned position.
 						auto const excess(dst_entry.gap_positions_rank0_support(aln_pos));
 						if (prev_excess < excess) // Add a deletion if there was a non-gap character between the current position and the previous one.
-							destination.push_back('D'_cigar_operation, excess - prev_excess);
+							destination.push_back(t_adapter::deletion_op, excess - prev_excess);
 						
 						if (1 == dst_entry.gap_positions[aln_pos])
 						{
 							// Gap; change to I.
-							destination.push_back('I'_cigar_operation, 1);
+							destination.push_back(t_adapter::insertion_op, 1);
 							prev_excess = excess;
 						}
 						else
@@ -103,9 +97,9 @@ namespace panvc3 {
 							auto const dst_cc(dst_seq[excess]);
 							
 							if (query_cc == dst_cc)
-								destination.push_back('='_cigar_operation, 1);
+								destination.push_back(t_adapter::sequence_match_op, 1);
 							else
-								destination.push_back('X'_cigar_operation, 1);
+								destination.push_back(t_adapter::sequence_mismatch_op, 1);
 							
 							prev_excess = excess + 1;
 						}
@@ -120,18 +114,18 @@ namespace panvc3 {
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
 				{
 					// Process one character at a time.
-					for (cigar_count_type i(0); i < op_count; ++i)
+					for (typename t_adapter::count_type i(0); i < op_count; ++i)
 					{
 						// Add a deletion if needed.
 						auto const aln_pos(src_entry.gap_positions_select0_support(1 + src_pos));	// Convert to an aligned position.
 						auto const excess(dst_entry.gap_positions_rank0_support(aln_pos));
 						if (prev_excess < excess) // Add a deletion if there was a non-gap character between the current position and the previous one.
-							destination.push_back('D'_cigar_operation, excess - prev_excess);
+							destination.push_back(t_adapter::deletion_op, excess - prev_excess);
 						
 						if (0 == dst_entry.gap_positions[aln_pos])
 						{
 							// Destination has non-gap. (Gaps are ignored.)
-							destination.push_back('D'_cigar_operation, 1);
+							destination.push_back(t_adapter::deletion_op, 1);
 							prev_excess = excess + 1;
 						}
 						else

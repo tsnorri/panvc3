@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -61,18 +61,17 @@ namespace panvc3 {
 		typename t_sequence_alphabet = void,
 		typename t_quality_alphabet = void,
 		typename t_seq_1,
-		typename t_seq_2
+		typename t_seq_2,
+		typename t_adapter
 	>
 	auto align_global(
 		t_seq_1 &&seq1,
 		t_seq_2 &&seq2,
 		std::int32_t const gap_opening_penalty,
 		std::int32_t const gap_extension_penalty,
-		cigar_buffer &dst
+		cigar_buffer_tpl <t_adapter> &dst
 	)
 	{
-		using seqan3::operator""_cigar_operation;
-		
 		dst.clear();
 		
 		auto const config{
@@ -98,13 +97,13 @@ namespace panvc3 {
 			auto const rcc(rr.to_char());
 			
 			if ('-' == lcc)
-				dst.push_back('I'_cigar_operation, 1);
+				dst.push_back(t_adapter::insertion_op, 1);
 			else if ('-' == rcc)
-				dst.push_back('D'_cigar_operation, 1);
+				dst.push_back(t_adapter::deletion_op, 1);
 			else if (lcc == rcc)
-				dst.push_back('='_cigar_operation, 1);
+				dst.push_back(t_adapter::sequence_match_op, 1);
 			else
-				dst.push_back('X'_cigar_operation, 1);
+				dst.push_back(t_adapter::sequence_mismatch_op, 1);
 		}
 		
 		dst.finish();

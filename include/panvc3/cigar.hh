@@ -1,154 +1,92 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
 #ifndef PANVC3_CIGAR_HH
 #define PANVC3_CIGAR_HH
 
-#include <libbio/assert.hh>
-#include <panvc3/utility.hh>
-#include <range/v3/range/access.hpp>
-#include <seqan3/alphabet/cigar/cigar.hpp>
-#include <vector>
+#include <panvc3/cigar_adapter.hh>
+#include <utility>					// std::swap
 
 
 namespace panvc3 {
 	
-	typedef std::vector <seqan3::cigar>	cigar_vector;
-	
-	typedef type_list_to_tuple_t <seqan3::cigar::seqan3_required_types>	cigar_component_types;
-	typedef std::tuple_element_t <0, cigar_component_types>				cigar_count_type;
-
-
 	// Combine adjacent matching CIGAR operations.
-	void collapse_cigar_operations(/* inout */ cigar_vector &ops);
+	void collapse_cigar_operations(/* inout */ cigar_adapter_libbio::vector_type &ops);
+	void collapse_cigar_operations(/* inout */ cigar_adapter_seqan3::vector_type &ops);
 	
 	
-	class cigar_buffer
+	template <typename t_adapter>
+	class cigar_buffer_tpl
 	{
+	public:
+		typedef	t_adapter::vector_type		vector_type;
+		typedef	t_adapter::run_type			run_type;
+		typedef	t_adapter::operation_type	operation_type;
+		typedef	t_adapter::count_type		count_type;
+		
 	protected:
-		cigar_vector	m_operations;
-		seqan3::cigar	m_current_op;
-		bool			m_is_first{true};
+		vector_type	m_operations;
+		run_type	m_current_op;
+		bool		m_is_first{true};
 		
 	public:
-		void push_back(seqan3::cigar::operation const op, cigar_count_type const count = 1);
+		void push_back(operation_type const op, count_type const count = 1);
 		void finish();
 		void clear();
-		void swap_buffer(cigar_vector &ops) { using std::swap; swap(ops, m_operations); }
+		void swap_buffer(vector_type &ops) { using std::swap; swap(ops, m_operations); }
 		
-		cigar_vector &operations() { return m_operations; }
-		cigar_vector const &operations() const { return m_operations; }
+		vector_type &operations() { return m_operations; }
+		vector_type const &operations() const { return m_operations; }
 	};
 	
+	typedef cigar_buffer_tpl <cigar_adapter_libbio> cigar_buffer_libbio;
+	typedef cigar_buffer_tpl <cigar_adapter_seqan3> cigar_buffer_seqan3;
 	
-	template <bool t_should_count_padding = false, typename t_lhs_rng, typename t_rhs_rng>
-	bool cigar_eq(t_lhs_rng &&lhs, t_rhs_rng &&rhs)
+	
+	template <typename t_adapter>
+	void cigar_buffer_tpl <t_adapter>::clear()
 	{
-		using seqan3::get;
-		using seqan3::operator""_cigar_operation;
+		m_is_first = true;
+		m_operations.clear();
+	}
 	
-		// We would like to treat runs of indels as equivalent as long as the operation counts match.
-		// Otherwise we expected the CIGAR sequences to have been normalised, i.e. consecutive operations are of distinct types.
 	
-		struct counts
+	template <typename t_adapter>
+	void cigar_buffer_tpl <t_adapter>::push_back(operation_type const op, count_type count)
+	{
+		if (0 == count)
+			return;
+		
+		t_adapter adapter{};
+		
+		if (m_is_first)
 		{
-			std::size_t insertions{};
-			std::size_t deletions{};
-			std::size_t padding{};
-		
-			void reset() { insertions = 0; deletions = 0; padding = 0; }
-			bool operator==(counts const &other) const { return insertions == other.insertions && deletions == other.deletions; }
-		};
-	
-		auto const cigar_count([](auto const cigar_item){
-			return get <0>(cigar_item);
-		});
-	
-		auto const cigar_op([](auto const cigar_item){
-			return get <1>(cigar_item);
-		});
-	
-		// Count the indels in the current run, return wheter the iterator can be dereferenced.
-		auto count_indels([&cigar_op, &cigar_count](auto &it, auto const end, auto &counts){
-			while (it != end)
-			{
-				auto const op(cigar_op(*it));
-			
-				if ('I'_cigar_operation == op)
-				{
-					counts.insertions += cigar_count(*it);
-					++it;
-					continue;
-				}
-			
-				if ('D'_cigar_operation == op)
-				{
-					counts.deletions += cigar_count(*it);
-					++it;
-					continue;
-				}
-				
-				if constexpr (t_should_count_padding)
-				{
-					if ('P'_cigar_operation == op)
-					{
-						counts.padding += cigar_count(*it);
-						++it;
-						continue;
-					}
-				}
-			
-				return it != end;
-			}
-		
-			return false;
-		});
-	
-		auto lhs_it(ranges::begin(lhs));
-		auto rhs_it(ranges::begin(rhs));
-		auto const lhs_end(ranges::end(lhs));
-		auto const rhs_end(ranges::end(rhs));
-		counts lhs_counts;
-		counts rhs_counts;
-		while (true)
-		{
-			lhs_counts.reset();
-			rhs_counts.reset();
-		
-			auto const r1(count_indels(lhs_it, lhs_end, lhs_counts));
-			auto const r2(count_indels(rhs_it, rhs_end, rhs_counts));
-		
-			// If the current run has different counts, the sequences differ.
-			if (lhs_counts != rhs_counts) return false;
-		
-			// Check the current character.
-			auto const res(r1 | (r2 << 0x1));
-			switch (res)
-			{
-				case 0x0:
-					// At the end of both sequences.
-					return true;
-			
-				case 0x1:
-				case 0x2:
-					// Only one of the sequences has an extra item, so it does not match.
-					return false;
-			
-				case 0x3:
-					// Both sequences have remaining characters
-					if (*lhs_it != *rhs_it)
-						return false;
-					break;
-			
-				default:
-					libbio_fail("Unexpected state");
-			}
-		
-			++lhs_it;
-			++rhs_it;
+			m_is_first = false;
+			adapter.assign(m_current_op, op);
+			adapter.assign(m_current_op, count);
 		}
+		else if (adapter.operation(m_current_op) == op)
+		{
+			count += adapter.count(m_current_op);
+			adapter.assign(m_current_op, count);
+		}
+		else
+		{
+			if (adapter.count(m_current_op))
+				m_operations.emplace_back(m_current_op);
+			adapter.assign(m_current_op, op);
+			adapter.assign(m_current_op, count);
+		}
+	}
+	
+	
+	template <typename t_adapter>
+	void cigar_buffer_tpl <t_adapter>::finish()
+	{
+		if (!m_is_first && t_adapter{}.count(m_current_op))
+			m_operations.emplace_back(m_current_op);
 	}
 }
 

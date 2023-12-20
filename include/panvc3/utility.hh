@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2023 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <libbio/sam/header.hh>
 #include <mutex>
 #include <ostream>
 #include <seqan3/utility/type_list/type_list.hpp>
@@ -85,11 +86,27 @@ namespace panvc3 {
 	{
 		return 0 < val && !(val & (val - 1));
 	}
-
+	
+	
+	std::uint32_t check_sam_program_id_index(std::string_view const id_prefix, std::string_view const id);
+	
+	std::string command_line_call(
+		int const argc,
+		char const * const * const argv
+	);
+	
+	void append_sam_program_info(
+		std::string_view const id_prefix,
+		std::string_view const name,
+		int const argc,
+		char const * const * const argv,
+		char const * const version,
+		libbio::sam::program_entry_vector &dst
+	);
 
 	// SeqAn 3's program_info_t currently depends on a template parameter, so we need to have a function template for modifying it.
 	template <typename t_program_info>
-	void append_sam_program_info(
+	void append_sam_program_info_seqan3(
 		std::string_view const id_prefix,
 		std::string_view const name,
 		int const argc,
@@ -101,36 +118,16 @@ namespace panvc3 {
 		// Identifier
 		std::uint32_t idx{};
 		for (auto const &pginfo : dst)
-		{
-			if (pginfo.id.starts_with(id_prefix))
-			{
-				std::string_view const id(pginfo.id);
-				auto const pos(id_prefix.size());
-				auto const tail(id.substr(pos));
-				std::uint32_t idx_{};
-				auto const res(std::from_chars(tail.data(), tail.data() + tail.size(), idx_));
-				if (std::errc{} == res.ec)
-					idx = std::max(idx, idx_);
-			}
-		}
+			idx = std::max(idx, check_program_id_index(id_prefix, pginfo.id));
 
 		++idx;
 		std::string id(id_prefix);
 		id += std::to_string(idx);
 
-		// CLI call
-		std::string cmd;
-		for (int i(0); i < argc; ++i)
-		{
-			if (0 != i)
-				cmd.append(" ");
-			cmd.append(argv[i]);
-		}
-
 		// Build the record.
 		t_program_info rec{
 			.id{std::move(id)},
-			.command_line_call{std::move(cmd)},
+			.command_line_call{command_line_call(argc, argv)},
 			.version{version}
 		};
 
