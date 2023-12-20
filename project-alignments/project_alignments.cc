@@ -10,6 +10,7 @@
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/log_memory_usage.hh>
+#include <libbio/sam.hh>
 #include <libbio/utility.hh>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
@@ -24,7 +25,6 @@
 #include <range/v3/view/single.hpp>
 #include <range/v3/view/take_exactly.hpp>
 #include <range/v3/view/transform.hpp>
-#include <seqan3/io/sam_file/all.hpp>
 #include <syncstream>
 #include "cmdline.h"
 
@@ -34,16 +34,9 @@ namespace fs		= std::filesystem;
 namespace lb		= libbio;
 namespace ios		= boost::iostreams;
 namespace rsv		= ranges::views;
+namespace sam		= libbio::sam;
 
-
-using seqan3::operator""_tag;
-
-
-namespace seqan3 {
-	// SeqAn 3 does not yet have a definition for the OA tag.
-	// (Check when updating, though.)
-	template <> struct sam_tag_type <"OA"_tag> { typedef std::string type; };
-}
+using namespace libbio::sam::literals;
 
 
 namespace {
@@ -80,7 +73,7 @@ namespace {
 			"RX"_tag,	// Sequence bases of the (possibly corrected) unique molecular identifier
 			"TS"_tag	// Transcript strand
 		};
-
+		
 		// Make sure that the values are sorted.
 		std::sort(retval.begin(), retval.end());
 		
@@ -93,13 +86,13 @@ namespace {
 	
 	struct sam_tag_specification
 	{
-		panvc3::seqan3_sam_tag_type	original_rname{};
-		panvc3::seqan3_sam_tag_type	original_pos{};
-		panvc3::seqan3_sam_tag_type	original_rnext{};
-		panvc3::seqan3_sam_tag_type	original_pnext{};
-		panvc3::seqan3_sam_tag_type	realn_query_ranges{};
-		panvc3::seqan3_sam_tag_type	realn_ref_ranges{};
-		panvc3::seqan3_sam_tag_type	rec_idx{};
+		sam::tag_type	original_rname{};
+		sam::tag_type	original_pos{};
+		sam::tag_type	original_rnext{};
+		sam::tag_type	original_pnext{};
+		sam::tag_type	realn_query_ranges{};
+		sam::tag_type	realn_ref_ranges{};
+		sam::tag_type	rec_idx{};
 	};
 
 
@@ -214,25 +207,91 @@ namespace {
 		processing,
 		finishing
 	};
-		
-
-	template <typename t_input_processor>
-	class project_task : public panvc3::alignment_projector_delegate
+	
+	
+	lb::file_ostream open_stream_with_handle(lb::file_handle const &handle)
 	{
-		friend t_input_processor;
-
+		auto const fd(handle.get());
+		if (-1 == fd)
+			return {};
+		return {fd, ios::never_close_handle};
+	}
+	
+	
+	// Declare some virtual functions in order to make assigning input_processor to a std::unique_ptr easier.
+	struct input_processor_base
+	{
+		virtual ~input_processor_base() {}
+		virtual void process_input() = 0;
+		virtual void output_status() const = 0;
+	};
+	
+	class input_processor;
+	
+	
+	struct alignment_input
+	{
+		sam::file_handle_input_range_	input_range;
+		sam::header						header;
+		sam::reader						reader;
+		
+		explicit alignment_input(lb::file_handle &&fh):
+			input_range(std::move(fh))
+		{
+		}
+		
+		
+		template <typename t_cb>
+		void read_records(t_cb &&cb) { reader.read_records(header, input_range, std::forward <t_cb>(cb)); }
+	};
+	
+	
+	struct alignment_output
+	{
+		lb::file_handle					handle;
+		sam::header						header;
+		
+		explicit alignment_output(lb::file_handle &&fh):
+			handle(std::move(fh))
+		{
+		}
+	};
+	
+	
+	// lb::file_ostream is not movable and so we unfortunately need this.
+	struct alignment_output_ : public alignment_output
+	{
+		lb::file_ostream				stream{};
+		
+		explicit alignment_output_(alignment_output &&ao):
+			alignment_output(std::move(ao))
+		{
+			lb::open_stream_with_file_handle(stream, handle);
+		}
+		
+		void output_record(sam::record const &rec) { sam::output_record(stream, header, rec); }
+	};
+	
+	
+	
+	typedef std::map <sam::tag_type, std::size_t>	tag_count_map;
+	
+	
+	class project_task final : public panvc3::alignment_projector_delegate
+	{
+		friend class input_processor;
+		
 		typedef chrono::high_resolution_clock					clock_type;
 		typedef clock_type::time_point							time_point;
+		typedef panvc3::alignment_projector_libbio				alignment_projector_type;
 		
 	public:
-		typedef typename t_input_processor::input_record_type	record_type;
-		typedef std::array <record_type, CHUNK_SIZE>			record_array;
-		typedef typename t_input_processor::tag_count_map		tag_count_map;
+		typedef std::array <sam::record, CHUNK_SIZE>			record_array;
 
 	protected:
-		t_input_processor					*m_input_processor{};
+		input_processor						*m_input_processor{};
 		record_array						m_records;
-		panvc3::alignment_projector			m_alignment_projector;
+		alignment_projector_type			m_alignment_projector;
 		tag_count_map						m_removed_tag_counts;
 		realigned_range_vector				m_realigned_ranges;
 		std::size_t							m_valid_records{};
@@ -253,7 +312,7 @@ namespace {
 
 		bool is_full() const { return CHUNK_SIZE == m_valid_records; }
 		bool empty() const { return 0 == m_valid_records; }
-		record_type &next_record() { libbio_assert(project_task_status::inactive == m_status.load()); libbio_assert_lt(m_valid_records, m_records.size()); return m_records[m_valid_records++]; }
+		sam::record &next_record() { libbio_assert(project_task_status::inactive == m_status.load()); libbio_assert_lt(m_valid_records, m_records.size()); return m_records[m_valid_records++]; }
 		auto alignment_records() { auto const st(m_status.load()); libbio_assert(project_task_status::processing == st || project_task_status::finishing == st); return m_records | rsv::take_exactly(m_valid_records); }
 		auto alignment_records() const { auto const st(m_status.load()); libbio_assert(project_task_status::processing == st || project_task_status::finishing == st); return m_records | rsv::take_exactly(m_valid_records); }
 		
@@ -261,30 +320,12 @@ namespace {
 		void output();
 		inline void reset(); 
 
-		void alignment_projector_begin_realignment(panvc3::alignment_projector const &) override { m_realignment_start_time = clock_type::now(); }
-		void alignment_projector_end_realignment(panvc3::alignment_projector const &) override;
-	};
-
-
-	lb::file_ostream open_stream_with_handle(lb::file_handle const &handle)
-	{
-		auto const fd(handle.get());
-		if (-1 == fd)
-			return {};
-		return {fd, ios::never_close_handle};
-	}
-	
-	
-	// Declare some virtual functions in order to make assigning input_processor to a std::unique_ptr easier.
-	struct input_processor_base
-	{
-		virtual ~input_processor_base() {}
-		virtual void process_input() = 0;
-		virtual void output_status() const = 0;
+		void alignment_projector_begin_realignment(panvc3::alignment_projector_base const &) override { m_realignment_start_time = clock_type::now(); }
+		void alignment_projector_end_realignment(panvc3::alignment_projector_base const &) override;
 	};
 	
 	
-	template <typename t_aln_input, typename t_aln_output>
+	// FIXME: Now that we are not (indirectly) calling pthread_exit() in main(), we could store some of the instance variables on the stack instead.
 	class input_processor final : public input_processor_base
 	{
 		static_assert(panvc3::is_power_of_2(QUEUE_SIZE));
@@ -294,17 +335,7 @@ namespace {
 		typedef clock_type::duration								duration_type;
 
 	public:
-		typedef t_aln_input											input_type;
-		typedef t_aln_output										output_type;
-		typedef std::remove_cvref_t <
-			decltype(
-				std::declval <t_aln_output>().header().ref_ids()
-			)
-		>															output_reference_ids_type;
-		typedef typename input_type::record_type					input_record_type;
-		typedef project_task <input_processor>						project_task_type;
-		typedef std::map <panvc3::seqan3_sam_tag_type, std::size_t>	tag_count_map;
-		typedef panvc3::spsc_queue <project_task_type, QUEUE_SIZE>	queue_type;
+		typedef panvc3::spsc_queue <project_task, QUEUE_SIZE>		queue_type;
 		typedef	void												(*exit_callback_type)(void);
 		typedef panvc3::compressed_fasta_reader						fasta_reader;
 		typedef fasta_reader::sequence_vector						sequence_vector;
@@ -313,8 +344,8 @@ namespace {
 		panvc3::msa_index				m_msa_index;
 		sequence_entry_ptr_vector		m_src_seq_entries;
 		sequence_entry_ptr_vector		m_dst_seq_entries;
-		input_type						m_aln_input;
-		output_type						m_aln_output;
+		struct alignment_input			m_aln_input;
+		struct alignment_output_		m_aln_output;
 		lb::file_handle					m_realn_range_handle; // Needs to be before m_realn_range_output due to deallocation order.
 		lb::file_ostream				m_realn_range_output;
 
@@ -339,7 +370,7 @@ namespace {
 		realigned_range_vector			m_realigned_ranges;
 		realigned_range_vector			m_realigned_range_buffer;
 		reference_id_mapping_type		m_ref_id_mapping;
-		panvc3::seqan3_sam_tag_vector	m_additional_preserved_tags;
+		sam::tag_vector					m_additional_preserved_tags;
 		std::string						m_msa_ref_id;
 		std::string						m_ref_id_separator;
 		std::int32_t					m_gap_opening_cost{};
@@ -361,14 +392,14 @@ namespace {
 			panvc3::msa_index				&&msa_index,
 			sequence_entry_ptr_vector		&&src_seq_entries,
 			sequence_entry_ptr_vector		&&dst_seq_entries,
-			t_aln_input						&&aln_input,
-			t_aln_output					&&aln_output,
+			alignment_input					&&aln_input,
+			alignment_output				&&aln_output,
 			fasta_reader					&&fasta_reader_,
 			lb::file_handle					&&realn_range_handle,
 			t_msa_ref_id					&&msa_ref_id,
 			t_ref_id_separator				&&ref_id_separator,
 			reference_id_mapping_type		&&ref_id_mapping,
-			panvc3::seqan3_sam_tag_vector	&&additional_preserved_tags,
+			sam::tag_vector					&&additional_preserved_tags,
 			sam_tag_specification const		&tag_identifiers,
 			std::int32_t					gap_opening_cost,
 			std::int32_t					gap_extension_cost,
@@ -387,7 +418,7 @@ namespace {
 			m_realn_range_handle(std::move(realn_range_handle)),
 			m_realn_range_output(open_stream_with_handle(m_realn_range_handle)),
 			m_fasta_reader(std::move(fasta_reader_)),
-			m_reference_buffer_store(m_aln_output.header().ref_ids().size()),
+			m_reference_buffer_store(m_aln_output.header.reference_sequences.size()),
 			m_output_dispatch_queue(dispatch::parallel_queue::shared_queue()),
 			m_exit_cb(exit_cb),
 			m_ref_id_mapping(std::move(ref_id_mapping)),
@@ -411,7 +442,7 @@ namespace {
 		}
 		
 		void process_input() override;
-		void output_records(project_task_type &task);
+		void output_records(project_task &task);
 		void output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id = 0);
 		void finish();
 
@@ -423,10 +454,10 @@ namespace {
 		
 		sequence_entry_ptr_vector const &src_seq_entries() const { return m_src_seq_entries; }
 		sequence_entry_ptr_vector const &dst_seq_entries() const { return m_dst_seq_entries; }
-		input_type &alignment_input() { return m_aln_input; }
-		input_type const &alignment_input() const { return m_aln_input; }
-		output_type &alignment_output() { return m_aln_output; }
-		output_type const &alignment_output() const { return m_aln_output; }
+		struct alignment_input &alignment_input() { return m_aln_input; }
+		struct alignment_input const &alignment_input() const { return m_aln_input; }
+		struct alignment_output_ &alignment_output() { return m_aln_output; }
+		struct alignment_output_ const &alignment_output() const { return m_aln_output; }
 		dispatch::serial_queue &output_dispatch_queue() { return m_output_dispatch_queue; }
 		std::string const &reference_id_separator() const { return m_ref_id_separator; }
 		std::string const &msa_reference_id() const { return m_msa_ref_id; }
@@ -435,15 +466,14 @@ namespace {
 		std::int32_t gap_opening_cost() const { return m_gap_opening_cost; }
 		std::int32_t gap_extension_cost() const { return m_gap_extension_cost; }
 		sam_tag_specification const &sam_tag_identifiers() const { return m_sam_tag_identifiers; }
-		panvc3::seqan3_sam_tag_vector const &additional_preserved_tags() const { return m_additional_preserved_tags; }
+		sam::tag_vector const &additional_preserved_tags() const { return m_additional_preserved_tags; }
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
 		bool should_process_tasks_in_parallel() const { return m_should_process_tasks_in_parallel; }
 	};
-
-
-	template <typename t_aln_input, typename t_aln_output>
-	void input_processor <t_aln_input, t_aln_output>::output_status() const
+	
+	
+	void input_processor::output_status() const
 	{
 		auto const pp(clock_type::now());
 		auto const running_time{pp - m_start_time};
@@ -480,8 +510,7 @@ namespace {
 	}
 
 
-	template <typename t_aln_input, typename t_aln_output>
-	void input_processor <t_aln_input, t_aln_output>::process_input()
+	void input_processor::process_input()
 	{
 		m_start_time = clock_type::now();
 
@@ -507,121 +536,128 @@ namespace {
 		auto task_idx(m_task_queue.pop_index()); // Reserve one task.
 		std::size_t task_id{};
 		auto prev_status_logging_time(clock_type::now());
-		for (auto &&[rec_idx, aln_rec] : rsv::enumerate(m_aln_input))
-		{
-			m_current_rec_idx.store(rec_idx, std::memory_order_relaxed);
-			if (0 == (1 + rec_idx) % 10'000'000)
-				lb::log_time(std::osyncstream(std::cerr)) << "Processed " << (1 + rec_idx) << " alignments…\n" << std::flush;
-
-			if (m_status_output_interval)
+		
+		std::size_t rec_idx{};
+		m_aln_input.read_records(
+			[
+				this,
+				&parallel_dispatch_queue,
+				&prev_status_logging_time,
+				&rec_idx,
+				&task_id,
+				&task_idx
+			](sam::record &aln_rec)
 			{
-				auto const pp(clock_type::now());
-				if (std::chrono::minutes(m_status_output_interval) <= chrono::duration_cast <chrono::minutes>(pp - prev_status_logging_time))
 				{
-					prev_status_logging_time = pp;
-					output_status();
-				}
-			}
+					m_current_rec_idx.store(rec_idx, std::memory_order_relaxed);
+					if (0 == (1 + rec_idx) % 10'000'000)
+						lb::log_time(std::osyncstream(std::cerr)) << "Processed " << (1 + rec_idx) << " alignments…\n" << std::flush;
 
-			auto const flags(aln_rec.flag());
-			if (lb::to_underlying(flags & (
-				seqan3::sam_flag::unmapped					|
-				seqan3::sam_flag::failed_filter				|
-				seqan3::sam_flag::duplicate
-			))) // Ignore unmapped, filtered, and duplicate. (BWA may set supplementary to non-chimeric?)
-			{
-				++m_statistics.flags_not_matched;
-				continue;
-			}
-			
-			// Ignore secondary and supplementary if requested.
-			if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & seqan3::sam_flag::secondary_alignment))
-			{
-				++m_statistics.flags_not_matched;
-				continue;
-			}
-			
-			auto const &ref_id(aln_rec.reference_id());
-			if (!ref_id.has_value())
-			{
-				++m_statistics.ref_id_missing;
-				continue;
-			}
-			
-			auto const rec_ref_pos(aln_rec.reference_position());
-			if (!rec_ref_pos.has_value())
-			{
-				++m_statistics.flags_not_matched;
-				continue;
-			}
-			
-			if (*rec_ref_pos < 0)
-			{
-				++m_statistics.flags_not_matched;
-				continue;
-			}
-			
-			++m_statistics.matched_reads;
-
-			// Load the reference sequence if needed.
-			{
-				auto const dst_ref_id(m_ref_id_mapping[*ref_id]);
-				auto const &dst_ref_names(m_aln_output.header().ref_ids());
-				libbio_assert_lt(dst_ref_id, dst_ref_names.size());
-				auto const &ref_name(dst_ref_names[dst_ref_id]);
-
-				// Fill if needed.
-				auto &ref_buffer(m_reference_buffer_store.acquire_buffer(dst_ref_id));
-				auto &buffer(ref_buffer.get());
-				if (buffer.empty())
-				{
-					lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence '" << ref_name << "'…\n" << std::flush;
-					if (!m_fasta_reader.read_sequence(ref_name, buffer))
+					if (m_status_output_interval)
 					{
-						std::osyncstream(std::cerr) << "ERROR: Unable to load sequence ‘" << ref_name << "’ from the input FASTA.\n" << std::flush;
-						std::abort(); // spsc_queue’s semaphore is in use, so std::exit() can’t be called.
+						auto const pp(clock_type::now());
+						if (std::chrono::minutes(m_status_output_interval) <= chrono::duration_cast <chrono::minutes>(pp - prev_status_logging_time))
+						{
+							prev_status_logging_time = pp;
+							output_status();
+						}
 					}
-					lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
-				}
-			}
-			
-			// Check if records can be added to the current task.
-			if (m_task_queue[task_idx].is_full())
-			{
-				// Recycle the buffers here.
-				m_reference_buffer_store.recycle_buffers();
 
-				// Process the current task.
-				++task_id;
-				auto &current_task(m_task_queue[task_idx]);
-				current_task.m_task_id = task_id;
-				current_task.m_status = project_task_status::processing;
-
-				if (m_should_process_tasks_in_parallel)
-					parallel_dispatch_queue.group_async(m_group, dispatch::task_from_member_fn <&project_task_type::process>(&current_task));
-				else
-					current_task.process();
-				
-				// Get an empty task.
-				task_idx = m_task_queue.pop_index();
-			}
+					auto const flags(aln_rec.flag);
+					if (lb::to_underlying(flags & (
+						sam::flag::unmapped			|
+						sam::flag::failed_filter	|
+						sam::flag::duplicate
+					))) // Ignore unmapped, filtered, and duplicate. (BWA may set supplementary to non-chimeric?)
+					{
+						++m_statistics.flags_not_matched;
+						goto finish;
+					}
 			
-			// Now there is guaranteed to be space in the current task.
-			{
-				auto &current_task(m_task_queue[task_idx]);
-				libbio_assert(project_task_status::inactive == current_task.m_status.load());
+					// Ignore secondary and supplementary if requested.
+					if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & sam::flag::secondary_alignment))
+					{
+						++m_statistics.flags_not_matched;
+						goto finish;
+					}
+					
+					if (sam::INVALID_REFERENCE_ID == aln_rec.rname_id)
+					{
+						++m_statistics.ref_id_missing;
+						goto finish;
+					}
+			
+					if (sam::INVALID_POSITION == aln_rec.pos)
+					{
+						++m_statistics.flags_not_matched;
+						goto finish;
+					}
+					
+					++m_statistics.matched_reads;
+
+					// Load the reference sequence if needed.
+					{
+						auto const dst_ref_id(m_ref_id_mapping[aln_rec.rname_id]);
+						auto const &dst_ref_names(m_aln_output.header.reference_sequences);
+						libbio_assert_lt(dst_ref_id, dst_ref_names.size());
+						auto const &ref_name(dst_ref_names[dst_ref_id].name);
+
+						// Fill if needed.
+						auto &ref_buffer(m_reference_buffer_store.acquire_buffer(dst_ref_id));
+						auto &buffer(ref_buffer.get());
+						if (buffer.empty())
+						{
+							lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence '" << ref_name << "'…\n" << std::flush;
+							if (!m_fasta_reader.read_sequence(ref_name, buffer))
+							{
+								std::osyncstream(std::cerr) << "ERROR: Unable to load sequence ‘" << ref_name << "’ from the input FASTA.\n" << std::flush;
+								std::abort(); // spsc_queue’s semaphore is in use, so std::exit() can’t be called.
+							}
+							lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
+						}
+					}
+			
+					// Check if records can be added to the current task.
+					if (m_task_queue[task_idx].is_full())
+					{
+						// Recycle the buffers here.
+						m_reference_buffer_store.recycle_buffers();
+
+						// Process the current task.
+						++task_id;
+						auto &current_task(m_task_queue[task_idx]);
+						current_task.m_task_id = task_id;
+						current_task.m_status = project_task_status::processing;
+
+						if (m_should_process_tasks_in_parallel)
+							parallel_dispatch_queue.group_async(m_group, dispatch::task_from_member_fn <&project_task::process>(&current_task));
+						else
+							current_task.process();
 				
-#if 0
-				using std::swap;
-				swap(aln_rec, current_task.next_record());
-				aln_rec.clear();
+						// Get an empty task.
+						task_idx = m_task_queue.pop_index();
+					}
+			
+					// Now there is guaranteed to be space in the current task.
+					{
+						auto &current_task(m_task_queue[task_idx]);
+						libbio_assert(project_task_status::inactive == current_task.m_status.load());
+				
+#if 1
+						using std::swap;
+						swap(aln_rec, current_task.next_record());
 #else
-				current_task.next_record() = aln_rec; // Copy.
+						current_task.next_record() = aln_rec; // Copy.
 #endif
 
-				current_task.m_last_rec_idx = rec_idx;
+						current_task.m_last_rec_idx = rec_idx;
+					}
+				}
+			
+			finish:
+				++rec_idx;
 			}
-		}
+		);
 		
 		// Finish the last task if needed.
 		{
@@ -632,7 +668,7 @@ namespace {
 				last_task.m_task_id = task_id;
 				last_task.m_status = project_task_status::processing;
 				if (m_should_process_tasks_in_parallel)
-					parallel_dispatch_queue.group_async(m_group, dispatch::task_from_member_fn <&project_task_type::process>(&last_task));
+					parallel_dispatch_queue.group_async(m_group, dispatch::task_from_member_fn <&project_task::process>(&last_task));
 				else
 					last_task.process();
 			}
@@ -647,8 +683,7 @@ namespace {
 	}
 
 
-	template <typename t_input_processor>
-	void project_task <t_input_processor>::reset()
+	void project_task::reset()
 	{
 		m_valid_records = 0;
 		m_removed_tag_counts.clear();
@@ -659,17 +694,12 @@ namespace {
 	}
 	
 	
-	template <typename t_input_processor>
-	void project_task <t_input_processor>::process()
+	void project_task::process()
 	{
-		typedef typename t_input_processor::input_type			input_type;
-		typedef typename input_type::traits_type				input_traits_type;
-		typedef typename input_traits_type::sequence_alphabet	sequence_alphabet;
-		
-		auto &output_header(m_input_processor->alignment_output().header());
+		auto &output_header(m_input_processor->alignment_output().header);
 		auto const &src_seq_entries(m_input_processor->src_seq_entries());
 		auto const &dst_seq_entries(m_input_processor->dst_seq_entries());
-		auto const &ref_ids(m_input_processor->alignment_input().header().ref_ids()); // ref_ids() not const.
+		auto const &ref_ids(m_input_processor->alignment_input().header.reference_sequences);
 		auto const &ref_id_separator(m_input_processor->reference_id_separator());
 		auto const &ref_id_mapping(m_input_processor->reference_id_mapping());
 		auto const &tag_identifiers(m_input_processor->sam_tag_identifiers());
@@ -685,17 +715,13 @@ namespace {
 		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
-		typedef typename input_type::ref_id_type		ref_id_type;
-		typedef typename input_type::ref_offset_type	ref_offset_type_;	// std::optional <...>
-		typedef typename ref_offset_type_::value_type	ref_offset_type;
 		std::stringstream oa_buffer;
 		for (auto &aln_rec : alignment_records())
 		{
 			libbio_assert(project_task_status::processing == m_status.load());
-
-			auto const &ref_id_(aln_rec.reference_id());
-			libbio_assert(ref_id_.has_value());
-			auto const ref_id(*ref_id_);
+			
+			auto const ref_id(aln_rec.rname_id);
+			libbio_assert_neq(sam::INVALID_REFERENCE_ID, ref_id);
 			auto const dst_ref_id(ref_id_mapping[ref_id]);
 			
 			libbio_assert_lt(ref_id, src_seq_entries.size());
@@ -704,9 +730,9 @@ namespace {
 			auto const &dst_seq_entry(*dst_seq_entries[dst_ref_id]);
 			
 			// Rewrite the CIGAR and the position.
-			auto const src_pos(*aln_rec.reference_position());
-			auto const &query_seq(aln_rec.sequence());
-			auto const &cigar_seq(aln_rec.cigar_sequence());
+			auto const src_pos(aln_rec.pos);
+			auto const &query_seq(aln_rec.seq);
+			auto const &cigar_seq(aln_rec.cigar);
 			auto const &ref_seq(m_input_processor->output_reference_sequence(dst_ref_id));
 			libbio_assert(!ref_seq.empty());
 			
@@ -718,11 +744,11 @@ namespace {
 				ref_seq,
 				query_seq,
 				cigar_seq,
-				aln_rec.base_qualities(),
+				aln_rec.qual,
 				gap_opening_cost,
 				gap_extension_cost
 			));
-			libbio_always_assert_lte_(dst_pos, std::numeric_limits <ref_offset_type>::max());
+			libbio_always_assert_lte_(dst_pos, std::numeric_limits <sam::position_type_>::max());
 
 			// Copy the realigned ranges.
 			auto const &realn_ranges(m_alignment_projector.realigned_reference_ranges());
@@ -734,7 +760,7 @@ namespace {
 				if (m_should_store_realigned_range_qnames)
 				{
 					for (auto const &range : realn_ranges)
-						m_realigned_ranges.emplace_back(aln_rec.id(), range);
+						m_realigned_ranges.emplace_back(aln_rec.qname, range);
 				}
 				else
 				{
@@ -749,58 +775,34 @@ namespace {
 					m_realigned_ranges.erase(std::unique(m_realigned_ranges.begin(), m_realigned_ranges.end()), m_realigned_ranges.end());
 				}
 			}
-
-			// Update the tags.
-			auto &tags(aln_rec.tags());
-
+			
 			{
-				typedef seqan3::sam_tag_type_t <"NM"_tag>	nm_type;
-				std::optional <nm_type> original_nm;
-				
 				// Store the original NM value.
-				{
-					auto const it(tags.find("NM"_tag));
-					if (tags.end() != it)
-						original_nm = std::get <nm_type>(it->second);
-				}
-
+				auto const original_nm(aln_rec.optional_fields.template get_ <"NM"_tag>());
+				
 				// Remove the non-preserved tags.
-				{
-					auto it(tags.begin());
-					auto const end(tags.end());
-					
-					while (it != end)
-					{
-						// Check if the current tag should be preserved.
-						auto const tag(it->first);
-						if (std::binary_search(preserved_sam_tags.begin(), preserved_sam_tags.end(), tag))
+				aln_rec.optional_fields.erase_if(
+					[&additional_preserved_tags](auto const tag_rank){
+						return !(
+							std::binary_search(preserved_sam_tags.begin(), preserved_sam_tags.end(), tag_rank.tag_id) ||
+							std::binary_search(additional_preserved_tags.begin(), additional_preserved_tags.end(), tag_rank.tag_id)
+						);
+					},
+					[this](auto it, auto const end){
+						while (it != end)
 						{
+							++m_removed_tag_counts[it->tag_id];
 							++it;
-							continue;
 						}
-
-						if (std::binary_search(additional_preserved_tags.begin(), additional_preserved_tags.end(), tag))
-						{
-							++it;
-							continue;
-						}
-						
-						// Remove and increment the count.
-						auto const it_(it);
-						++it; // Not invalidated when std::map::erase() is called.
-						tags.erase(it_);
-						++m_removed_tag_counts[tag];
 					}
-				}
-
+				);
+				
 				// Store the original alignment.
 				{
-					using seqan3::get;
-
 					// Clear the buffer.
 					oa_buffer.str(std::string());
 					oa_buffer.clear();
-
+					
 					// RNAME
 					oa_buffer << ref_ids[ref_id] << ',';
 
@@ -808,106 +810,101 @@ namespace {
 					oa_buffer << src_pos << ',';
 
 					// Strand
-					// FIXME: Some tools may determine from the minus sign that the sequence needs to be reverse-complemented, but this may already have been taken into account?
-					oa_buffer << (std::to_underlying(seqan3::sam_flag::on_reverse_strand & aln_rec.flag()) ? '-' : '+') << ',';
-
+					// FIXME: Some tools may determine from the minus sign that the sequence needs to be reverse-complemented, but this has already been taken into account?
+					oa_buffer << (std::to_underlying(sam::flag::reverse_complemented & aln_rec.flag) ? '-' : '+') << ',';
+					
 					// CIGAR
 					for (auto const cc : cigar_seq)
 					{
-						oa_buffer << get <0>(cc);
-						oa_buffer << get <1>(cc).to_char();
+						oa_buffer << cc.count();
+						oa_buffer << cc.operation();
 					}
 					oa_buffer << ',';
-
+					
 					// MAPQ
-					oa_buffer << +(aln_rec.mapping_quality()) << ',';
-
+					oa_buffer << +(aln_rec.mapq) << ',';
+					
 					// NM
 					// The preceding comma is required even if the value is empty.
 					if (original_nm)
 						oa_buffer << *original_nm;
-
+					
 					// Trailing semicolon.
 					oa_buffer << ';' << std::flush;
-
+					
 					// Copy to the end of OA.
-					auto &oa_tag(tags.template get <"OA"_tag>());
+					auto &oa_tag(aln_rec.optional_fields.template obtain <"OA"_tag>());
 					oa_tag += oa_buffer.view();
 				}
 			}
 			
 			// Store the re-aligned ranges.
-			auto output_realn_ranges([realn_range_count, &tags](auto const &ranges, auto const tag){
-				std::vector <std::uint32_t> output_ranges(2 * realn_range_count, 0);
+			auto output_realn_ranges([realn_range_count, &aln_rec](auto const &ranges, auto const tag){
+				typedef std::vector <std::uint32_t> range_vector;
+				range_vector output_ranges(2 * realn_range_count, 0);
 				for (auto const &[idx, range] : rsv::enumerate(ranges))
 				{
 					auto const idx_(2 * idx);
 					output_ranges[idx_] = range.location;
 					output_ranges[idx_ + 1] = range.location + range.length;
 				}
-				tags[tag] = std::move(output_ranges);
+				aln_rec.optional_fields.template obtain <range_vector>(tag) = std::move(output_ranges);
 			});
 			if (tag_identifiers.realn_query_ranges && realn_range_count)
 				output_realn_ranges(m_alignment_projector.realigned_query_ranges(), tag_identifiers.realn_query_ranges);
 			if (tag_identifiers.realn_ref_ranges && realn_range_count)
 				output_realn_ranges(m_alignment_projector.realigned_reference_ranges(), tag_identifiers.realn_ref_ranges);
-
+			
 			// Store the record index if needed.
 			if (tag_identifiers.rec_idx)
 			{
 				auto const rec_idx(m_last_rec_idx - m_valid_records + 1);
 				if (rec_idx <= INT32_MAX)
-					tags[tag_identifiers.rec_idx] = std::int32_t(rec_idx);
+					aln_rec.optional_fields.template obtain <std::int32_t>(tag_identifiers.rec_idx) = rec_idx;
 			}
-
+			
 			// Original reference ID.
 			if (tag_identifiers.original_rname)
-				tags[tag_identifiers.original_rname] = ref_id;
-
+				aln_rec.optional_fields.template obtain <sam::reference_id_type_>(tag_identifiers.original_rname) = ref_id;
+			
 			// Original position.
 			if (tag_identifiers.original_pos)
-				tags[tag_identifiers.original_pos] = src_pos;
-
-			// Mate reference ID.
-			auto const mate_ref_id_(aln_rec.mate_reference_id());
-			if (mate_ref_id_)
+				aln_rec.optional_fields.template obtain <sam::position_type_>(tag_identifiers.original_pos) = src_pos;
+			
+			auto const rnext_id(aln_rec.rnext_id);
+			if (sam::INVALID_REFERENCE_ID != rnext_id)
 			{
-				auto const mate_ref_id(*mate_ref_id_);
-				auto const dst_mate_ref_id(ref_id_mapping[mate_ref_id]);
-				aln_rec.mate_reference_id() = dst_mate_ref_id;
-
+				auto const dst_rnext_id(ref_id_mapping[rnext_id]);
+				aln_rec.rnext_id = dst_rnext_id;
+				
 				if (tag_identifiers.original_rnext)
-					tags[tag_identifiers.original_rnext] = mate_ref_id;
+					aln_rec.optional_fields.template obtain <sam::reference_id_type_>(tag_identifiers.original_rnext) = rnext_id;
 				
 				// Mate position.
-				auto const mate_position_(aln_rec.mate_position());
-				if (mate_position_)
+				auto const pnext(aln_rec.pnext);
+				if (sam::INVALID_POSITION != pnext)
 				{
-					auto const mate_position(*mate_position_);
-					libbio_always_assert_lte(mate_position, std::numeric_limits <ref_offset_type>::max());
+					auto const &src_seq_entry_(*src_seq_entries[rnext_id]);
+					auto const &dst_seq_entry_(*dst_seq_entries[dst_rnext_id]);
 					
-					auto const &src_seq_entry_(*src_seq_entries[mate_ref_id]);
-					auto const &dst_seq_entry_(*dst_seq_entries[dst_mate_ref_id]);
+					auto const dst_pnext(src_seq_entry_.project_position(pnext, dst_seq_entry_));
+					aln_rec.pnext = dst_pnext;
 					
-					auto const dst_mate_position(src_seq_entry_.project_position(mate_position, dst_seq_entry_));
-					aln_rec.mate_position() = dst_mate_position;
-
 					if (tag_identifiers.original_pnext)
-						tags[tag_identifiers.original_pnext] = mate_position;
+						aln_rec.optional_fields.template obtain <sam::position_type_>(tag_identifiers.original_pnext) = pnext;
 				}
 			}
 			else
 			{
 				// For extra safety.
-				aln_rec.mate_position().reset();
+				aln_rec.pnext = sam::INVALID_POSITION;
 			}
 			
-			// Finally (esp. after setting OA/OC) update the CIGAR, the positions, the header pointer,
+			// Finally (esp. after setting OA/OC) update the CIGAR, the positions,
 			// and RNAME and RNEXT.
-			aln_rec.reference_position() = dst_pos;
-			aln_rec.cigar_sequence() = m_alignment_projector.alignment();
-			aln_rec.header_ptr() = &output_header;
-			aln_rec.reference_id() = dst_ref_id;
+			aln_rec.pos = dst_pos;
+			aln_rec.cigar = m_alignment_projector.alignment();
+			aln_rec.rnext_id = dst_ref_id;
 		}
 		
 		// Continue in the output queue.
@@ -920,15 +917,14 @@ namespace {
 	}
 
 
-	template <typename t_input_processor>
-	void project_task <t_input_processor>::alignment_projector_end_realignment(panvc3::alignment_projector const &aln_projector)
+	void project_task::alignment_projector_end_realignment(panvc3::alignment_projector_base const &)
 	{
 		auto const pp(clock_type::now());
 		auto const diff(pp - m_realignment_start_time);
 		m_realignment_time += chrono::duration_cast <chrono::nanoseconds>(diff).count();
 		++m_realigned_range_count;
 
-		auto const &indel_run_checker(aln_projector.indel_run_checker());
+		auto const &indel_run_checker(m_alignment_projector.indel_run_checker());
 		auto const ref_range(indel_run_checker.reference_range()); // Has segment-relative position.
 		auto const query_range(indel_run_checker.query_range());
 		auto const length(std::max(ref_range.length, query_range.length));
@@ -936,8 +932,7 @@ namespace {
 	}
 	
 	
-	template <typename t_input_processor>
-	void project_task <t_input_processor>::output()
+	void project_task::output()
 	{
 		// Now we are in the correct thread and also able to pass parameters to functions
 		// without calling malloc, since we do not need to call via libdispatch.
@@ -946,19 +941,17 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_input, typename t_aln_output>
-	void input_processor <t_aln_input, t_aln_output>::output_records(project_task_type &task)
+	void input_processor::output_records(project_task &task)
 	{
 		// Not thread-safe; needs to be executed in a serial queue.
 		
 		libbio_assert(project_task_status::finishing == task.m_status.load());
 		
-		for (auto &aln_rec : task.alignment_records())
+		for (auto const &aln_rec : task.alignment_records())
 		{
-			libbio_assert_eq(aln_rec.sequence().size(), aln_rec.base_qualities().size());
-			auto const ref_id(aln_rec.reference_id());
-			m_reference_buffer_store.release_buffer(*ref_id);
-			m_aln_output.push_back(aln_rec); // Needs non-const aln_rec. (Not sure why.)
+			libbio_assert_eq(aln_rec.seq.size(), aln_rec.qual.size());
+			m_reference_buffer_store.release_buffer(aln_rec.rname_id);
+			m_aln_output.output_record(aln_rec);
 		}
 		
 		// Update the removed tag counts.
@@ -997,8 +990,7 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_input, typename t_aln_output>
-	void input_processor <t_aln_input, t_aln_output>::output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id)
+	void input_processor::output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id)
 	{
 		if (m_should_output_debugging_information)
 		{
@@ -1021,10 +1013,9 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_input, typename t_aln_output>
-	void input_processor <t_aln_input, t_aln_output>::finish()
+	void input_processor::finish()
 	{
-		m_aln_output.get_stream() << std::flush;
+		m_aln_output.stream << std::flush;
 		std::cout << std::flush;
 		
 		// Output the sorted realigned ranges if needed.
@@ -1054,7 +1045,7 @@ namespace {
 			std::array <char, 3> buffer{'\0', '\0', '\0'};
 			for (auto const &kv : m_removed_tag_counts)
 			{
-				panvc3::from_tag(kv.first, buffer);
+				sam::from_tag(kv.first, buffer);
 				std::cerr << '\t' << buffer.data() << ": " << kv.second << '\n';
 			}
 		}
@@ -1080,38 +1071,26 @@ namespace {
 	}
 
 
-	template <
-		typename t_output_ref_ids,		// Cannot get this easily from aln_output_header.
-		typename t_aln_input_header,
-		typename t_aln_output_header
-	>
 	void process_headers(
-		t_aln_input_header &aln_input_header,		// ref_ids() is non-const.
+		sam::header const &aln_input_header,
 		std::string const &ref_id_separator,
 		std::string const &ref_seq_id,				// Projection target.
 		char const * const ref_order_path,
-		t_aln_output_header &aln_output_header,
+		sam::header &aln_output_header,
 		reference_id_mapping_type &ref_id_mapping	// From input to output.
 	)
 	{
+		aln_output_header = sam::header::copy_subset <~sam::header::copy_selection_type::reference_sequences>(aln_input_header);
+		
 		ref_id_mapping.clear();
+		ref_id_mapping.resize(aln_input_header.reference_sequences.size(), SIZE_MAX);
 		
-		aln_output_header.comments = aln_input_header.comments;
-		aln_output_header.read_groups = aln_input_header.read_groups;
-		
-		auto const &input_ref_ids(aln_input_header.ref_ids()); // By default std::deque <std::string>.
-		ref_id_mapping.resize(input_ref_ids.size(), SIZE_MAX);
-		
-		auto const &input_ref_id_info(aln_input_header.ref_id_info);
-		auto &output_ref_id_info(aln_output_header.ref_id_info);
-		auto &output_ref_dict(aln_output_header.ref_dict);
-
 		// Parse the chromosome and sequence ids. (We need them in case the reference output order has been given.)
 		std::vector <std::tuple <std::string_view, std::string_view>> input_ref_chr_seq_ids;
-		input_ref_chr_seq_ids.reserve(input_ref_ids.size());
-		for (auto const &input_ref_id_ : input_ref_ids)
+		input_ref_chr_seq_ids.reserve(aln_input_header.reference_sequences.size());
+		for (auto const &input_ref : aln_input_header.reference_sequences)
 		{
-			std::string_view const input_ref_id(input_ref_id_);
+			std::string_view const input_ref_id(input_ref.name);
 			auto const separator_pos(input_ref_id.find_first_of(ref_id_separator));
 			if (std::string_view::npos == separator_pos)
 			{
@@ -1125,9 +1104,13 @@ namespace {
 		}
 		
 		{
-			std::map <std::string, std::size_t, lb::compare_strings_transparent> unique_ref_ids;
-			std::vector <std::size_t> ref_seq_idxs; // Indices of the projection target sequences in the input.
+			struct ref_id_pair
+			{
+				std::size_t input_index{};
+				std::size_t output_index{};
+			};
 			
+			std::map <std::string, ref_id_pair, lb::compare_strings_transparent> unique_ref_ids;
 			typedef std::pair <std::size_t, bool> output_ref_name_value;
 			std::unordered_map <
 				std::string,
@@ -1197,39 +1180,27 @@ namespace {
 							val.second = true; // Mark used.
 						}
 						
-						unique_ref_ids.emplace(chr_id, output_ref_idx);
-						output_ref_dict.emplace(chr_id, output_ref_idx); // We could use this in place of unique_ref_ids but I'm not sure if it has a transparent key comparator.
+						unique_ref_ids.emplace(chr_id, ref_id_pair{input_ref_idx, output_ref_idx});
 					}
 					else
 					{
 						// chr_id already known.
-						output_ref_idx = it->second;
+						output_ref_idx = it->second.output_index;
 					}
 					
 					ref_id_mapping[input_ref_idx] = output_ref_idx;
-					
-					// Store the index for copying ref_id_info in case we found the projection target sequence.
-					if (ref_seq_id == seq_id)
-						ref_seq_idxs.push_back(input_ref_idx);
 				}
 			}
 			
-			// Copy the output reference identifiers to the header, handle ref_id_info.
+			// Copy the output reference identifiers to the header.
+			aln_output_header.reference_sequences.resize(unique_ref_ids.size());
+			for (auto &kv : unique_ref_ids)
 			{
-				t_output_ref_ids output_ref_ids;
-				output_ref_ids.resize(unique_ref_ids.size());
-				output_ref_id_info.resize(unique_ref_ids.size());
-				for (auto const &kv : unique_ref_ids)
-					output_ref_ids[kv.second] = std::move(kv.first);
-				
-				for (auto const &input_idx : ref_seq_idxs)
-				{
-					auto const output_idx(ref_id_mapping[input_idx]);
-					output_ref_id_info[output_idx] = input_ref_id_info[input_idx];
-				}
-				
-				aln_output_header.ref_ids() = std::move(output_ref_ids);
+				auto const &ref_id(kv.second);
+				auto output_ref(aln_input_header.reference_sequences[ref_id.input_index].copy_and_rename(std::move(kv.first)));
+				aln_output_header.reference_sequences[ref_id.output_index] = std::move(output_ref);
 			}
+			aln_output_header.assign_reference_sequence_identifiers();
 			
 			// Check if there were any identifiers in the input that were not used.
 			for (auto const &kv : output_ref_name_order)
@@ -1242,26 +1213,23 @@ namespace {
 	}
 
 
-	template <typename t_header>
-	void append_program_info(t_header const &input_header, t_header &output_header, int const argc, char const * const * const argv)
+	void append_program_info(sam::header const &input_header, sam::header &output_header, int const argc, char const * const * const argv)
 	{
-		output_header.program_infos = input_header.program_infos;
 		panvc3::append_sam_program_info(
 			"panvc3.project-alignments.",
 			"PanVC 3 project_alignments",
 			argc,
 			argv,
 			CMDLINE_PARSER_VERSION,
-			output_header.program_infos
+			output_header.programs
 		);
 	}
 	
 	
-	template <typename t_ref_ids, typename t_ref_ids_>
 	void fill_sequence_entries(
 		panvc3::msa_index const &msa_index,
-		t_ref_ids const &input_ref_ids,
-		t_ref_ids_ const &output_ref_ids,
+		sam::reference_sequence_entry_vector const &input_ref_ids,
+		sam::reference_sequence_entry_vector const &output_ref_ids,
 		std::string_view const ref_id_separator,
 		std::string_view const reference_msa_id,
 		reference_id_mapping_type const &ref_id_mapping,
@@ -1274,9 +1242,9 @@ namespace {
 		src_seq_entries.resize(input_ref_ids.size(), nullptr);
 		dst_seq_entries.resize(output_ref_ids.size(), nullptr);
 		
-		for (auto const &[input_ref_idx, ref_id_] : rsv::enumerate(input_ref_ids))
+		for (auto const &[input_ref_idx, ref] : rsv::enumerate(input_ref_ids))
 		{
-			std::string_view const ref_id(ref_id_);
+			std::string_view const ref_id(ref.name);
 			auto const pos(ref_id.find(ref_id_separator));
 			if (pos == std::string_view::npos)
 			{
@@ -1309,45 +1277,21 @@ namespace {
 	{
 		libbio_assert(args_info.ref_id_separator_arg);
 		
-		// Sanity check.
-		if (args_info.alignments_arg && args_info.bam_input_flag)
-		{
-			std::cerr << "ERROR: --bam-input has no effect when reading input from a file.\n";
-			std::exit(EXIT_FAILURE);
-		}
-		
 		// Open the SAM input.
-		typedef seqan3::sam_file_input <> input_type;
-		auto aln_input{[&](){
-			auto const make_input_type([&]<typename t_fmt>(t_fmt &&fmt){
-				if (args_info.alignments_arg)
-				{
-					fs::path const path(args_info.alignments_arg);
-					return input_type(path);
-				}
-				else
-				{
-					return input_type(std::cin, std::forward <t_fmt>(fmt));
-				}
-			});
-
-			if (args_info.bam_input_flag)
-				return make_input_type(seqan3::format_bam{});
+		auto aln_input{[&] -> alignment_input {
+			if (args_info.alignments_arg)
+				return alignment_input(lb::file_handle(lb::open_file_for_reading(args_info.alignments_arg)));
 			else
-				return make_input_type(seqan3::format_sam{});
+				return alignment_input(lb::file_handle(STDIN_FILENO, false));
 		}()};
-
-		auto &aln_input_header(aln_input.header()); // ref_ids() not const.
-		auto const &input_ref_ids(aln_input_header.ref_ids());
 		
-		// Type aliases for input and output.
-		typedef std::remove_cvref_t <decltype(input_ref_ids)>			ref_ids_type;
-		typedef seqan3::sam_file_output <
-			typename input_type::selected_field_ids,
-			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
-			ref_ids_type
-		>																output_type;
-
+		auto aln_output{[&] -> alignment_output {
+			if (args_info.output_path_arg)
+				return alignment_output(lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE)));
+			else
+				return alignment_output(lb::file_handle(STDOUT_FILENO, false));
+		}()};
+		
 		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
 		std::regex const any_tag_regex{"^[A-Za-z0-9]{2}$"};
 		auto const make_sam_tag([&tag_regex, &any_tag_regex](char const *tag, bool const should_allow_any = false) -> panvc3::seqan3_sam_tag_type {
@@ -1361,7 +1305,7 @@ namespace {
 			}
 
 			std::array <char, 2> buffer{tag[0], tag[1]};
-			return panvc3::to_tag(buffer);
+			return sam::to_tag(buffer);
 		});
 
 		std::string ref_id_separator(args_info.ref_id_separator_arg);
@@ -1394,49 +1338,22 @@ namespace {
 			std::cerr << "ERROR: Status output interval must be non-negative.\n";
 			std::exit(EXIT_FAILURE);
 		}
-
-		// Open the alignment output file.
-		auto aln_output{[&](){
-			// Make sure that aln_output has some header information.
-			auto const make_output_type([&]<typename t_fmt>(t_fmt &&fmt){
-				ref_ids_type empty_ref_ids;
-				if (args_info.output_path_arg)
-				{
-					return output_type(
-						fs::path{args_info.output_path_arg},
-						std::move(empty_ref_ids),
-						rsv::empty <std::size_t>()	// Reference lengths; the constructor expects a forward range.
-					);
-				}
-				else
-				{
-					return output_type(
-						std::cout,
-						std::move(empty_ref_ids),
-						rsv::empty <std::size_t>(),	// Reference lengths; the constructor expects a forward range.
-						std::forward <t_fmt>(fmt)
-					);
-				}
-			});
-
-			if (args_info.output_bam_flag)
-				return make_output_type(seqan3::format_bam{});
-			else
-				return make_output_type(seqan3::format_sam{});
-		}()};
+		
+		// Parse the SAM header.
+		aln_input.reader.read_header(aln_input.header, aln_input.input_range);
 
 		// Headers.
 		reference_id_mapping_type ref_id_mapping;
-		process_headers <ref_ids_type>(
-			aln_input_header,
+		process_headers(
+			aln_input.header,
 			ref_id_separator,
 			reference_msa_id,
 			args_info.reference_order_input_arg,
-			aln_output.header(),
+			aln_output.header,
 			ref_id_mapping
 		);
-
-		append_program_info(aln_input_header, aln_output.header(), argc, argv);
+		
+		append_program_info(aln_input.header, aln_output.header, argc, argv);
 
 		// Open the realigned range output file if needed.
 		lb::file_handle realigned_range_handle;
@@ -1458,8 +1375,8 @@ namespace {
 		sequence_entry_ptr_vector dst_seq_entries;
 		fill_sequence_entries(
 			msa_index,
-			input_ref_ids,
-			aln_output.header().ref_ids(),
+			aln_input.header.reference_sequences,
+			aln_output.header.reference_sequences,
 			ref_id_separator,
 			reference_msa_id,
 			ref_id_mapping,
@@ -1475,7 +1392,7 @@ namespace {
 		fasta_reader.open_path(args_info.reference_arg);
 
 		// Process the input.
-		s_input_processor = std::make_unique <input_processor <input_type, output_type>>(
+		s_input_processor = std::make_unique <input_processor>(
 			std::move(msa_index),
 			std::move(src_seq_entries),
 			std::move(dst_seq_entries),

@@ -4,11 +4,10 @@
 package		"project-alignments"
 version		"0.1"
 purpose		"Project alignments to founder sequences to a given reference sequence"
-usage		"project_alignments --alignments=alignments.bam --msa-index=msa-index.dat --reference=ref.fa.gz > projected.sam"
+usage		"project_alignments --alignments=alignments.sam --msa-index=msa-index.dat --reference=ref.fa.gz > projected.sam"
 
 section		"Input options"
 option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
-option		"bam-input"					B	"Read BAM from stdin"														flag	off
 option		"msa-index"					m	"MSA index path"															string	typestr = "filename"	required
 option		"reference"					r	"Reference sequences FASTA path"											string	typestr = "filename"	required
 option		"reference-msa-id"			d	"Reference sequence ID in MSA index"										string							required
@@ -16,8 +15,7 @@ option		"ref-id-separator"			s	"Reference ID separator in input"											strin
 option		"reference-order-input"		u	"Read output reference order from the given path, one identifier per line"	string	typestr = "filename"	optional
 
 section		"Output options"
-option		"output-path"				o	"Output path (stdin by default)"											string	typestr = "path"		optional
-option		"output-bam"				b	"Output BAM instead of SAM"													flag	off
+option		"output-path"				o	"Output path (stdout by default)"											string	typestr = "path"		optional
 option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
 
 section		"Re-aligned range output"
