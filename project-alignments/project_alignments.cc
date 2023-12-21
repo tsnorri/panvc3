@@ -238,6 +238,7 @@ namespace {
 		explicit alignment_input(lb::file_handle &&fh):
 			input_range(std::move(fh))
 		{
+			input_range.prepare();
 		}
 		
 		
