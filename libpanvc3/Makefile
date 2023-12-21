@@ -9,7 +9,8 @@ OBJECTS		=	cigar.o \
 				compressed_fasta_reader.o \
 				dispatch.o \
 				dispatch_event.o \
-				sequence_buffer_store.o
+				sequence_buffer_store.o \
+				utility.o
 
 CFLAGS		+= -fPIC
 CXXFLAGS	+= -fPIC
