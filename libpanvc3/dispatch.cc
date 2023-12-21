@@ -308,7 +308,7 @@ namespace panvc3::dispatch {
 	}
 	
 	
-	parallel_queue &shared_queue()
+	parallel_queue &parallel_queue::shared_queue()
 	{
 		static parallel_queue queue;
 		return queue;
