@@ -438,7 +438,7 @@ namespace panvc3::dispatch {
 			// Critical section.
 			lock.lock();
 			
-			if (m_should_continue)
+			if (!m_should_continue)
 				return m_task_queue.empty();
 			
 			if (!m_task_queue.empty())
