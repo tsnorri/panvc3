@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <panvc3/dispatch/event.hh>
 #include <panvc3/dispatch/task_def.hh>
 
