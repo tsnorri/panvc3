@@ -6,6 +6,8 @@
 #include <charconv>				// std::from_chars
 #include <panvc3/utility.hh>
 
+namespace sam	= libbio::sam;
+
 
 namespace panvc3 {
 	
@@ -42,33 +44,32 @@ namespace panvc3 {
 		return cmd;
 	}
 	
+
 	void append_sam_program_info(
 		std::string_view const id_prefix,
 		std::string_view const name,
 		int const argc,
 		char const * const * const argv,
 		char const * const version,
-		sam::header::program_entry_vector &dst
+		sam::program_entry_vector &dst
 	)
 	{
 		// Identifier
 		std::uint32_t idx{};
 		for (auto const &pginfo : dst)
-			idx = std::max(idx, check_program_id_index(id_prefix, pginfo.id));
+			idx = std::max(idx, check_sam_program_id_index(id_prefix, pginfo.id));
 		
 		++idx;
 		std::string id(id_prefix);
 		id += std::to_string(idx);
 
 		// Build the record.
-		sam::header::program_entry rec{
+		sam::program_entry rec{
 			.id{std::move(id)},
-			.name{name},
+			.name{std::string(name)},
 			.command_line{command_line_call(argc, argv)},
 			.version{version}
 		};
-
-		rec.name = name;
 
 		if (!dst.empty())
 			rec.prev_id = dst.back().id;
