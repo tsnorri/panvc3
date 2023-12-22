@@ -270,7 +270,7 @@ namespace {
 			lb::open_stream_with_file_handle(stream, handle);
 		}
 		
-		void output_record(sam::record const &rec) { sam::output_record(stream, header, rec); }
+		void output_record(sam::record const &rec) { sam::output_record(stream, header, rec); stream << '\n'; }
 	};
 	
 	
@@ -529,6 +529,9 @@ namespace {
 				m_realn_range_output << "Location\tLength\n";
 			}
 		}
+		
+		// Output the header.
+		m_aln_output.stream << m_aln_output.header;
 		
 		static_assert(0 < QUEUE_SIZE);
 		
