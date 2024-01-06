@@ -6,7 +6,7 @@
 #include <catch2/catch.hpp>
 #include <libbio/file_handling.hh>
 #include <libbio/generic_parser.hh>
-#include <libbio/generic_parser/cigar_field.hh>
+#include <libbio/generic_parser/cigar_field_seqan.hh>
 #include <libbio/tuple/slice.hh>
 #include <panvc3/rewrite_cigar.hh>
 #include "test_additions.hh"

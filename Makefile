@@ -51,6 +51,8 @@ clean:
 	$(MAKE) -C index-msa clean
 	$(MAKE) -C libpanvc3 clean
 	$(MAKE) -C project-alignments clean
+	$(MAKE) -C recalculate-mapq clean
+	$(MAKE) -C rewrite-cigar clean
 	$(MAKE) -C split-alignments-by-reference clean
 	$(MAKE) -C subset-alignments clean
 	$(MAKE) -C tests clean
@@ -104,7 +106,8 @@ subset-alignments/subset_alignments: lib/libbio/build-gcc/libbio.a
 
 $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(MKDIR) -p $(DIST_TARGET_DIR)
-	for f in $(BUILD_PRODUCTS); do $(CP) $$f $(DIST_TARGET_DIR); done
+	for f in $(BUILD_PRODUCTS); do if [ $${f##*/} = libpanvc3.a ]; then $(CP) $$f $(DIST_TARGET_DIR); else $(CP) $$f $(DIST_TARGET_DIR)/panvc3_$${f##*/}; fi; done
+	$(CP) count-supporting-reads/calculate_reference_bias.py $(DIST_TARGET_DIR)/panvc3_calculate_reference_bias.py
 	$(CP) README.md $(DIST_TARGET_DIR)
 	$(CP) LICENSE $(DIST_TARGET_DIR)
 	$(CP) lib/swift-corelibs-libdispatch/LICENSE $(DIST_TARGET_DIR)/swift-corelibs-libdispatch-license.txt
