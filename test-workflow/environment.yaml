@@ -5,5 +5,5 @@ channels:
 dependencies:
 - bowtie2=2.5.1
 - bzip2>=1.0.8
-- panvc3=v1.0=0_g346dd14
+- panvc3=v1.0.1
 - samtools=1.17
