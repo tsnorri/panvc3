@@ -1,0 +1,17 @@
+"output_root":                        "path/to/output-root"   # Output prefix, may be left empty (but please use snakemake --dry-run first).
+
+"alignment_id":                       "SAMPLE"                # Some sample identifier
+"reference_fasta":                    "reference.fa"          # Path to uncompressed reference FASTA
+
+# Path to the known variants s.t. the chromosome identifier is pasted in the middle.
+# Here we use the uncompressed (fix hopefully upcoming) 1000G variants.
+"known_variants_prefix":              "path/to/ALL.chr"
+"known_variants_suffix":              ".phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf"
+"chromosomes":                        ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', 'X', 'Y']
+
+"reads_1":                            "path/to/reads_1.fq.gz" # gzipped FASTQ
+"reads_2":                            "path/to/reads_2.fq.gz"
+
+# Founder sequence generation parameters.
+"founder_count":                      10
+"founder_minimum_component_distance": 10

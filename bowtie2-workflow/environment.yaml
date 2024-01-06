@@ -1,0 +1,11 @@
+channels:
+- tsnorri
+- conda-forge
+- bioconda
+dependencies:
+- biopython
+- bowtie2
+- htslib
+- panvc3=v1.0.1
+- samtools
+- vcf2multialign=v1.0.1
