@@ -22,7 +22,7 @@ wildcard_constraints:
 
 
 rule all:
-	input:	f"{config['output_root']}/alignments/{config['alignment_id']}.panvc3-bowtie2-f{config['founder_count'}-d{config['founder_minimum_component_distance']}.mapq-recalculated.sam.gz"
+	input:	f"{config['output_root']}/alignments/{config['alignment_id']}.panvc3-bowtie2-f{config['founder_count']}-d{config['founder_minimum_component_distance']}.mapq-recalculated.sam.gz"
 
 
 rule generate_founder_sequences:
@@ -55,7 +55,7 @@ rule filter_reference:
 	benchmark:				f"{config['output_root']}/benchmark/panvc3/filter_reference"
 	threads:				8
 	input:
-		reference			= config["reference"],
+		reference			= config["reference_fasta"],
 	output:
 		remaining_contigs	= f"{config['output_root']}/founder-sequences/remaining-contigs.fa.gz",
 		contig_list			= f"{config['output_root']}/founder-sequences/contig-list.txt",
