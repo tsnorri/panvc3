@@ -10,9 +10,11 @@ Running a variant calling workflow that utilises PanVC consists of the following
 
 The founder sequences may be generated with [vcf2multialign](https://github.com/tsnorri/vcf2multialign).
 
-## Testing
+## Running
 
-A simple workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 as well as other required software automatically from [Anaconda](https://anaconda.org). Please see [README.md](test-workflow/README.md) in the subdirectory.
+A simple example workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 as well as other required software automatically from [Anaconda](https://anaconda.org). Please see [README.md](test-workflow/README.md) in the subdirectory.
+
+A more complex workflow that uses Bowtie 2 and loads the settings using Snakemake’s configuration (e.g. a YAML file) is in the [bowtie2-workflow](bowtie2-workflow) subdirectory. Please see [README.md](bowtie2-workflow/README.md) in the subdirectory.
 
 ## Contents
 
