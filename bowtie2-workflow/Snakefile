@@ -156,7 +156,7 @@ rule project_alignments:
 rule recalculate_mapq:
 	message:	"Recalculating MAPQ"
 	conda:		"environment.yaml"
-	threads:	3
+	threads:	8
 	benchmark:	f"{config['output_root']}/benchmark/panvc3/recalculate_mapq.{config['alignment_id']}.{{aligner}}.f{{founder_count}}.d{{minimum_distance}}"
 	input:		f"{config['output_root']}/alignments/{config['alignment_id']}.panvc3-{{aligner}}-f{{founder_count}}-d{{minimum_distance}}.projected.qname-sorted.bam"
 	output:		f"{config['output_root']}/alignments/{config['alignment_id']}.panvc3-{{aligner}}-f{{founder_count}}-d{{minimum_distance}}.mapq-recalculated.sam.gz"
@@ -197,7 +197,7 @@ rule sort_bam:
 	benchmark:	f"{config['output_root']}/benchmark/sort_bam/{{alignments}}.benchmark"
 	input:		"{alignments}.bam"
 	output:		"{alignments}.sorted.bam"
-	shell:		"../workflow/scripts/set-open-file-limit.sh samtools sort -@ {threads} -o {output} {input}"
+	shell:		"scripts/set-open-file-limit.sh samtools sort -@ {threads} -o {output} {input}"
 
 
 rule sort_sam:
@@ -206,7 +206,7 @@ rule sort_sam:
 	benchmark:	f"{config['output_root']}/benchmark/sort_sam/{{alignments}}.benchmark"
 	input:		"{alignments}.sam"
 	output:		"{alignments}.sorted.bam"
-	shell:		"../workflow/scripts/set-open-file-limit.sh samtools sort -@ {threads} -o {output} {input}"
+	shell:		"scripts/set-open-file-limit.sh samtools sort -@ {threads} -o {output} {input}"
 
 
 rule sort_sam_gz:
@@ -216,7 +216,7 @@ rule sort_sam_gz:
 	benchmark:	f"{config['output_root']}/benchmark/sort_sam_gz/{{alignments}}.benchmark"
 	input:		f"{{alignments}}.sam.gz"
 	output:		f"{{alignments}}.sorted.bam"
-	shell:		"../workflow/scripts/set-open-file-limit.sh samtools sort -@ {threads} -o {output} {input}"
+	shell:		"scripts/set-open-file-limit.sh samtools sort -@ {threads} -o {output} {input}"
 
 
 rule sort_by_qname_bam:
@@ -226,7 +226,7 @@ rule sort_by_qname_bam:
 	benchmark:	f"{config['output_root']}/benchmark/sort_by_qname_bam/{{alignments}}.benchmark"
 	input:		f"{{alignments}}.bam"
 	output:		f"{{alignments}}.qname-sorted.bam"
-	shell:		"../workflow/scripts/set-open-file-limit.sh samtools sort -n -@ {threads} -o {output} {input}"
+	shell:		"scripts/set-open-file-limit.sh samtools sort -n -@ {threads} -o {output} {input}"
 
 
 rule sort_by_qname_bam_:
@@ -236,7 +236,7 @@ rule sort_by_qname_bam_:
 	benchmark:	f"{config['output_root']}/benchmark/sort_by_qname_bam_/{{alignments}}.benchmark"
 	input:		f"{{alignments}}.sorted.bam"
 	output:		f"{{alignments}}.qname-sorted.bam"
-	shell:		"../workflow/scripts/set-open-file-limit.sh samtools sort -n -@ {threads} -o {output} {input}"
+	shell:		"scripts/set-open-file-limit.sh samtools sort -n -@ {threads} -o {output} {input}"
 
 
 rule sort_by_qname_sam_gz:
@@ -246,7 +246,7 @@ rule sort_by_qname_sam_gz:
 	benchmark:	f"{config['output_root']}/benchmark/sort_by_qname_sam_gz/{{alignments}}.benchmark"
 	input:		f"{{alignments}}.sam.gz"
 	output:		f"{{alignments}}.qname-sorted.bam"
-	shell:		"../workflow/scripts/set-open-file-limit.sh samtools sort -n -@ {threads} -o {output} {input}"
+	shell:		"scripts/set-open-file-limit.sh samtools sort -n -@ {threads} -o {output} {input}"
 
 
 rule index_bam:
