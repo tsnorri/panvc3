@@ -2,7 +2,7 @@
 
 PanVC 3 is a set of tools to be used as part of a variant calling workflow that uses short reads as its input. The reads are aligned to an index generated from a multiple sequence alignment. A suitable index may be built from founder sequences.
 
-Running a variant calling workflow that utilises PanVC consists of the following phases:
+Running a variant calling workflow that utilises PanVC may consist of e.g. the following phases:
 
 - Generating founder sequences from known variants
 - Indexing the founder sequences
