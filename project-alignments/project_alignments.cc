@@ -1152,17 +1152,19 @@ namespace {
 				std::size_t idx{};
 				while (std::getline(stream, buffer))
 				{
-					std::string_view const ref_id(buffer);
+					std::string_view const buffer_(buffer);
+					auto const ref_id(buffer_.substr(0, buffer_.find('\t'))); // Find the first tabulator if one exists; for handling .fai input.
+
 					if (!unique_chr_ids.contains(ref_id))
 					{
-						std::cerr << "WARNING: Identifier ‘" << buffer << "’ specified in reference name order but does not appear in the alignments.\n";
+						std::cerr << "WARNING: Identifier ‘" << ref_id << "’ specified in reference name order but does not appear in the alignments.\n";
 						continue;
 					}
 
-					auto const res(output_ref_name_order.emplace(buffer, output_ref_name_value(idx, false)));
+					auto const res(output_ref_name_order.emplace(ref_id, output_ref_name_value(idx, false)));
 					if (!res.second)
 					{
-						std::cerr << "WARNING: Identifier ‘" << buffer << "’ specified in reference name order more than once.\n";
+						std::cerr << "WARNING: Identifier ‘" << ref_id << "’ specified in reference name order more than once.\n";
 						continue;
 					}
 
