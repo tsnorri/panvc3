@@ -212,6 +212,7 @@ namespace {
 			
 			if (args_info.sequence_inputs_given)
 			{
+				lb::log_time(std::cerr) << "Loading sequence list from " << args_info.sequence_inputs_arg << "…\n";
 				static mi::sequence_list_input_processor processor(
 					args_info.sequence_inputs_arg,
 					args_info.msa_index_input_arg,
@@ -226,6 +227,7 @@ namespace {
 			}
 			else if (args_info.sequences_given)
 			{
+				lb::log_time(std::cerr) << "Loading sequences from A2M file at " << args_info.sequences_arg << "…\n";
 				static mi::a2m_input_processor processor(
 					args_info.sequences_arg,
 					args_info.msa_index_input_arg,
