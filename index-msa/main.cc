@@ -28,7 +28,7 @@ namespace mi		= panvc3::msa_indices;
 
 namespace {
 	
-	struct sigchld_handler final : public dispatch::sigchld_handler
+	struct sigchld_handler final : public events::sigchld_handler
 	{
 		void child_did_exit_with_nonzero_status(pid_t const pid, int const exit_status, char const *reason) override
 		{
@@ -54,7 +54,7 @@ namespace {
 	void install_sigchld_handler(events::manager &mgr)
 	{
 		static sigchld_handler handler;
-		dispatch::install_sigchld_handler(mgr, dispatch::parallel_queue::shared_queue(), handler);
+		events::install_sigchld_handler(mgr, dispatch::parallel_queue::shared_queue(), handler);
 	}
 	
 	
