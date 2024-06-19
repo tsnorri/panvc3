@@ -1,7 +1,7 @@
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 include  $(MAKEFILE_DIR)/../make/os-name.mk
 -include $(MAKEFILE_DIR)/../local.mk
-include  $(MAKEFILE_DIR)/../make/$(OS_NAME)-llvm.mk
+include  $(MAKEFILE_DIR)/../make/$(OS_NAME)-gcc.mk
 include  $(MAKEFILE_DIR)/../make/common.mk
 
 .PRECIOUS: 
@@ -18,7 +18,7 @@ clean:
 	$(RM) $(OBJECTS) index_msa cmdline.h cmdline.c
 
 index_msa: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-llvm/libbio.a $(LIBDISPATCH_LIBRARIES) $(LDFLAGS)
+	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LIBDISPATCH_LIBRARIES) $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h
