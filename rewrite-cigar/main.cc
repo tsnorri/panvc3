@@ -112,7 +112,7 @@ namespace {
 	void append_program_info(t_header const &input_header, t_header &output_header, int const argc, char const * const * const argv)
 	{
 		output_header.program_infos = input_header.program_infos;
-		panvc3::append_sam_program_info(
+		panvc3::append_sam_program_info_seqan3(
 			"panvc3.rewrite-cigar.",
 			"PanVC 3 rewrite_cigar",
 			argc,

@@ -1292,7 +1292,7 @@ namespace {
 	{
 		typedef typename t_header_::program_info_t program_info_type;
 		//copy_program_info(input_header, output_header);
-		panvc3::append_sam_program_info(
+		panvc3::append_sam_program_info_seqan3(
 			"panvc3.recalculate-mapq.",
 			"PanVC 3 recalculate_mapq",
 			argc,

@@ -231,7 +231,7 @@ namespace {
 	void append_program_info(t_header &output_header, int const argc, char const * const * const argv)
 	{
 		typedef typename t_header::program_info_t program_info_type;
-		panvc3::append_sam_program_info(
+		panvc3::append_sam_program_info_seqan3(
 			"panvc3.subset-alignments.",
 			"PanVC 3 subset_alignments",
 			argc,
