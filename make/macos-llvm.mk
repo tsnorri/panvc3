@@ -11,7 +11,7 @@ CPPFLAGS			?= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_STACKTRACE_USE_NOOP
 LDFLAGS				?= -stdlib=libc++ -lz
 
 SYSTEM_CFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) $(ISYSROOT)
-SYSTEM_CXXFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -faligned-allocation -stdlib=libc++ -nostdinc++ -I$(CLANG_ROOT)/include/c++/v1 $(ISYSROOT)
+SYSTEM_CXXFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -faligned-allocation -stdlib=libc++ -nostdinc++ -I$(CLANG_ROOT)/include/c++/v1 $(ISYSROOT) -fexperimental-library
 SYSTEM_LDFLAGS		?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -faligned-allocation -stdlib=libc++ -L$(CLANG_ROOT)/lib -L$(CLANG_ROOT)/lib/c++ -Wl,-rpath,$(CLANG_ROOT)/lib -Wl,-rpath,$(CLANG_ROOT)/lib/c++
 
 BOOST_LIBS			?= -L$(BOOST_LIBDIR) -lboost_iostreams-mt
