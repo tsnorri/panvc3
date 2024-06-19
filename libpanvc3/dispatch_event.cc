@@ -45,7 +45,7 @@ namespace {
 
 namespace panvc3::dispatch::events::detail {
 	
-	void add_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, std::uint16_t const filter, event_listener_identifier_type const identifier)
+	void add_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, filter_type const filter, event_listener_identifier_type const identifier)
 	{
 		struct kevent kev{};
 		EV_SET(&kev, ident, filter, EV_ADD | EV_ENABLE | EV_RECEIPT | EV_CLEAR, 0, 0, std::bit_cast <void *>(identifier));
