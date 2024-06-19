@@ -56,7 +56,7 @@ namespace panvc3::dispatch::events {
 }
 
 
-namespace panvc3::dispatch {
+namespace panvc3::dispatch::events {
 	
 	struct sigchld_handler
 	{
