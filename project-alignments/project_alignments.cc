@@ -154,6 +154,7 @@ namespace {
 	{
 		std::size_t flags_not_matched{};
 		std::size_t ref_id_missing{};
+		std::size_t seq_missing{};
 		std::size_t matched_reads{};
 	};
 	
@@ -559,6 +560,12 @@ namespace {
 			if (*rec_ref_pos < 0)
 			{
 				++m_statistics.flags_not_matched;
+				continue;
+			}
+
+			if (aln_rec.sequence().empty())
+			{
+				++m_statistics.seq_missing;
 				continue;
 			}
 			
@@ -1043,6 +1050,7 @@ namespace {
 		std::cerr << "Matched reads:     " << m_statistics.matched_reads << '\n';
 		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
+		std::cerr << "Sequence missing:  " << m_statistics.seq_missing << '\n';
 		
 		if (m_realn_range_output.is_open() && !m_should_keep_duplicate_realigned_ranges)
 			std::cerr << "Re-aligned ranges: " << m_realigned_ranges.size() << '\n';
