@@ -15,8 +15,8 @@ all: split_alignments_by_reference
 clean:
 	$(RM) $(OBJECTS) split_alignments_by_reference cmdline.h cmdline.c
 
-split_alignments_by_reference: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
+split_alignments_by_reference: $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a
+	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h

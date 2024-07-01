@@ -1,4 +1,4 @@
-# (c) 2023 Tuukka Norri
+# Copyright (c) 2023-2024 Tuukka Norri
 # This code is licensed under MIT license (see LICENSE for details).
 
 package		"rewrite-cigar"
@@ -8,11 +8,9 @@ usage		"rewrite_cigar --alignments=alignments.bam --reference=ref.fa.gz > projec
 
 section		"Input options"
 option		"alignments"					a	"Alignment file path (stdin by default)"									string	typestr = "filename"										optional
-option		"bam-input"						B	"Read BAM from stdin"														flag	off
 
 section		"Output options"
 option		"output-path"					o	"Output path (stdin by default)"											string	typestr = "path"											optional
-option		"output-bam"					b	"Output BAM instead of SAM"													flag	off
 option		"status-output-interval"		-	"Status output interval in minutes, zero to disable"						short	default = "5"												optional
 text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 

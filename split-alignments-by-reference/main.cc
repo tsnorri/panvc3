@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -8,19 +8,42 @@
 #include <iostream>
 #include <libbio/file_handling.hh>
 #include <libbio/utility.hh>
+#include <panvc3/alignment_input.hh>
 #include <range/v3/view/enumerate.hpp>
 #include <range/v3/view/transform.hpp>
-#include <seqan3/io/sam_file/all.hpp>
+#include <set>
 #include <string>
 #include <vector>
 #include "cmdline.h"
 
-namespace fs	= std::filesystem;
 namespace lb	= libbio;
 namespace rsv	= ranges::views;
+namespace sam	= libbio::sam;
 
 
 namespace {
+	
+	struct alignment_output
+	{
+		lb::file_handle					handle;
+		lb::file_ostream				stream;
+		
+		// lb::file_ostream is not movable and so we unfortunately need this.
+		explicit alignment_output(alignment_output &&other):
+			handle(std::move(other.handle))
+		{
+			lb::open_stream_with_file_handle(stream, handle);
+		}
+		
+		explicit alignment_output(std::string const &path):
+			handle(lb::open_file_for_writing(path, lb::writing_open_mode::CREATE))
+		{
+			lb::open_stream_with_file_handle(stream, handle);
+		}
+		
+		void output_record(sam::header const &header, sam::record const &rec) { sam::output_record(stream, header, rec); stream << '\n'; }
+	};
+	
 	
 	struct reference_name_record
 	{
@@ -154,21 +177,20 @@ namespace {
 	}
 
 
-	fs::path alignment_output_path(
+	std::string alignment_output_path(
 		char const *basename,
 		std::string const &reference_name
 	)
 	{
 		std::stringstream path;
 		if (basename) path << basename;
-		path << reference_name << ".bam";
-		return {path.view()};
+		path << reference_name << ".sam";
+		return path.str();
 	}
 	
 	
-	template <typename t_aln_input>
-	void process_(
-		t_aln_input &aln_input,
+	void process(
+		panvc3::alignment_input &aln_input,
 		char const *reference_names_path,
 		char const *basename,
 		bool const should_treat_reference_names_as_prefixes,
@@ -186,99 +208,94 @@ namespace {
 		reference_name_record_cmp const cmp;
 		
 		// Prepare the output.
-		auto &aln_input_header(aln_input.header()); // ref_ids() not const.
-		auto const &ref_ids(aln_input_header.ref_ids());
-		typedef seqan3::sam_file_output <
-			typename t_aln_input::selected_field_ids,
-			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
-			std::remove_cvref_t <decltype(ref_ids)> // sam_file_output does not seem to accept a reference for this.
-		> sam_file_output_type;
-		std::vector <sam_file_output_type> aln_outputs;
+		auto const &aln_input_header(aln_input.header);
+		auto aln_output_header(aln_input_header);
+		std::vector <alignment_output> aln_outputs;
 		aln_outputs.reserve(reference_names.size());
 		
-		// seqan3::sam_file_output makes a non-owning reference to output reference ids
-		// under some conditions, so try to make it not deallocate before the outputs.
-		std::remove_cvref_t <decltype(ref_ids)> output_ref_ids;
 		if (should_rewrite_reference_names)
 		{
-			output_ref_ids = ref_ids; // Copy.
-			for (auto &ref_id : output_ref_ids)
+			for (auto &ref_entry : aln_output_header.reference_sequences)
 			{
-				auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
+				auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_entry.name, cmp));
 				if (reference_names.end() == it)
 				{
-					std::cerr << "ERROR: No entry for reference ID '" << ref_id << "'.\n";
+					std::cerr << "ERROR: No entry for reference ID '" << ref_entry.name << "'.\n";
 					std::exit(EXIT_FAILURE);
 				}
-
-				ref_id = it->new_reference_name;
-			}
-
-			for (auto const &rec : reference_names)
-			{
-				aln_outputs.emplace_back(
-					alignment_output_path(basename, rec.reference_name),
-					output_ref_ids,
-					aln_input_header.ref_id_info | rsv::transform([](auto const &tup){ return std::get <0>(tup); })
-				);
+				
+				ref_entry.name = it->new_reference_name;
 			}
 		}
-		else
-		{
-			for (auto const &rec : reference_names)
-				aln_outputs.emplace_back(alignment_output_path(basename, rec.reference_name));
-		}
+		
+		// Open the output files.
+		for (auto const &ref_entry : aln_output_header.reference_sequences)
+			aln_outputs.emplace_back(alignment_output_path(basename, ref_entry.name));
 		
 		// Process the records.
 		lb::log_time(std::cerr) << "Processing the alignment records…\n";
+		std::size_t rec_idx{SIZE_MAX};
 		std::size_t ref_id_missing{};
 		std::size_t no_match{};
-		for (auto const &[rec_idx, aln_rec] : rsv::enumerate(aln_input))
-		{
-			if (0 == (1 + rec_idx) % 10000000)
-				lb::log_time(std::cerr) << "Processed " << (1 + rec_idx) << " alignments…\n";
-			
-			auto const &ref_id_(aln_rec.reference_id());
-			if (!ref_id_.has_value())
-			{
-				++ref_id_missing;
-				continue;
-			}
-			
-			// If we have a prefix or a match, it is bound to be lexicographically smaller
-			// than the reference contig name.
-			auto const &ref_id(ref_ids[*ref_id_]);
-			auto const it(std::upper_bound(reference_names.begin(), reference_names.end(), ref_id, cmp));
-			
-			if (reference_names.begin() == it)
-			{
-				++no_match;
-				if (should_report_unmatched)
-					report_unmatched(ref_id);
+		aln_input.read_records(
+			[
+				&reference_names,
+				&aln_outputs,
+				&aln_input_header,
+				&aln_output_header,
+				&cmp,
+				&rec_idx,
+				&ref_id_missing,
+				&no_match,
+				should_report_unmatched,
+				should_treat_reference_names_as_prefixes
+			](sam::record const &aln_rec){
+				++rec_idx;
+				if (0 == (1 + rec_idx) % 10000000)
+					lb::log_time(std::cerr) << "Processed " << (1 + rec_idx) << " alignments…\n";
 				
-				continue;
-			}
-			
-			auto const rit(it - 1);
-			auto const &reference_name(rit->reference_name);
-			if (
-				(should_treat_reference_names_as_prefixes  && !ref_id.starts_with(reference_name)) ||
-				(!should_treat_reference_names_as_prefixes && ref_id != reference_name)
-			)
-			{
-				++no_match;
-				if (should_report_unmatched)
-					report_unmatched(ref_id);
+				auto const rname_id(aln_rec.rname_id);
+				if (sam::INVALID_REFERENCE_ID == rname_id)
+				{
+					++ref_id_missing;
+					return;
+				}
 				
-				continue;
+				// If we have a prefix or a match, it is bound to be lexicographically smaller
+				// than or equal to the reference contig name.
+				auto const &ref_entry(aln_input_header.reference_sequences[rname_id]);
+				auto const it(std::upper_bound(reference_names.begin(), reference_names.end(), ref_entry.name, cmp));
+				
+				if (reference_names.begin() == it)
+				{
+					++no_match;
+					if (should_report_unmatched)
+						report_unmatched(ref_entry.name);
+				
+					return;
+				}
+				
+				auto const rit(it - 1);
+				auto const &reference_name(rit->reference_name);
+				if (
+					(should_treat_reference_names_as_prefixes  && !ref_entry.name.starts_with(reference_name)) ||
+					(!should_treat_reference_names_as_prefixes && ref_entry.name != reference_name)
+				)
+				{
+					++no_match;
+					if (should_report_unmatched)
+						report_unmatched(ref_entry.name);
+				
+					return;
+				}
+				
+				// Found a matchig prefix.
+				++rit->matches;
+				auto const idx(std::distance(reference_names.begin(), rit));
+				auto &aln_output(aln_outputs[idx]);
+				aln_output.output_record(aln_output_header, aln_rec);
 			}
-			
-			// Found a matchig prefix.
-			++rit->matches;
-			auto const idx(std::distance(reference_names.begin(), rit));
-			auto &output_file(aln_outputs[idx]);
-			output_file.push_back(aln_rec);
-		}
+		);
 		
 		// Report the matches.
 		for (auto const &rec : reference_names)
@@ -290,91 +307,35 @@ namespace {
 		lb::log_time(std::cerr) << "Done.\n";
 	}
 	
-
-	void process(
-		char const *aln_path,
-		char const *reference_names_path,
-		char const *basename,
-		bool const should_treat_reference_names_as_prefixes,
-		bool const should_rewrite_reference_names,
-		bool const should_report_unmatched
-	)
+	
+	void read_reference_names(panvc3::alignment_input &aln_input, bool const should_check_alignments)
 	{
-		typedef seqan3::sam_file_input <
-			seqan3::sam_file_input_default_traits <>,
-			seqan3::fields <
-				seqan3::field::seq,
-				seqan3::field::id,
-				seqan3::field::offset,
-				seqan3::field::ref_id,
-				seqan3::field::ref_offset,
-				seqan3::field::alignment,
-				seqan3::field::cigar,
-				seqan3::field::mapq,
-				seqan3::field::qual,
-				seqan3::field::flag,
-				seqan3::field::mate,
-				seqan3::field::tags
-				//seqan3::field::header_ptr // Skip this so that sam_file_output does not copy the reference name from the record.
-			>
-		> sam_file_input;
-
-		if (aln_path)
-		{
-			sam_file_input aln_input(fs::path{aln_path});
-			process_(
-				aln_input,
-				reference_names_path,
-				basename,
-				should_treat_reference_names_as_prefixes,
-				should_rewrite_reference_names,
-				should_report_unmatched
-			);
-		}
-		else
-		{
-			std::cerr << "Reading alignments from stdin.\n";
-			sam_file_input aln_input(std::cin, seqan3::format_sam{});
-			process_(
-				aln_input,
-				reference_names_path,
-				basename,
-				should_treat_reference_names_as_prefixes,
-				should_rewrite_reference_names,
-				should_report_unmatched
-			);
-		}
-	}
-
-
-	void read_reference_names(char const *aln_path, bool const should_check_alignments)
-	{
-		fs::path const alignments_path(aln_path);
-		seqan3::fields <seqan3::field::ref_id> fields{};
-		seqan3::sam_file_input aln_input(alignments_path, fields);
-
-		auto const &ref_ids(aln_input.header().ref_ids());
-
+		auto const &refs(aln_input.header.reference_sequences);
+		
 		if (should_check_alignments)
 		{
 			// Check if any of the alignments actually refer to the reference name.
-			std::set <std::string> refs;
-			for (auto const &aln_rec : aln_input)
+			std::set <sam::header::reference_sequence_identifier_type> seen_ref_ids;
+			aln_input.read_records(
+				[
+					&seen_ref_ids
+				](sam::record const &aln_rec){
+					if (sam::INVALID_REFERENCE_ID == aln_rec.rname_id)
+						return;
+					seen_ref_ids.emplace(aln_rec.rname_id);
+				}
+			);
+			
+			for (auto const ref_id : seen_ref_ids)
 			{
-				auto const &ref_id_(aln_rec.reference_id());
-				if (!ref_id_.has_value())
-					continue;
-				auto const &ref_id(ref_ids[*ref_id_]);
-				refs.emplace(ref_id);
+				auto const &ref(refs[ref_id]);
+				std::cout << ref.name << '\n';
 			}
-
-			for (auto const &rr : refs)
-				std::cout << rr << '\n';
 		}
 		else
 		{
-			for (auto const &rn : ref_ids)
-				std::cout << rn << '\n';
+			for (auto const &ref : refs)
+				std::cout << ref.name << '\n';
 		}
 	}
 }
@@ -388,12 +349,14 @@ int main(int argc, char **argv)
 	
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 
+	auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
+	
 	if (args_info.read_reference_names_given)
-		read_reference_names(args_info.alignments_arg, args_info.only_used_given);
+		read_reference_names(aln_input, args_info.only_used_given);
 	else
 	{
 		process(
-			args_info.alignments_arg,
+			aln_input,
 			args_info.reference_names_arg,
 			args_info.basename_arg,
 			args_info.prefixes_given,

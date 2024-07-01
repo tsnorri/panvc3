@@ -16,7 +16,7 @@ clean:
 	$(RM) $(OBJECTS) subset_alignments cmdline.h cmdline.c
 
 subset_alignments: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-gcc/libbio.a $(LDFLAGS) -pthread
+	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LDFLAGS) -pthread
 
 main.cc: cmdline.c
 cmdline.c: config.h

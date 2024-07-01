@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -7,9 +7,11 @@
 #include <iostream>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
+#include <libbio/sam.hh>
 #include <libbio/utility.hh> // lb::make_array
 #include <mutex>
 #include <panvc3/align.hh>
+#include <panvc3/alignment_input.hh>
 #include <panvc3/sam_tag.hh>
 #include <panvc3/utility.hh>
 #include <range/v3/algorithm/copy.hpp>
@@ -21,7 +23,6 @@
 #include <range/v3/view/enumerate.hpp>
 #include <range/v3/view/iota.hpp>
 #include <range/v3/view/reverse.hpp>
-#include <seqan3/io/sam_file/all.hpp>
 #include <syncstream>
 #include <thread>
 #include "cmdline.h"
@@ -31,20 +32,22 @@ namespace fs		= std::filesystem;
 namespace lb		= libbio;
 namespace ios		= boost::iostreams;
 namespace rsv		= ranges::views;
+namespace sam		= libbio::sam;
 
 
-using seqan3::operator""_tag;
+using sam::operator""_tag;
 
 
 namespace {
 	typedef std::uint32_t						chromosome_id_type;
 	typedef std::uint32_t						sequence_length_type;
-	typedef panvc3::seqan3_sam_tag_type			sam_tag_type;
 	
-	typedef seqan3::sam_tag_type_t <"AS"_tag>	alignment_score_tag_type;
+	typedef sam::tag_value_t <"AS"_tag>			alignment_score_tag_value_type;
 	typedef double								alignment_score_type;
 	typedef std::vector <alignment_score_type>	alignment_score_vector;
 	typedef std::uint8_t						mapping_quality_type;
+	
+	typedef std::vector <char>					sequence_type; // FIXME: Add a typedef to libbio::sam::record.
 	
 	constexpr static inline auto const SEQUENCE_LENGTH_MAX{std::numeric_limits <sequence_length_type>::max()};
 	constexpr static inline auto const ALIGNMENT_SCORE_MIN{-std::numeric_limits <alignment_score_type>::max()};
@@ -61,12 +64,9 @@ namespace {
 	constexpr static inline const bool is_optional_v{is_optional <t_type>::value};
 	
 	
-	template <typename ... t_fns> struct overloaded : t_fns... { using t_fns::operator()...; };
-	
-	
 	struct field_value_out_of_bounds {};
-	struct tag_type_mismatch { sam_tag_type	tag{}; };
-	struct tag_value_out_of_bounds { sam_tag_type tag{}; };
+	struct tag_type_mismatch { sam::tag_type	tag{}; };
+	struct tag_value_out_of_bounds { sam::tag_type tag{}; };
 	
 	struct input_error : public std::exception
 	{
@@ -95,13 +95,13 @@ namespace {
 
 	struct sam_tag_specification
 	{
-		panvc3::seqan3_sam_tag_type ref_n_positions_tag{};
-		panvc3::seqan3_sam_tag_type original_reference_tag{};
-		panvc3::seqan3_sam_tag_type original_position_tag{};
-		panvc3::seqan3_sam_tag_type original_rnext_tag{};
-		panvc3::seqan3_sam_tag_type original_pnext_tag{};
-		panvc3::seqan3_sam_tag_type original_alignment_score_tag{};
-		panvc3::seqan3_sam_tag_type new_alignment_score_tag{};
+		sam::tag_type ref_n_positions_tag{};
+		sam::tag_type original_reference_tag{};
+		sam::tag_type original_position_tag{};
+		sam::tag_type original_rnext_tag{};
+		sam::tag_type original_pnext_tag{};
+		sam::tag_type original_alignment_score_tag{};
+		sam::tag_type new_alignment_score_tag{};
 	};
 
 
@@ -117,23 +117,20 @@ namespace {
 	};
 	
 	
-	template <typename t_aln_rec>
 	struct alignment_scorer
 	{
 		virtual ~alignment_scorer() {}
-		virtual alignment_score_type operator()(t_aln_rec &rec, sam_tag_specification const &tag_spec) const = 0;
+		virtual alignment_score_type operator()(sam::record &rec, sam_tag_specification const &tag_spec) const = 0;
 	};
 	
 	
-	template <typename t_aln_rec>
-	struct as_tag_alignment_scorer final : public alignment_scorer <t_aln_rec>
+	struct as_tag_alignment_scorer final : public alignment_scorer
 	{
-		alignment_score_type operator()(t_aln_rec &rec, sam_tag_specification const &tag_spec) const override;
+		alignment_score_type operator()(sam::record &rec, sam_tag_specification const &tag_spec) const override;
 	};
 	
 	
-	template <typename t_aln_rec>
-	class cigar_alignment_scorer final : public alignment_scorer <t_aln_rec>
+	class cigar_alignment_scorer final : public alignment_scorer
 	{
 	public:
 		typedef std::int32_t	score_type;
@@ -144,13 +141,13 @@ namespace {
 		typedef std::vector <std::uint8_t>				ref_n_position_vector;
 		
 	private:
-		quality_lookup_array		m_mismatch_penalties;
-		quality_lookup_array		m_n_penalties;
-		alignment_scoring			m_scoring{};
-		panvc3::seqan3_sam_tag_type	m_ref_n_positions_tag{};
+		quality_lookup_array	m_mismatch_penalties;
+		quality_lookup_array	m_n_penalties;
+		alignment_scoring		m_scoring{};
+		sam::tag_type			m_ref_n_positions_tag{};
 		
 	public:
-		cigar_alignment_scorer(alignment_scoring &&scoring, panvc3::seqan3_sam_tag_type const ref_n_positions_tag):
+		cigar_alignment_scorer(alignment_scoring &&scoring, sam::tag_type const ref_n_positions_tag):
 			m_scoring(std::move(scoring)),
 			m_ref_n_positions_tag(ref_n_positions_tag)
 		{
@@ -158,59 +155,50 @@ namespace {
 			fill_penalties(m_n_penalties, m_scoring.n_penalty, m_scoring.n_penalty);
 		}
 		
-		alignment_score_type operator()(t_aln_rec &rec, sam_tag_specification const &tag_spec) const override;
+		alignment_score_type operator()(sam::record &rec, sam_tag_specification const &tag_spec) const override;
 		
 	private:
 		void fill_penalties(quality_lookup_array &penalties, score_type const min, score_type const max);
-		alignment_score_type calculate_score(t_aln_rec const &rec, ref_n_position_vector const &ref_n_positions) const;
+		alignment_score_type calculate_score(sam::record const &rec, ref_n_position_vector const &ref_n_positions) const;
 	};
 	
 	
-	template <typename t_aln_rec>
-	alignment_score_type as_tag_alignment_scorer <t_aln_rec>::operator()(t_aln_rec &aln_rec, sam_tag_specification const &) const
+	alignment_score_type as_tag_alignment_scorer::operator()(sam::record &aln_rec, sam_tag_specification const &) const
 	{
 		// Retrieve the alignment score from the AS tag.
-		auto const &tags(aln_rec.tags());
-		auto const it(tags.find("AS"_tag));
-		if (tags.end() == it)
-			return ALIGNMENT_SCORE_MIN;
-
-		using seqan3::get;
-		return get <alignment_score_tag_type>(it->second);
+		auto const &tags(aln_rec.optional_fields);
+		auto const as_val(tags.get <"AS"_tag>());
+		if (as_val)
+			return *as_val;
+		return ALIGNMENT_SCORE_MIN;
 	}
 
 
-	template <typename t_aln_rec>
-	void cigar_alignment_scorer <t_aln_rec>::fill_penalties(quality_lookup_array &penalties, score_type const min, score_type const max)
+	void cigar_alignment_scorer::fill_penalties(quality_lookup_array &penalties, score_type const min, score_type const max)
 	{
 		for (std::size_t i(0); i < QUALITY_MAX; ++i)
 			penalties[i] = std::min(i, std::size_t(40)) / double(40) * (max - min) + min; // Cut-off at 40 like in Bowtie 2.
 	}
 	
 	
-	template <typename t_aln_rec>
-	alignment_score_type cigar_alignment_scorer <t_aln_rec>::calculate_score(
-		t_aln_rec const &aln_rec,
+	alignment_score_type cigar_alignment_scorer::calculate_score(
+		sam::record const &aln_rec,
 		ref_n_position_vector const &ref_n_positions
 	) const
 	{
 		// Calculate the alignment score from the CIGAR and the base qualities.
-		using seqan3::get;
-		using seqan3::operator""_cigar_operation;
-		using seqan3::operator""_dna5;
-		
-		auto const &query_seq(aln_rec.sequence());
-		auto const &cigar_seq(aln_rec.cigar_sequence());
-		auto const &base_qualities(aln_rec.base_qualities());
+		auto const &query_seq(aln_rec.seq);
+		auto const &cigar_seq(aln_rec.cigar);
+		auto const &base_qualities(aln_rec.qual);
 		std::size_t query_pos{};
 		std::size_t ref_pos{};
 		char prev_op{};
 		alignment_score_type retval{};
-		for (auto const &item : cigar_seq)
+		for (auto const &cigar_run : cigar_seq)
 		{
-			auto const count(get <0>(item));
-			auto const op(get <1>(item));
-			auto const op_(op.to_char());
+			auto const count(cigar_run.count());
+			auto const op(cigar_run.operation());
+			auto const op_(sam::to_char(op));
 			
 			switch (op_)
 			{
@@ -250,8 +238,8 @@ namespace {
 				case '=':	// Match, consumes both.
 					for (std::size_t i(0); i < count; ++i)
 					{
-						if ('N'_dna5 == query_seq[query_pos + i]) // Match implies that reference also has N.
-							retval -= m_n_penalties[base_qualities[query_pos + i].to_rank()];
+						if ('N' == query_seq[query_pos + i]) // Match implies that reference also has N.
+							retval -= m_n_penalties[base_qualities[query_pos + i] - sam::MAPQ_MIN];
 					}
 					query_pos += count;
 					ref_pos += count;
@@ -263,10 +251,10 @@ namespace {
 					{
 						auto const qp(query_pos + i);
 						auto const rp(ref_pos + i);
-						auto const qual(base_qualities[qp].to_rank());
+						auto const qual(base_qualities[qp] - sam::MAPQ_MIN);
 						auto const rp_(rp / 8);
 						libbio_always_assert_lt(rp_, ref_n_positions.size());
-						if ('N'_dna5 == query_seq[qp] || ((0x1 << (rp % 8)) & ref_n_positions[rp_]))
+						if ('N' == query_seq[qp] || ((0x1 << (rp % 8)) & ref_n_positions[rp_]))
 							retval -= m_n_penalties[qual];
 						else
 							retval -= m_mismatch_penalties[qual];
@@ -287,33 +275,29 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_rec>
-	alignment_score_type cigar_alignment_scorer <t_aln_rec>::operator()(t_aln_rec &aln_rec, sam_tag_specification const &tag_spec) const
+	alignment_score_type cigar_alignment_scorer::operator()(sam::record &aln_rec, sam_tag_specification const &tag_spec) const
 	{
-		using seqan3::get;
-
-		auto &tags(aln_rec.tags());
-		auto const it(tags.find(tag_spec.ref_n_positions_tag));
+		auto &tags(aln_rec.optional_fields);
+		auto const ref_n_positions(tags.get <ref_n_position_vector>(tag_spec.ref_n_positions_tag));
 		auto const new_score(
 			calculate_score(
 				aln_rec,
-				tags.end() == it ? ref_n_position_vector{} : get <ref_n_position_vector>(it->second)
+				ref_n_positions ? *ref_n_positions : ref_n_position_vector{}
 			)
 		);
 		
 		// Retrieve the alignment score from the AS tag.
 		{
-			auto const it(tags.find("AS"_tag));
-			if (tags.end() == it)
+			auto aln_score(tags.get <"AS"_tag>());
+			if (aln_score)
 			{
-				auto &as_tag(tags.template get <"AS"_tag>());
-				as_tag = new_score;
+				tags.obtain <sam::tag_value_t <"AS"_tag>>(tag_spec.original_alignment_score_tag) = *aln_score;
+				tags.obtain <sam::optional_field::floating_point_type>(tag_spec.new_alignment_score_tag) = sam::optional_field::floating_point_type(new_score);
+				aln_score->get() = score_type(new_score);
 			}
 			else
 			{
-				tags[tag_spec.original_alignment_score_tag] = get <alignment_score_tag_type>(it->second);
-				tags[tag_spec.new_alignment_score_tag] = float(new_score);
-				it->second = score_type(new_score);
+				tags.obtain <"AS"_tag>() = score_type(new_score);
 			}
 		}
 		
@@ -596,36 +580,31 @@ namespace {
 		{
 		}
 		
-		template <typename t_reference_id, typename t_position>
 		constexpr static inline position from_fields(
-			std::optional <t_reference_id> const ref_id,
-			std::optional <t_position> const position
+			sam::reference_id_type const ref_id,
+			sam::position_type const pos
 		);
 		
-		template <typename t_aln_record>
 		constexpr static inline position from_record_with_tags(
-			t_aln_record const &rec,
-			sam_tag_type const reference_tag,
-			sam_tag_type const position_tag
+			sam::record const &rec,
+			sam::tag_type const reference_tag,
+			sam::tag_type const position_tag
 		);
 		
-		template <typename t_aln_record>
-		constexpr explicit position(t_aln_record const &rec):
-			position(from_fields(rec.reference_id(), rec.reference_position()))
+		constexpr explicit position(sam::record const &rec):
+			position(from_fields(rec.rname_id, rec.pos))
 		{
 		}
 		
-		template <typename t_aln_record>
-		constexpr position(t_aln_record const &rec, mate_tag const):
-			position(from_fields(rec.mate_reference_id(), rec.mate_position()))
+		constexpr position(sam::record const &rec, mate_tag const):
+			position(from_fields(rec.rnext_id, rec.pnext))
 		{
 		}
 		
-		template <typename t_aln_record>
 		constexpr position(
-			t_aln_record const &rec,
-			sam_tag_type const reference_tag,
-			sam_tag_type const position_tag
+			sam::record const &rec,
+			sam::tag_type const reference_tag,
+			sam::tag_type const position_tag
 		):
 			position(from_record_with_tags(rec, reference_tag, position_tag))
 		{
@@ -647,62 +626,58 @@ namespace {
 	}
 	
 	
-	template <typename t_reference_id, typename t_position>
 	constexpr auto position::from_fields(
-		std::optional <t_reference_id> const ref_id,
-		std::optional <t_position> const pos
+		sam::reference_id_type const ref_id,
+		sam::position_type const pos
 	) -> position
 	{
-		if (!ref_id)
+		if (sam::INVALID_REFERENCE_ID == ref_id)
 			return INVALID_POSITION;
+		
+		if (sam::INVALID_POSITION == pos)
+			return INVALID_POSITION;
+		
+		if (ref_id < 0) throw make_input_error <field_value_out_of_bounds>();
+		if (pos < 0) throw make_input_error <field_value_out_of_bounds>();
+		
+		return {chromosome_id_type(ref_id), sequence_length_type(pos)};
+	}
+	
+	
+	constexpr inline void throw_if_needed(sam::tag_type const tag, sam::optional_field::get_value_error const err)
+	{
+		switch (err)
+		{
+			case sam::optional_field::get_value_error::not_found:
+				break;
+			
+			case sam::optional_field::get_value_error::type_mismatch:
+				throw make_input_error <tag_type_mismatch>(tag);
+		}
+	}
+	
+	
+	constexpr auto position::from_record_with_tags(
+		sam::record const &aln_rec,
+		sam::tag_type const reference_tag,
+		sam::tag_type const position_tag
+	) -> position
+	{
+		auto const &tags(aln_rec.optional_fields);
+		auto const ref_id(tags.get <std::int32_t>(reference_tag));
+		auto const pos(tags.get <std::int32_t>(reference_tag));
+		
+		if (!ref_id)
+		{
+			throw_if_needed(reference_tag, ref_id.error());
+			return INVALID_POSITION;
+		}
 		
 		if (!pos)
+		{
+			throw_if_needed(position_tag, pos.error());
 			return INVALID_POSITION;
-		
-		if (*ref_id < 0) throw make_input_error <field_value_out_of_bounds>();
-		if (*pos < 0) throw make_input_error <field_value_out_of_bounds>();
-		
-		return {chromosome_id_type(*ref_id), sequence_length_type(*pos)};
-	}
-	
-	
-	template <typename t_type, typename t_tags, typename t_tag>
-	inline std::optional <t_type> find_tag_value(t_tags const &tags, t_tag const tag)
-	{
-		auto const it(tags.find(tag));
-		if (tags.end() == it)
-			return {};
-		
-		auto const *val(std::get_if <t_type>(&it->second));
-		if (val)
-			return {*val};
-		
-		throw make_input_error <tag_type_mismatch>(tag);
-	}
-	
-	
-	template <typename t_aln_record>
-	constexpr auto position::from_record_with_tags(
-		t_aln_record const &aln_rec,
-		sam_tag_type const reference_tag,
-		sam_tag_type const position_tag
-	) -> position
-	{
-		typedef std::remove_cvref_t <decltype(aln_rec.reference_id())>			reference_type;
-		typedef std::remove_cvref_t <decltype(aln_rec.reference_position())>	position_type;
-		
-		// If these fail, handle the situation in find_tag_value.
-		static_assert(is_optional_v <reference_type>);
-		static_assert(is_optional_v <position_type>);
-		
-		typedef typename reference_type::value_type	reference_value_type;
-		typedef typename position_type::value_type	position_value_type;
-		
-		auto const &tags(aln_rec.tags());
-		auto const ref_id(find_tag_value <reference_value_type>(tags, reference_tag));
-		auto const pos(find_tag_value <position_value_type>(tags, position_tag));
-		if (! (ref_id && pos))
-			return INVALID_POSITION;
+		}
 		
 		if (*ref_id < 0) throw make_input_error <tag_value_out_of_bounds>(reference_tag);
 		if (*pos < 0) throw make_input_error <tag_value_out_of_bounds>(position_tag);
@@ -746,34 +721,29 @@ namespace {
 		os << "(lhs: " << pp.lhs << ", rhs: " << pp.rhs << ")";
 		return os;
 	}
-
-		
-	template <typename t_aln_record>
+	
+	
 	struct scored_record
 	{
-		t_aln_record			*record{};
+		sam::record				*record{};
 		alignment_score_type	alignment_score{};
 		alignment_score_type	pairwise_score{};
 		sequence_length_type	mate_length{};
 	};
 
 
-	template <typename t_aln_record>
-	std::ostream &operator<<(std::ostream &os, scored_record <t_aln_record> const &sr)
+	std::ostream &operator<<(std::ostream &os, scored_record const &sr)
 	{
 		os << "(rec: " << sr.record;
 		if (sr.record)
-			os << " id: " << sr.record->id();
+			os << " id: " << sr.record->qname;
 		os << " AS: " << sr.alignment_score << " PS: " << sr.pairwise_score << " mate_length: " << sr.mate_length << ")";
 		return os;
 	}
 
 
-	template <typename t_sequence>
 	struct paired_segment_score
 	{
-		typedef t_sequence sequence_type;
-
 		position_pair			positions{};
 		sequence_type			*sequence{};
 		alignment_score_type	score{};
@@ -790,17 +760,10 @@ namespace {
 	};
 	
 	
-	template <typename t_aln_record>
 	class mapq_scorer
 	{
-	public:
-		typedef alignment_scorer <t_aln_record>	alignment_scorer_type;
-		
 	private:
-		typedef std::remove_cvref_t <
-			decltype(std::declval <t_aln_record>().sequence())
-		>										sequence_type;
-		typedef std::vector <t_aln_record>		alignment_vector;
+		typedef std::vector <sam::record>		alignment_vector;
 
 		struct statistics
 		{
@@ -827,12 +790,12 @@ namespace {
 		};
 		
 		typedef panvc3::cmp_proj <segment_description, typename segment_description::project_position> cmp_segment_description_position;
-		typedef scored_record <t_aln_record>			scored_record_type;
-		typedef paired_segment_score <sequence_type>	paired_segment_score_type;
+		typedef scored_record							scored_record_type;
+		typedef paired_segment_score					paired_segment_score_type;
 		typedef panvc3::cmp_proj <paired_segment_score_type, typename paired_segment_score_type::project_positions> cmp_paired_segment_score_positions;
 		
 	private:
-		alignment_scorer_type					*m_aln_scorer{};
+		alignment_scorer						*m_aln_scorer{};
 		mapq_score_calculator					*m_scorer{};
 		std::vector <segment_description>		m_segment_descriptions_by_original_position;
 		std::vector <paired_segment_score_type>	m_paired_segment_scores_by_projected_position;
@@ -845,7 +808,7 @@ namespace {
 		
 	public:
 		mapq_scorer(
-			alignment_scorer_type &aln_scorer,
+			alignment_scorer &aln_scorer,
 			mapq_score_calculator &scorer,
 			sam_tag_specification const &sam_tags
 		):
@@ -855,11 +818,10 @@ namespace {
 		{
 		}
 		
-		template <typename t_aln_output, typename t_aln_input_ref_ids>
 		void process_alignment_group(
 			alignment_vector &alignments,
-			t_aln_output &&aln_output,
-			t_aln_input_ref_ids const &input_ref_ids,
+			sam::header const &header,
+			std::ostream &os,
 			bool const verbose_output_enabled
 		);
 			
@@ -867,16 +829,14 @@ namespace {
 	};
 
 
-	template <typename t_sequence>
-	std::ostream &operator<<(std::ostream &os, paired_segment_score <t_sequence> const &pss)
+	std::ostream &operator<<(std::ostream &os, paired_segment_score const &pss)
 	{
 		os << "(positions: " << pss.positions << " sequence: " << pss.sequence << " score: " << pss.score << " other_score: " << pss.other_score << " has_mate: " << pss.has_mate << ")";
 		return os;
 	}
 	
 	
-	template <typename t_aln_record>
-	void mapq_scorer <t_aln_record>::add_paired_segment_score(paired_segment_score_type const &pss)
+	void mapq_scorer::add_paired_segment_score(paired_segment_score_type const &pss)
 	{
 		auto it(std::lower_bound(
 			m_paired_segment_scores_by_projected_position.begin(),
@@ -902,33 +862,33 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_record, typename t_error_info>
-	void handle_input_error(t_aln_record const &aln_rec, t_error_info const &error_info)
+	template <typename t_error_info>
+	void handle_input_error(sam::record const &aln_rec, t_error_info const &error_info)
 	{
 		std::osyncstream cerr(std::cerr);
 
 		auto print_tag([&cerr](auto const tag){
 			std::array <char, 2> buffer;
-			panvc3::from_tag(tag, buffer);
+			sam::from_tag(tag, buffer);
 			ranges::copy(buffer, std::ostream_iterator <char>(cerr));
 		});
 		
-		std::visit(overloaded{
+		std::visit(lb::aggregate{
 			[&](tag_type_mismatch const &mm){
-				cerr << "ERROR: Record ‘" << aln_rec.id() << "’ had unexpected type for tag ‘";
+				cerr << "ERROR: Record ‘" << aln_rec.qname << "’ had unexpected type for tag ‘";
 				print_tag(mm.tag);
 				cerr << "’.\n";
 			},
 			[&](tag_value_out_of_bounds const &oob){
 				cerr << "ERROR: Value of tag ‘";
 				print_tag(oob.tag);
-				cerr << "’ out of bounds in record with ID ‘" << aln_rec.id() << "’.\n";
+				cerr << "’ out of bounds in record with ID ‘" << aln_rec.qname << "’.\n";
 			},
 			[&](field_value_out_of_bounds const &){
-				cerr << "ERROR: Unexpected field value in record with ID ‘" << aln_rec.id() << "’.\n";
+				cerr << "ERROR: Unexpected field value in record with ID ‘" << aln_rec.qname << "’.\n";
 			},
 			[&](auto const &){
-				cerr << "ERROR: Unexpected error in record with ID ‘" << aln_rec.id() << "’.\n";
+				cerr << "ERROR: Unexpected error in record with ID ‘" << aln_rec.qname << "’.\n";
 			}
 		}, error_info);
 		cerr << std::flush;
@@ -936,33 +896,28 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_record, typename t_ref_ids>
-	void output_mate_not_found_warning(t_aln_record const &aln_rec, t_ref_ids const &ref_ids, position const &mate_original_pos)
+	void output_mate_not_found_warning(sam::header const &header, sam::record const &aln_rec, position const &mate_original_pos)
 	{
-		auto const &ref_id(aln_rec.reference_id());
-		auto const &ref_pos(aln_rec.reference_position());
 		std::osyncstream cerr(std::cerr);
-		cerr << "WARNING: Mate not found for alignment ‘" << aln_rec.id() << "’ at ";
-		if (ref_id)
-			cerr << ref_ids[*ref_id];
-		else
+		cerr << "WARNING: Mate not found for alignment ‘" << aln_rec.qname << "’ at ";
+		if (sam::INVALID_REFERENCE_ID == aln_rec.rname_id)
 			cerr << '*';
-		cerr << ":";
-		if (ref_pos)
-			cerr << *ref_pos;
 		else
+			cerr << header.reference_sequences[aln_rec.rname_id];
+		cerr << ':';
+		if (sam::INVALID_POSITION == aln_rec.pos)
 			cerr << '*';
+		else
+			aln_rec.pos;
 		cerr << "; mate original position: " << mate_original_pos << '\n' << std::flush;
 	}
 	
 	
 	// Precondition: alignments contains (all) the alignments with the same identifier but not necessarily the same sequence.
-	template <typename t_aln_record>
-	template <typename t_aln_output, typename t_aln_input_ref_ids>
-	void mapq_scorer <t_aln_record>::process_alignment_group(
+	void mapq_scorer::process_alignment_group(
 		alignment_vector &alignments,
-		t_aln_output &&aln_output,
-		t_aln_input_ref_ids const &input_ref_ids,
+		sam::header const &header,
+		std::ostream &os,
 		bool const verbose_output_enabled
 	)
 	{
@@ -1000,7 +955,7 @@ namespace {
 		{
 			try
 			{
-				bool const has_mate(aln_rec.mate_reference_id() && aln_rec.mate_position());
+				bool const has_mate(! (sam::INVALID_REFERENCE_ID == aln_rec.rnext_id || sam::INVALID_POSITION == aln_rec.pnext));
 				seen_record_types |= 0x1 << has_mate;
 				m_statistics.unpaired_alignments += (!has_mate);
 				
@@ -1012,7 +967,7 @@ namespace {
 				m_segment_descriptions_by_original_position.emplace_back(
 					position{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag},
 					score,
-					aln_rec.sequence().size()
+					aln_rec.seq.size()
 				);
 			}
 			catch (input_error const &exc)
@@ -1028,7 +983,7 @@ namespace {
 		if (0x3 == seen_record_types)
 		{
 			++m_statistics.reads_with_and_without_mate;
-			std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().id() << "’ has both paired and unpaired alignment records; skipping.\n";
+			std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().qname << "’ has both paired and unpaired alignment records; skipping.\n";
 			return;
 		}
 		
@@ -1042,7 +997,7 @@ namespace {
 			if (0 == valid_count)
 			{
 				++m_statistics.reads_without_valid_position;
-				std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().id() << "’ has no alignments with a valid position.\n";
+				std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().qname << "’ has no alignments with a valid position.\n";
 			}
 		}
 		
@@ -1057,7 +1012,7 @@ namespace {
 				auto &aln_rec(*sr.record);
 				position_pair const projected_pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
 				bool const has_mate(projected_pos.has_mate());
-				paired_segment_score_type pss{projected_pos, has_mate ? nullptr : &aln_rec.sequence(), sr.alignment_score, 0, false};
+				paired_segment_score_type pss{projected_pos, has_mate ? nullptr : &aln_rec.seq, sr.alignment_score, 0, false};
 				
 				// Min. score only allowed for invalid positions.
 				libbio_assert_msg((INVALID_POSITION != pss.positions.lhs) ^ (ALIGNMENT_SCORE_MIN == pss.score), "pss: ", pss, " sr: ", sr);
@@ -1078,7 +1033,7 @@ namespace {
 						++m_statistics.mate_not_found;
 						
 						if (verbose_output_enabled)
-							output_mate_not_found_warning(aln_rec, input_ref_ids, mate_original_pos);
+							output_mate_not_found_warning(header, aln_rec, mate_original_pos);
 					}
 					else
 					{
@@ -1095,7 +1050,7 @@ namespace {
 							++m_statistics.mate_not_found;
 							
 							if (verbose_output_enabled)
-								output_mate_not_found_warning(aln_rec, input_ref_ids, mate_original_pos);
+								output_mate_not_found_warning(header, aln_rec, mate_original_pos);
 						}
 					}
 				}
@@ -1123,7 +1078,7 @@ namespace {
 			
 			try
 			{
-				auto const &seq(aln_rec.sequence());
+				auto const &seq(aln_rec.seq);
 				position_pair const pos{position{aln_rec}, position{aln_rec, position::mate_tag{}}, position_pair::normalised_tag{}};
 				bool const has_mate(pos.has_mate());
 
@@ -1157,42 +1112,38 @@ namespace {
 					
 					// At least one of the positions in the pair does not match (but the scores may match).
 					// Bowtie 2 distinguishes mate 1 and 2, which we are not able to do. Hence we choose the better score for the next alignment.
-					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.pairwise_score, has_mate ? other.total_score() : other.max_score());
+					aln_rec.mapq = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.pairwise_score, has_mate ? other.total_score() : other.max_score());
 					goto output_record;
 				}
 
 				if (is_best_score)
-					aln_rec.mapping_quality() = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.pairwise_score, ALIGNMENT_SCORE_MIN);
+					aln_rec.mapq = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.pairwise_score, ALIGNMENT_SCORE_MIN);
 				else // There was a better score, hence the current record had the worst score.
-					aln_rec.mapping_quality() = MAPQ_NO_NEXT_RECORD;
+					aln_rec.mapq = MAPQ_NO_NEXT_RECORD;
 
 			output_record:
-				aln_rec.header_ptr() = &aln_output.header();
-				aln_output.push_back(aln_rec);
+				sam::output_record(os, header, aln_rec);
 			}
 			catch (...)
 			{
-				std::osyncstream(std::cerr) << "*** Read ID ‘" << aln_rec.id() << "’\n" << std::flush;
+				std::osyncstream(std::cerr) << "*** Read ID ‘" << aln_rec.qname << "’\n" << std::flush;
 				throw;
 			}
 		}
 	}
 
 
-	template <typename t_aln_input, typename t_aln_output, typename t_record = typename std::remove_cvref_t <t_aln_input>::record_type>
 	void process_(
-		t_aln_input &&aln_input,
-		t_aln_output &&aln_output,
-		mapq_scorer <t_record> &scorer,
+		panvc3::alignment_input &aln_input,
+		std::ostream &os,
+		mapq_scorer &scorer,
 		std::uint16_t const status_output_interval,
 		bool const verbose_output_enabled
 	)
 	{
-		typedef std::remove_cvref_t <t_aln_input>	input_type;
-		typedef t_record							record_type;
 		typedef chrono::steady_clock				clock_type;
 		
-		std::vector <record_type> rec_buffer;
+		std::vector <sam::record> rec_buffer;
 		std::uint64_t rec_idx{};
 
 		auto const start_time(clock_type::now());
@@ -1224,41 +1175,47 @@ namespace {
 			}};
 		}()};
 
-		for (auto &aln_rec : aln_input)
-		{
-			if (rec_idx && 0 == rec_idx % 10'000'000)
-			{
-				std::osyncstream cerr(std::cerr);
-				lb::log_time(cerr) << "Processed " << rec_idx << " alignments…\n" << std::flush;
-			}
-			++rec_idx;
-
-			// Ignore unmapped.
-			auto const flags(aln_rec.flag());
-			if (lb::to_underlying(flags & seqan3::sam_flag::unmapped))
-				continue;
-
-			if (rec_buffer.empty())
-			{
+		aln_input.read_records(
+			[
+				&aln_input,
+				&os,
+				&scorer,
+				&rec_buffer,
+				&rec_idx,
+				verbose_output_enabled
+			](sam::record &aln_rec){
+				if (rec_idx && 0 == rec_idx % 10'000'000)
+				{
+					std::osyncstream cerr(std::cerr);
+					lb::log_time(cerr) << "Processed " << rec_idx << " alignments…\n" << std::flush;
+				}
+				++rec_idx;
+				
+				// Ignore unmapped.
+				if (std::to_underlying(sam::flag::unmapped & aln_rec.flag))
+					return;
+				
+				if (rec_buffer.empty())
+				{
+					rec_buffer.emplace_back(std::move(aln_rec));
+					return;
+				}
+				
+				auto const &id(aln_rec.qname);
+				auto const &eq_class_id(rec_buffer.front().qname);
+				if (id != eq_class_id)
+				{
+					scorer.process_alignment_group(rec_buffer, aln_input.header, os, verbose_output_enabled);
+					rec_buffer.clear();
+				}
+				
 				rec_buffer.emplace_back(std::move(aln_rec));
-				continue;
 			}
-			
-			auto const &id(aln_rec.id());
-			auto const &eq_class_id(rec_buffer.front().id());
-			
-			if (id != eq_class_id)
-			{
-				scorer.process_alignment_group(rec_buffer, aln_output, aln_input.header().ref_ids(), verbose_output_enabled);
-				rec_buffer.clear();
-			}
-			
-			rec_buffer.emplace_back(std::move(aln_rec));
-		}
+		);
 		
 		if (!rec_buffer.empty())
-			scorer.process_alignment_group(rec_buffer, aln_output, aln_input.header().ref_ids(), verbose_output_enabled);
-
+			scorer.process_alignment_group(rec_buffer, aln_input.header, os, verbose_output_enabled);
+		
 		status_output_timer.stop();
 		if (status_output_thread.joinable())
 			status_output_thread.join();
@@ -1277,28 +1234,15 @@ namespace {
 	}
 
 
-	template <typename t_header, typename t_header_>
-	void copy_program_info(t_header const &input_header, t_header_ &output_header)
+	void append_program_info(sam::header &header, int const argc, char const * const * const argv)
 	{
-		output_header.program_infos.resize(input_header.program_infos.size());
-		// FIXME: Not a particularly good idea; filed a feature request to make program_info_t not depend on the template parameter.
-		for (auto &&[src, dst] : rsv::zip(input_header.program_infos, output_header.program_infos))
-			dst = *reinterpret_cast <t_header_::program_info_t const *>(&src);
-	}
-
-
-	template <typename t_header, typename t_header_>
-	void append_program_info(t_header const &input_header, t_header_ &output_header, int const argc, char const * const * const argv)
-	{
-		typedef typename t_header_::program_info_t program_info_type;
-		//copy_program_info(input_header, output_header);
-		panvc3::append_sam_program_info_seqan3(
+		panvc3::append_sam_program_info(
 			"panvc3.recalculate-mapq.",
 			"PanVC 3 recalculate_mapq",
 			argc,
 			argv,
 			CMDLINE_PARSER_VERSION,
-			output_header.program_infos
+			header.programs
 		);
 	}
 	
@@ -1320,85 +1264,33 @@ namespace {
 		if (args_info.gap_extension_penalty_arg < 0)	{ std::cerr << "ERROR: Gap extension penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
 
 		// Open the SAM input and output.
-		typedef seqan3::sam_file_input <>								input_type;
-		typedef typename input_type::record_type						record_type;
-		auto aln_input{[&](){
-			auto const make_input_type([&]<typename t_fmt>(t_fmt &&fmt){
-				if (args_info.alignments_arg)
-					return input_type(fs::path{args_info.alignments_arg});
-				else
-					return input_type(std::cin, std::forward <t_fmt>(fmt));
-			});
-			
-			if (args_info.bam_input_flag)
-				return make_input_type(seqan3::format_bam{});
-			else
-				return make_input_type(seqan3::format_sam{});
-		}()};
-
-		auto const &aln_input_header(aln_input.header());
-		auto const &input_ref_ids(aln_input.header().ref_ids()); // ref_ids() not const.
-		typedef std::remove_cvref_t <decltype(input_ref_ids)>			ref_ids_type;
-		ref_ids_type output_ref_ids;
-		typedef seqan3::sam_file_output <
-			typename input_type::selected_field_ids,
-			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
-			ref_ids_type
-		>																output_type;
-		typedef mapq_scorer <record_type>								mapq_scorer_type;
+		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
 		
-		auto aln_output{[&](){
-			// Make sure that aln_output has some header information.
-			auto const make_output_type([&]<typename t_fmt>(t_fmt &&fmt){
-				ref_ids_type empty_ref_ids;
-				if (args_info.output_path_arg)
-				{
-					return output_type(
-						fs::path{args_info.output_path_arg},
-						output_ref_ids,
-						rsv::empty <std::size_t>()	// Reference lengths; the constructor expects a forward range.
-					);
-				}
-				else
-				{
-					return output_type(
-						std::cout,
-						output_ref_ids,
-						rsv::empty <std::size_t>(),	// Reference lengths; the constructor expects a forward range.
-						std::forward <t_fmt>(fmt)
-					);
-				}
-			});
-			
-			if (args_info.output_bam_flag)
-				return make_output_type(seqan3::format_bam{});
+		auto aln_output_fh{[&] -> lb::file_handle {
+			if (args_info.output_path_arg)
+				return lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE));
 			else
-				return make_output_type(seqan3::format_sam{});
+				return lb::file_handle(STDOUT_FILENO, false);
 		}()};
 		
-		// Now that we have valid header information in aln_output, we can access it and copy the headers from aln_input.
-		{
-			output_ref_ids = input_ref_ids;
-			
-			auto &aln_output_header(aln_output.header());
-			aln_output_header.sorting = aln_input_header.sorting;
-			aln_output_header.subsorting = aln_input_header.subsorting;
-			aln_output_header.grouping = aln_input_header.subsorting;
-			aln_output_header.program_infos = aln_input_header.program_infos;
-			aln_output_header.comments = aln_input_header.comments;
-			aln_output_header.ref_id_info = aln_input_header.ref_id_info;
-			aln_output_header.ref_dict = aln_input_header.ref_dict;
-			aln_output_header.read_groups = aln_input_header.read_groups;
-			
-			append_program_info(aln_input_header, aln_output_header, argc, argv);
-		}
+		lb::file_ostream os;
+		lb::open_stream_with_file_handle(os, aln_output_fh);
 		
-		auto const make_sam_tag([](char const *tag, bool const should_allow_any = false) -> sam_tag_type {
+		auto &header(aln_input.header);
+		append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
+		
+		auto const make_sam_tag([](char const *tag) -> sam::tag_type {
 			if (!tag)
 				return 0;
 			
+			if (! (std::isalnum(tag[0]) && std::isalnum(tag[1]) && '\0' != tag[2]))
+			{
+				std::cerr << "ERROR: SAM tags must consist of two characters, got “" << tag << "”.";
+				std::exit(EXIT_FAILURE);
+			}
+			
 			std::array <char, 2> buffer{tag[0], tag[1]};
-			return panvc3::to_tag(buffer);
+			return sam::to_tag(buffer);
 		});
 		
 		sam_tag_specification const sam_tags{
@@ -1413,10 +1305,10 @@ namespace {
 		
 		if (args_info.print_reference_names_flag)
 		{
-			auto const &ref_ids(aln_input.header().ref_ids());
+			auto const &ref_entries(aln_input.header.reference_sequences);
 			std::cerr << "Reference IDs:\n";
-			for (auto const &[idx, name] : rsv::enumerate(ref_ids))
-				std::cerr << idx << '\t' << name << '\n';
+			for (auto const &[idx, ref_entry] : rsv::enumerate(ref_entries))
+				std::cerr << idx << '\t' << ref_entry.name << '\n';
 		}
 
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
@@ -1424,21 +1316,21 @@ namespace {
 		if (args_info.rescore_alignments_given)
 		{
 			// FIXME: Check upper bound (INT32_MAX).
-			cigar_alignment_scorer <record_type> aln_scorer(alignment_scoring{
+			cigar_alignment_scorer aln_scorer(alignment_scoring{
 				.min_mismatch_penalty	= alignment_scoring::score_type(args_info.min_mismatch_penalty_arg),
 				.max_mismatch_penalty	= alignment_scoring::score_type(args_info.max_mismatch_penalty_arg),
 				.n_penalty				= alignment_scoring::score_type(args_info.n_penalty_arg),
 				.gap_opening_penalty	= alignment_scoring::score_type(args_info.gap_opening_penalty_arg),
 				.gap_extension_penalty	= alignment_scoring::score_type(args_info.gap_extension_penalty_arg)
 			}, sam_tags.ref_n_positions_tag);
-			mapq_scorer_type scorer(aln_scorer, score_calculator, sam_tags);
-			process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
+			mapq_scorer scorer(aln_scorer, score_calculator, sam_tags);
+			process_(aln_input, os, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
 		}
 		else
 		{
-			as_tag_alignment_scorer <record_type> aln_scorer;
-			mapq_scorer_type scorer(aln_scorer, score_calculator, sam_tags);
-			process_(aln_input, aln_output, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
+			as_tag_alignment_scorer aln_scorer;
+			mapq_scorer scorer(aln_scorer, score_calculator, sam_tags);
+			process_(aln_input, os, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
 		}
 	}
 }

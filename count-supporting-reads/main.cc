@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -10,20 +10,20 @@
 #include <libbio/vcf/variant_end_pos.hh>
 #include <libbio/vcf/vcf_reader.hh>
 #include <libbio/file_handling.hh>
+#include <panvc3/alignment_input.hh>
 #include <panvc3/cigar.hh>
 #include <panvc3/dna11_alphabet.hh>
 #include <range/v3/all.hpp>
-#include <seqan3/alphabet/cigar/cigar.hpp>
-#include <seqan3/io/sam_file/all.hpp>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 #include "cmdline.h"
 
-namespace fs	= std::filesystem;
 namespace lb	= libbio;
 namespace rsv	= ranges::views;
+namespace sam	= libbio::sam;
 namespace vcf	= libbio::vcf;
 
 
@@ -32,15 +32,13 @@ namespace {
 	typedef vcf::info_field <vcf::metadata_value_type::FLAG>	info_field_co;
 	typedef vcf::info_field <vcf::metadata_value_type::FLAG>	info_field_usra;
 	
-	void output_cigar(std::vector <seqan3::cigar> const &cigar_seq, std::ostream &os)
+	void output_cigar(std::vector <sam::cigar_run> const &cigar_seq, std::ostream &os)
 	{
-		using seqan3::get;
-		
-		for (auto const cigar_item : cigar_seq)
+		for (auto const cigar_run : cigar_seq)
 		{
-			auto const op_count(get <0>(cigar_item));
-			auto const operation(get <1>(cigar_item));
-			os << op_count << operation.to_char();
+			auto const op_count(cigar_run.count());
+			auto const operation(cigar_run.operation());
+			os << op_count << sam::to_char(operation);
 		}
 	}
 	
@@ -103,20 +101,17 @@ namespace {
 	};
 	
 	
-	template <typename t_aln_record>
-	record_length calculate_record_lengths(t_aln_record const &aln_record)
+	record_length calculate_record_lengths(sam::record const &aln_record)
 	{
 		std::size_t reference_length{};
 		std::size_t right_anchored_length{};
 		//std::size_t query_length{};
 		
-		for (auto const &cigar_item : aln_record.cigar_sequence())
+		for (auto const &cigar_run : aln_record.cigar)
 		{
-			using seqan3::get;
-			
-			auto const op_count(get <0>(cigar_item));
-			auto const operation(get <1>(cigar_item));
-			auto const cc(operation.to_char());
+			auto const op_count(cigar_run.count());
+			auto const operation(cigar_run.operation());
+			auto const cc(sam::to_char(operation));
 			
 			switch (cc)
 			{
@@ -162,7 +157,7 @@ namespace {
 	template <typename t_src, typename t_dst>
 	inline void copy_sequence_slice_clipped(t_src const &src, std::size_t const pos, std::size_t const length, t_dst &dst)
 	{
-		// Construct clipped panvc3::dna11 characters from plain seqan3::dna5 characters.
+		// Construct clipped panvc3::dna11 characters from plain dna5 characters.
 		ranges::copy(
 			src
 			| rsv::slice(pos, pos + length)
@@ -173,23 +168,23 @@ namespace {
 
 
 	// Check compatibility in terms of what operations can be used to continue
-	bool can_continue_with_operation(seqan3::cigar::operation const lhs, seqan3::cigar::operation const rhs)
+	bool can_continue_with_operation(sam::cigar_operation const lhs, sam::cigar_operation const rhs)
 	{
 		// The specification forbids some combinations, e.g. H can only appear as the first
 		// or the last operation. We handle them anyway b.c. it is not very complicated.
-		switch (lhs.to_char())
+		switch (sam::to_char(lhs))
 		{
 			case 'D':
 			case 'N':
 			{
-				auto const cc(rhs.to_char());
+				auto const cc(sam::to_char(rhs));
 				return ('D' == cc || 'N' == cc);
 			}
 				
 			case 'H':
 			case 'P':
 			{
-				auto const cc(rhs.to_char());
+				auto const cc(sam::to_char(rhs));
 				return ('H' == cc || 'P' == cc);
 			}
 				
@@ -199,11 +194,32 @@ namespace {
 		
 		return lhs == rhs;
 	}
-
 	
-	template <typename t_aln_record> // FIXME: try to find a way to get the sequence type crom t_aln_record instead of assuming dna5.
+	
+	// We use this structure to preprocess the given alignment record.
+	// Currently the reference length is cached, since determining it from the alignment record
+	// itself seems difficult.
+	struct record : public sam::record
+	{
+		record_length	rec_length;
+		
+		auto reference_position() const { return this->pos; }
+		std::size_t reference_length() const { return rec_length.reference_length; }
+		std::size_t reference_end() const { return reference_position() + reference_length(); }
+		std::size_t right_anchored_length() const { return rec_length.right_anchored_length; }
+		
+		inline bool try_read_aligned_sequence(
+			std::size_t const var_pos,
+			std::size_t const var_ref_len,
+			std::size_t const var_alt_len,
+			panvc3::dna11_vector &dst, // FIXME: dna11 only if the source is dna5.
+			bool const should_include_clipping
+		) const;
+	};
+	
+	
 	bool try_read_aligned_sequence(
-		t_aln_record const &aln_record,
+		record const &aln_record,
 		std::size_t const rec_len,
 		std::size_t const var_pos,
 		std::size_t var_ref_len,
@@ -214,40 +230,37 @@ namespace {
 	{
 		// Caller checks that the variant is contained in the read.
 		using panvc3::operator""_dna11;
-		using seqan3::literals::operator""_cigar_operation;
+		using sam::operator""_cigar_operation;
 		
 		dst.clear();
 		auto const var_ref_len_(var_ref_len);
 		auto const var_alt_len_(var_alt_len);
 		
 		// Process the CIGAR string and read the characters the alignment suggests.
-		auto const &seq(aln_record.sequence()); // std::vector <seqan3::dna5> by default.
-		auto const &cigar_seq(aln_record.cigar_sequence());
+		auto const &seq(aln_record.seq);
+		auto const &cigar_seq(aln_record.cigar);
 		auto it(cigar_seq.begin());
 		auto const end(cigar_seq.end());
 
 		try
 		{
-			auto const rec_pos_(aln_record.reference_position());
-			libbio_assert(rec_pos_);
-			libbio_assert_lte(0, *rec_pos_);
-			std::size_t rec_pos(*rec_pos_);
+			auto rec_pos(aln_record.pos); // alignment_reader checks for invalid position.
+			libbio_assert_lte(0, rec_pos);
 			libbio_assert_lte(rec_pos, var_pos);
 			libbio_assert_lte(var_pos + var_ref_len, rec_pos + rec_len);
 			
-			panvc3::cigar_count_type op_count{};
-			seqan3::cigar::operation operation{};
+			sam::cigar_run::count_type op_count{};
+			sam::cigar_operation operation;
 			std::size_t seg_pos{};
 			for (; it != end; ++it)
 			{
-				using seqan3::get;
-				op_count = get <0>(*it);
-				operation = get <1>(*it);
+				op_count = it->count();
+				operation = it->operation();
 				
 				if (rec_pos < var_pos)
 				{
 					// Find the variant position in the aligned segment.
-					auto const operation_(operation.to_char());
+					auto const operation_(sam::to_char(operation));
 					switch (operation_)
 					{
 						case 'M':	// Consume both query and reference.
@@ -291,7 +304,7 @@ namespace {
 				
 				// Read the aligned sequence.
 				// Reached iff. var_pos ≤ rec_pos or op_count is non-zero as a result of the last subtraction.
-				auto const operation_(operation.to_char());
+				auto const operation_(sam::to_char(operation));
 				switch (operation_)
 				{
 					case 'M': // Consume both query and reference.
@@ -377,9 +390,8 @@ namespace {
 				auto const prev_operation(operation);
 				for (; it != end; ++it)
 				{
-					using seqan3::get;
-					op_count = get <0>(*it);
-					operation = get <1>(*it);
+					op_count = it->count();
+					operation = it->operation();
 					
 					if ('S'_cigar_operation == operation)
 					{
@@ -393,7 +405,7 @@ namespace {
 						break;
 					
 					// Continue with the same operation.
-					auto const operation_(operation.to_char());
+					auto const operation_(sam::to_char(operation));
 					switch (operation_)
 					{
 						case 'I': // Consumes query.
@@ -435,44 +447,16 @@ namespace {
 	}
 	
 	
-	// We use this structure to preprocess the given alignment record.
-	// Currently the reference length is cached, since determining it from the alignment record
-	// itself seems difficult.
-	template <typename t_aln_record>
-	struct record
+	bool record::try_read_aligned_sequence(
+		std::size_t const var_pos,
+		std::size_t const var_ref_len,
+		std::size_t const var_alt_len,
+		panvc3::dna11_vector &dst, // FIXME: dna11 only if the source is dna5.
+		bool const should_include_clipping
+	) const
 	{
-		t_aln_record	alignment_record;
-		record_length	rec_length;
-		
-		record(t_aln_record &alignment_record_, record_length const rec_length_):
-			alignment_record(alignment_record_),
-			rec_length(rec_length_)
-		{
-			libbio_assert(alignment_record.reference_position().has_value()); // Make sure that the optional holds a value.
-		}
-
-		explicit record(t_aln_record &alignment_record_):
-			record(alignment_record_, calculate_record_lengths(alignment_record))
-		{
-		}
-		
-		auto reference_position() const { return *alignment_record.reference_position(); }
-		std::size_t reference_length() const { return rec_length.reference_length; }
-		std::size_t reference_end() const { return reference_position() + reference_length(); }
-		std::size_t right_anchored_length() const { return rec_length.right_anchored_length; }
-		
-		// FIXME: try to find a way to get the sequence type from t_aln_record, i.e. dna11 only if the source is dna5.
-		bool try_read_aligned_sequence(
-			std::size_t const var_pos,
-			std::size_t const var_ref_len,
-			std::size_t const var_alt_len,
-			panvc3::dna11_vector &dst,
-			bool const should_include_clipping
-		) const
-		{
-			return ::try_read_aligned_sequence(alignment_record, reference_length(), var_pos, var_ref_len, var_alt_len, dst, should_include_clipping);
-		}
-	};
+		return ::try_read_aligned_sequence(*this, reference_length(), var_pos, var_ref_len, var_alt_len, dst, should_include_clipping);
+	}
 	
 	
 	struct reference_position_cmp
@@ -485,43 +469,11 @@ namespace {
 	};
 	
 	
-	constexpr static auto sam_reader_fields()
-	{
-		return seqan3::fields <
-			seqan3::field::ref_id,
-			seqan3::field::ref_offset,
-			seqan3::field::mate,
-			seqan3::field::seq,
-			seqan3::field::flag,
-			seqan3::field::cigar
-		>{};
-	}
-	
-	
-	static auto open_alignment_input_file(fs::path const &path)
-	{
-		return seqan3::sam_file_input(path, sam_reader_fields());
-	}
-	
-	
-	template <typename t_format>
-	static auto open_alignment_input_stream(std::istream &stream, t_format &&format)
-	{
-		return seqan3::sam_file_input(stream, std::forward <t_format>(format), sam_reader_fields());
-	}
-	
-	
-	template <typename t_aln_input>
 	class alignment_reader
 	{
 	public:
-		typedef typename t_aln_input::traits_type				alignment_input_traits_type;
-		typedef typename alignment_input_traits_type::ref_ids	reference_ids_type;
-		typedef typename t_aln_input::iterator					alignment_iterator_type;
-		typedef typename t_aln_input::sentinel					alignment_sentinel_type;
-		typedef typename t_aln_input::record_type				alignment_record_type;
-		typedef record <alignment_record_type>					record_type;
-		typedef std::set <record_type, reference_position_cmp>	record_set;
+		typedef sam::record_reader <record>					record_reader_type;
+		typedef std::set <record, reference_position_cmp>	record_set;
 		
 		struct alignment_statistics
 		{
@@ -534,36 +486,38 @@ namespace {
 		};
 		
 	protected:
-		alignment_iterator_type		m_it;
-		alignment_sentinel_type		m_end;
+		panvc3::alignment_input		m_alignment_input;
+		record_reader_type			m_record_reader;
 		std::vector <bool>			m_target_contigs;
 		record_set					m_candidate_records;
 		alignment_statistics		m_statistics{};
 		std::size_t					m_prev_record_pos{};
 		bool						m_should_consider_primary_alignments_only{};
-		bool						m_requires_same_config_prefix_in_next{};
+		bool						m_requires_same_contig_prefix_in_next{};
+		bool						m_can_continue{};
 		
 		
 	public:
 		alignment_reader(
-			t_aln_input &aln_input,
+			panvc3::alignment_input &&aln_input,
 			char const *contig,
-            bool const should_treat_contig_as_prefix,
+			bool const should_treat_contig_as_prefix,
 			bool const should_consider_primary_alignments_only,
-			bool const requires_same_config_prefix_in_next
+			bool const requires_same_contig_prefix_in_next
 		):
-			m_it(aln_input.begin()),
-			m_end(aln_input.end()),
-			m_target_contigs(aln_input.header().ref_ids().size()),
+			m_alignment_input(std::move(aln_input)),
+			m_target_contigs(aln_input.header.reference_sequences.size()),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
-			m_requires_same_config_prefix_in_next(requires_same_config_prefix_in_next)
+			m_requires_same_contig_prefix_in_next(requires_same_contig_prefix_in_next),
+			m_can_continue(m_record_reader.prepare_one(m_alignment_input.header, m_alignment_input.input_range))
 		{
 			if (!contig)
 				m_target_contigs.flip(); // Allow all.
 			else
 			{
-				for (auto const &[idx, rname] : rsv::enumerate(aln_input.header().ref_ids()))
+				for (auto const &[idx, ref] : rsv::enumerate(aln_input.header.reference_sequences))
 				{
+					auto const &rname(ref.name);
 					if (should_treat_contig_as_prefix ? rname.starts_with(contig) : rname == contig)
 						m_target_contigs[idx] = true;
 				}
@@ -580,22 +534,26 @@ namespace {
 				return rec.reference_end() <= var_pos;
 			});
 			
+			if (!m_can_continue)
+				return;
+			
 			// Iterate over the alignment records.
-			for (; m_it != m_end; ++m_it)
+			do
 			{
+				auto &aln_rec(m_record_reader.record());
+				
 				++m_statistics.reads_processed;
 				if (0 == m_statistics.reads_processed % 10000000)
 					lb::log_time(std::cerr) << "Processed " << m_statistics.reads_processed << " reads…\n";
 				
 				// If POS is zero, skip the record.
-				auto &aln_rec(*m_it);
-				auto const flags(aln_rec.flag());
+				auto const flags(aln_rec.flag);
 				
 				if (lb::to_underlying(flags & (
-					seqan3::sam_flag::unmapped					|
-					seqan3::sam_flag::failed_filter				|
-					seqan3::sam_flag::duplicate					|
-					seqan3::sam_flag::supplementary_alignment
+					sam::flag::unmapped					|
+					sam::flag::failed_filter			|
+					sam::flag::duplicate				|
+					sam::flag::supplementary_alignment
 				))) // Ignore unmapped, filtered, duplicate and supplementary.
 				{
 					++m_statistics.flags_not_matched;
@@ -603,21 +561,21 @@ namespace {
 				}
 				
 				// Ignore secondary if requested.
-				if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & seqan3::sam_flag::secondary_alignment))
+				if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & sam::flag::secondary_alignment))
 				{
 					++m_statistics.flags_not_matched;
 					continue;
 				}
 				
 				// Check the contig name if requested.
-				auto const ref_id(aln_rec.reference_id());
-				if (!ref_id.has_value())
+				auto const ref_id(aln_rec.rname_id);
+				if (sam::INVALID_REFERENCE_ID == ref_id)
 				{
 					++m_statistics.ref_id_mismatches;
 					continue;
 				}
 
-				if (!m_target_contigs[*ref_id])
+				if (!m_target_contigs[ref_id])
 				{
 					++m_statistics.ref_id_mismatches;
 					continue;
@@ -626,30 +584,29 @@ namespace {
 				// Check the contig prefix of the next primary alignment.
 				// (Currently we do not try to determine the reference ID of all the possible alignments
 				// of the next read.)
-				if (m_requires_same_config_prefix_in_next)
+				if (m_requires_same_contig_prefix_in_next)
 				{
-					auto const mate_ref_id(aln_rec.mate_reference_id());
-					if (!mate_ref_id.has_value())
+					auto const mate_ref_id(aln_rec.rnext_id);
+					if (sam::INVALID_REFERENCE_ID == mate_ref_id)
 					{
 						++m_statistics.mate_ref_id_mismatches;
 						continue;
 					}
 					
-					if (!m_target_contigs[*mate_ref_id])
+					if (!m_target_contigs[mate_ref_id])
 					{
 						++m_statistics.mate_ref_id_mismatches;
 						continue;
 					}
 				}
 				
-				auto const rec_ref_pos_(aln_rec.reference_position());
-				if (!rec_ref_pos_.has_value())
+				auto const rec_ref_pos(aln_rec.pos);
+				if (sam::INVALID_POSITION == rec_ref_pos)
 				{
 					++m_statistics.flags_not_matched;
 					continue;
 				}
 				
-				auto const rec_ref_pos(*rec_ref_pos_);
 				// The following assertion checks that rec_ref_pos is non-negative, too.
 				libbio_always_assert_lte(m_prev_record_pos, rec_ref_pos); // FIXME: error message: alignments need to be sorted by position.
 				
@@ -673,8 +630,13 @@ namespace {
 				// We could calculate the number of matched reads from the other statistics
 				// but having a separate variable is safer w.r.t. potential bugs.
 				++m_statistics.matched_reads;
-				m_candidate_records.emplace(aln_rec, rec_lengths);
-			}
+				aln_rec.rec_length = rec_lengths;
+				auto const res(m_candidate_records.emplace(aln_rec));
+				libbio_assert(res.second);
+			} while (m_record_reader.prepare_one(m_alignment_input.header, m_alignment_input.input_range));
+			
+			// Reached iff. prepare_one() above returns false.
+			m_can_continue = false;
 		}
 	};
 	
@@ -743,15 +705,11 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_input>
-	void process_(
-		t_aln_input &aln_input,
-		gengetopt_args_info const &args_info
-	)
+	void process(gengetopt_args_info const &args_info)
 	{
 		// Overview of the algorithm
 		// =========================
-		// – Process the VCF and SAM/BAM records from the smallest co-ordinate to the largest.
+		// – Process the VCF and SAM records from the smallest co-ordinate to the largest.
 		// – For each VCF record, determine the set of alignments where the REF sequence of the variant
 		//   is fully contained in the alignment. Process each such alignment.
 		// – Find the starting point of the variant in question within the alignment.
@@ -771,6 +729,15 @@ namespace {
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
 		bool const requires_same_contig_or_prefix_in_next(args_info.same_ref_flag);
 		bool const should_anchor_reads_left_only(args_info.anchor_left_flag);
+		
+		// Open the alignment file.
+		alignment_reader aln_reader(
+			panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg),
+			args_info.contig_arg,
+			should_treat_contig_as_prefix,
+			should_consider_primary_alignments_only,
+			requires_same_contig_or_prefix_in_next
+		);
 		
 		// Open the VCF file.
 		vcf::stream_input <lb::file_istream> vcf_input;
@@ -803,13 +770,6 @@ namespace {
 			bed_reader.read_regions(regions_path, delegate);
 		}
 		
-		alignment_reader aln_reader(
-			aln_input,
-			args_info.contig_arg,
-			should_treat_contig_as_prefix,
-			should_consider_primary_alignments_only,
-			requires_same_contig_or_prefix_in_next
-		);
 		std::map <panvc3::dna11_vector, std::size_t> supported_sequences;
 		panvc3::dna11_vector buffer;
 		variant_statistics var_statistics;
@@ -981,23 +941,6 @@ namespace {
 		}
 		
 		lb::log_time(std::cerr) << "Done.\n";
-	}
-
-
-	void process(gengetopt_args_info const &args_info)
-	{
-		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
-		if (args_info.alignments_arg)
-		{
-			fs::path const alignments_path(args_info.alignments_arg);
-			auto aln_input(open_alignment_input_file(alignments_path));
-			process_(aln_input, args_info);
-		}
-		else
-		{
-			auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_sam{}));
-			process_(aln_input, args_info);
-		}
 	}
 }
 

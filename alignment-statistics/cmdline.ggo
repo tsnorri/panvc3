@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023 Tuukka Norri
+# Copyright (c) 2022-2024 Tuukka Norri
 # This code is licensed under MIT license (see LICENSE for details).
 
 package		"alignment-statistics"
@@ -9,7 +9,6 @@ description	"Currently coverage per position and the number of alignments for ea
 
 section "Input options"
 option		"alignments"		a	"Alignment file path"														string	typestr = "filename"					optional
-option		"bam-input"			b	"Input read from stdin is in BAM format"									flag	off
 
 section "Alignment options"
 option		"rname"				r	"Filter alignments by the given RNAME"										string											optional	multiple

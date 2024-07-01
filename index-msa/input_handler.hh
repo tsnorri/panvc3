@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -60,8 +60,16 @@ namespace panvc3::msa_indices {
 		) override
 		{
 			m_pipe_command.back() = path;
-			auto subprocess(subprocess_type::subprocess_with_arguments(m_pipe_command));
-			cb(subprocess.stdout_handle());
+			subprocess_type subprocess;
+			auto const status(subprocess.open(m_pipe_command));
+			if (status)
+			{
+				cb(subprocess.stdout_handle());
+				return;
+			}
+			
+			status.output_status(std::cerr, true);
+			std::exit(EXIT_FAILURE);
 		}
 	};
 }

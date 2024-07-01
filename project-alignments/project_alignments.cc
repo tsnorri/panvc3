@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -782,7 +782,7 @@ namespace {
 			
 			{
 				// Store the original NM value.
-				auto const original_nm(aln_rec.optional_fields.template get_ <"NM"_tag>());
+				auto const original_nm(aln_rec.optional_fields.template get <"NM"_tag>());
 				
 				// Remove the non-preserved tags.
 				aln_rec.optional_fields.erase_if(

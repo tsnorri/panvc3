@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -9,16 +9,18 @@
 #include <filesystem>
 #include <iostream>
 #include <libbio/assert.hh>
+#include <libbio/file_handle.hh>
+#include <libbio/file_handling.hh>
+#include <libbio/sam.hh>
 #include <map>
 #include <mutex>
+#include <panvc3/alignment_input.hh>
 #include <panvc3/cigar.hh>
 #include <panvc3/compressed_fasta_reader.hh>
 #include <panvc3/sam_tag.hh>
 #include <panvc3/utility.hh>
 #include <range/v3/view/enumerate.hpp>
 #include <regex>
-#include <seqan3/alphabet/cigar/cigar.hpp>
-#include <seqan3/io/sam_file/all.hpp>
 #include <syncstream>
 #include <thread>
 #include <vector>
@@ -27,6 +29,7 @@
 namespace chrono	= std::chrono;
 namespace fs		= std::filesystem;
 namespace lb		= libbio;
+namespace sam		= libbio::sam;
 namespace rsv		= ranges::views;
 
 
@@ -108,17 +111,15 @@ namespace {
 	}
 	
 	
-	template <typename t_header>
-	void append_program_info(t_header const &input_header, t_header &output_header, int const argc, char const * const * const argv)
+	void append_program_info(sam::header &output_header, int const argc, char const * const * const argv)
 	{
-		output_header.program_infos = input_header.program_infos;
-		panvc3::append_sam_program_info_seqan3(
+		panvc3::append_sam_program_info(
 			"panvc3.rewrite-cigar.",
 			"PanVC 3 rewrite_cigar",
 			argc,
 			argv,
 			CMDLINE_PARSER_VERSION,
-			output_header.program_infos
+			output_header.programs
 		);
 	}
 
@@ -149,20 +150,19 @@ namespace {
 	
 	
 	void rewrite_cigar_alignment_match(
-		std::vector <seqan3::cigar> &cigar_seq, // non-const for swapping.
-		panvc3::cigar_buffer &cigar_output
+		std::vector <sam::cigar_run> &cigar_seq, // non-const for swapping.
+		panvc3::cigar_buffer_libbio &cigar_output
 	)
 	{
-		using seqan3::get;
-		using seqan3::operator""_cigar_operation;
+		using sam::operator""_cigar_operation;
 		
 		cigar_output.clear();
 		
-		for (auto const &item : cigar_seq)
+		for (auto const &cigar_run : cigar_seq)
 		{
-			auto const count(get <0>(item));
-			auto const op(get <1>(item));
-			auto const op_(op.to_char());
+			auto const count(cigar_run.count());
+			auto const op(cigar_run.operation());
+			auto const op_(sam::to_char(op));
 			
 			switch (op_)
 			{
@@ -197,41 +197,40 @@ namespace {
 		std::vector <char> const &ref,
 		std::size_t const ref_base_pos,
 		t_query_seq const &query_seq,
-		std::vector <seqan3::cigar> const &cigar_seq,
-		std::vector <seqan3::cigar> &cigar_output,
+		std::vector <sam::cigar_run> const &cigar_seq,
+		std::vector <sam::cigar_run> &cigar_output,
 		std::vector <std::uint8_t> &ref_n_positions_output
 	)
 	{
-		using seqan3::get;
-		using seqan3::operator""_cigar_operation;
+		using sam::operator""_cigar_operation;
 
 		cigar_output.clear();
 		ref_n_positions_output.clear();
 		
 		std::size_t query_pos{};
 		std::size_t ref_pos{};
-		for (auto const &item : cigar_seq)
+		for (auto const &cigar_run : cigar_seq)
 		{
-			auto const count(get <0>(item));
-			auto const op(get <1>(item));
-			auto const op_(op.to_char());
+			auto const count(cigar_run.count());
+			auto const op(cigar_run.operation());
+			auto const op_(sam::to_char(op));
 			
 			switch (op_)
 			{
 				case 'H':	// Hard clipping, consumes nothing.
 				case 'P':	// Padding (silent deletion from padded reference), consumes nothing.
-					cigar_output.push_back(item);
+					cigar_output.push_back(cigar_run);
 					break;
 					
 				case 'I':	// Insertion, consumes query.
 				case 'S':	// Soft clipping, consumes query.
-					cigar_output.push_back(item);
+					cigar_output.push_back(cigar_run);
 					query_pos += count;
 					break;
 				
 				case '=':	// Match, consumes both.
 				case 'X':	// Mismatch, consumes both.
-					cigar_output.push_back(item);
+					cigar_output.push_back(cigar_run);
 					fill_ref_n_positions(ref, ref_n_positions_output, ref_base_pos, ref_pos, count);
 					query_pos += count;
 					ref_pos += count;
@@ -239,7 +238,7 @@ namespace {
 				
 				case 'D':	// Deletion, consumes reference.
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
-					cigar_output.push_back(item);
+					cigar_output.push_back(cigar_run);
 					fill_ref_n_positions(ref, ref_n_positions_output, ref_base_pos, ref_pos, count);
 					ref_pos += count;
 					break;
@@ -250,27 +249,21 @@ namespace {
 					fill_ref_n_positions(ref, ref_n_positions_output, ref_base_pos, ref_pos, count);
 
 					std::size_t prev_count(1);
-					auto prev_op(query_seq[query_pos].to_char() == ref[ref_base_pos + ref_pos] ? '='_cigar_operation : 'X'_cigar_operation);
+					auto prev_op(query_seq[query_pos] == ref[ref_base_pos + ref_pos] ? '='_cigar_operation : 'X'_cigar_operation);
 					for (std::size_t i(1); i < count; ++i)
 					{
-						auto const curr_op(query_seq[query_pos + i].to_char() == ref[ref_base_pos + ref_pos + i] ? '='_cigar_operation : 'X'_cigar_operation);
+						auto const curr_op(query_seq[query_pos + i] == ref[ref_base_pos + ref_pos + i] ? '='_cigar_operation : 'X'_cigar_operation);
 						if (curr_op == prev_op)
 							++prev_count;
 						else
 						{
-							auto &new_item(cigar_output.emplace_back());
-							new_item = prev_count; // Assigns to one element.
-							new_item = prev_op;
-							
+							auto &new_item(cigar_output.emplace_back(prev_op, prev_count));
 							prev_count = 1;
 							prev_op = curr_op;
 						}
 					}
 					
-					auto &new_item(cigar_output.emplace_back());
-					new_item = prev_count;
-					new_item = prev_op;
-
+					auto &new_item(cigar_output.emplace_back(prev_op, prev_count));
 					ref_pos += count;
 					query_pos += count;
 					break;
@@ -328,10 +321,9 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_input, typename t_aln_output>
 	void process_alignments_alignment_match(
-		t_aln_input &&aln_input,
-		t_aln_output &&aln_output,
+		panvc3::alignment_input &aln_input,
+		std::ostream &os,
 		std::uint16_t const status_output_interval
 	)
 	{
@@ -339,16 +331,20 @@ namespace {
 		std::uint64_t rec_idx{};
 		panvc3::timer status_output_timer;
 		auto status_output_thread(start_status_output_thread(status_output_timer, rec_idx, status_output_interval));
-		panvc3::cigar_buffer cigar_buffer;
+		panvc3::cigar_buffer_libbio cigar_buffer;
 		
-		for (auto &aln_rec : aln_input)
-		{
-			++rec_idx;
-			aln_rec.header_ptr() = &aln_output.header();
-			
-			rewrite_cigar_alignment_match(aln_rec.cigar_sequence(), cigar_buffer);
-			aln_output.push_back(aln_rec);
-		}
+		aln_input.read_records(
+			[
+				&aln_input,
+				&os,
+				&rec_idx,
+				&cigar_buffer
+			](sam::record &aln_rec){
+				++rec_idx;
+				rewrite_cigar_alignment_match(aln_rec.cigar, cigar_buffer);
+				sam::output_record(os, aln_input.header, aln_rec);
+			}
+		);
 		
 		status_output_timer.stop();
 		if (status_output_thread.joinable())
@@ -356,76 +352,87 @@ namespace {
 	}
 	
 	
-	template <typename t_aln_input, typename t_aln_output>
 	void process_alignments_sequence_match(
-		t_aln_input &&aln_input,
-		t_aln_output &&aln_output,
+		panvc3::alignment_input &aln_input,
+		std::ostream &os,
 		char const *ref_path,
-		panvc3::seqan3_sam_tag_type const ref_n_positions_tag,
+		sam::tag_type const ref_n_positions_tag,
 		std::uint16_t const status_output_interval
 	)
 	{
+		typedef std::vector <std::uint8_t> n_positions_buffer_type;
+		
 		// Load the reference sequences.
 		lb::log_time(std::cerr) << "Loading the reference sequences…\n";
 		panvc3::compressed_fasta_reader fasta_reader;
 		fasta_reader.open_path(ref_path);
 		
 		sequence_buffer_store reference_buffer_store;
-		auto const &ref_names(aln_input.header().ref_ids());
+		auto const &ref_entries(aln_input.header.reference_sequences);
 		
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		std::uint64_t rec_idx{};
 		panvc3::timer status_output_timer;
 		auto status_output_thread(start_status_output_thread(status_output_timer, rec_idx, status_output_interval));
-		std::vector <seqan3::cigar> cigar_buffer;
-		std::vector <std::uint8_t> n_positions_buffer;
-		for (auto &aln_rec : aln_input)
-		{
-			++rec_idx;
-			aln_rec.header_ptr() = &aln_output.header();
-			
-			auto const pos_(aln_rec.reference_position());
-			if (!pos_.has_value())
-			{
-				aln_output.push_back(aln_rec);
-				continue;
-			}
-			auto const pos(*pos_);
-			
-			auto const &ref_id_(aln_rec.reference_id());
-			if (!ref_id_.has_value())
-			{
-				aln_output.push_back(aln_rec);
-				continue;
-			}
-			auto const ref_id(*ref_id_);
-			
-			// Load the sequence if needed.
-			auto &buffer(reference_buffer_store.get_buffer(ref_id, rec_idx));
-			if (buffer.empty())
-			{
-				auto const &ref_name(ref_names[ref_id]);
-				lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence '" << ref_name << "'…\n" << std::flush;
-				if (!fasta_reader.read_sequence(ref_name, buffer))
+		std::vector <sam::cigar_run> cigar_buffer;
+		n_positions_buffer_type n_positions_buffer;
+		
+		aln_input.read_records(
+			[
+				&aln_input,
+				&os,
+				&fasta_reader,
+				&reference_buffer_store,
+				&ref_entries,
+				&rec_idx,
+				&cigar_buffer,
+				&n_positions_buffer,
+				ref_n_positions_tag
+			](sam::record &aln_rec){
+				++rec_idx;
+				
+				auto const pos(aln_rec.pos);
+				if (sam::INVALID_POSITION == pos)
 				{
-					std::osyncstream(std::cerr) << "ERROR: Unable to load sequence ‘" << ref_name << "’ from the input FASTA.\n" << std::flush;
-					std::abort();
+					sam::output_record(os, aln_input.header, aln_rec);
+					return;
 				}
-				lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
+				
+				auto const ref_id(aln_rec.rname_id);
+				if (sam::INVALID_REFERENCE_ID == ref_id)
+				{
+					sam::output_record(os, aln_input.header, aln_rec);
+					return;
+				}
+				
+				// Load the sequence if needed.
+				auto &buffer(reference_buffer_store.get_buffer(ref_id, rec_idx));
+				if (buffer.empty())
+				{
+					auto const &ref_entry(ref_entries[ref_id]);
+					auto const &ref_name(ref_entry.name);
+					lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence ‘’" << ref_name << "’…\n" << std::flush;
+					if (!fasta_reader.read_sequence(ref_name, buffer))
+					{
+						std::osyncstream(std::cerr) << "ERROR: Unable to load sequence ‘" << ref_name << "’ from the input FASTA.\n" << std::flush;
+						std::abort();
+					}
+					lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
+				}
+				
+				rewrite_cigar_sequence_match(buffer, pos, aln_rec.seq, aln_rec.cigar, cigar_buffer, n_positions_buffer);
+				// SAM reference does not state that empty arrays are not allowed (I think) but Samtools reports a parse error anyway.
+				if (!n_positions_buffer.empty())
+					aln_rec.optional_fields.obtain <n_positions_buffer_type>(ref_n_positions_tag) = n_positions_buffer;
+			
+				{
+					using std::swap;
+					swap(aln_rec.cigar, cigar_buffer);
+				}
+			
+				sam::output_record(os, aln_input.header, aln_rec);
 			}
-			
-			rewrite_cigar_sequence_match(buffer, pos, aln_rec.sequence(), aln_rec.cigar_sequence(), cigar_buffer, n_positions_buffer);
-			// SAM reference does not state that empty arrays are not allowed (I think) but Samtools reports a parse error anyway.
-			if (!n_positions_buffer.empty())
-				aln_rec.tags()[ref_n_positions_tag] = n_positions_buffer;
-			
-			{
-				using std::swap;
-				swap(aln_rec.cigar_sequence(), cigar_buffer);
-			}
-			
-			aln_output.push_back(aln_rec);
-		}
+		);
 		
 		status_output_timer.stop();
 		if (status_output_thread.joinable())
@@ -435,45 +442,12 @@ namespace {
 	
 	void process(gengetopt_args_info const &args_info, int const argc, char * const * const argv)
 	{
-		// Sanity check.
-		if (args_info.alignments_arg && args_info.bam_input_flag)
-		{
-			std::cerr << "ERROR: --bam-input has no effect when reading input from a file.\n";
-			std::exit(EXIT_FAILURE);
-		}
-		
 		// Open the SAM input.
-		typedef seqan3::sam_file_input <> input_type;
-		auto aln_input{[&](){
-			auto const make_input_type([&]<typename t_fmt>(t_fmt &&fmt){
-				if (args_info.alignments_arg)
-				{
-					fs::path const path(args_info.alignments_arg);
-					return input_type(path);
-				}
-				else
-				{
-					return input_type(std::cin, std::forward <t_fmt>(fmt));
-				}
-			});
-
-			if (args_info.bam_input_flag)
-				return make_input_type(seqan3::format_bam{});
-			else
-				return make_input_type(seqan3::format_sam{});
-		}()};
-		auto const &input_ref_ids(aln_input.header().ref_ids()); // ref_ids() not const.
+		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
 		
-		typedef std::remove_cvref_t <decltype(input_ref_ids)>			ref_ids_type;
-		typedef seqan3::sam_file_output <
-			typename input_type::selected_field_ids,
-			seqan3::type_list <seqan3::format_sam, seqan3::format_bam>,
-			ref_ids_type
-		>																output_type;
-
 		// Tags.
 		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
-		auto const make_sam_tag([&tag_regex](char const *tag) -> panvc3::seqan3_sam_tag_type {
+		auto const make_sam_tag([&tag_regex](char const *tag) -> sam::tag_type {
 			if (!tag)
 				return 0;
 
@@ -484,7 +458,7 @@ namespace {
 			}
 
 			std::array <char, 2> buffer{tag[0], tag[1]};
-			return panvc3::to_tag(buffer);
+			return sam::to_tag(buffer);
 		});
 		auto const ref_n_positions_tag(make_sam_tag(args_info.ref_n_positions_tag_arg));
 		
@@ -495,46 +469,25 @@ namespace {
 			std::exit(EXIT_FAILURE);
 		}
 		
-		// Open the alignment output file.
-		auto aln_output{[&](){
-			// Make sure that aln_output has some header information.
-			auto const make_output_type([&]<typename t_fmt>(t_fmt &&fmt){
-				ref_ids_type empty_ref_ids;
-				if (args_info.output_path_arg)
-				{
-					return output_type(
-						fs::path{args_info.output_path_arg},
-						std::move(empty_ref_ids),
-						rsv::empty <std::size_t>()	// Reference lengths; the constructor expects a forward range.
-					);
-				}
-				else
-				{
-					return output_type(
-						std::cout,
-						std::move(empty_ref_ids),
-						rsv::empty <std::size_t>(),	// Reference lengths; the constructor expects a forward range.
-						std::forward <t_fmt>(fmt)
-					);
-				}
-			});
-
-			if (args_info.output_bam_flag)
-				return make_output_type(seqan3::format_bam{});
+		auto aln_output_fh{[&] -> lb::file_handle {
+			if (args_info.output_path_arg)
+				return lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE));
 			else
-				return make_output_type(seqan3::format_sam{});
+				return lb::file_handle(STDOUT_FILENO, false);
 		}()};
 		
+		lb::file_ostream os;
+		lb::open_stream_with_file_handle(os, aln_output_fh);
+		
 		// Prepare the output header.
-		aln_output.header().ref_ids() = input_ref_ids;
-		aln_output.header().ref_id_info = aln_input.header().ref_id_info;
-		aln_output.header().ref_dict = aln_input.header().ref_dict;
-		append_program_info(aln_input.header(), aln_output.header(), argc, argv);
+		auto &header(aln_input.header);
+		auto const &input_ref_ids(header.reference_sequences);
+		append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
 		
 		if (args_info.output_sequence_match_ops_given)
-			process_alignments_sequence_match(aln_input, aln_output, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
+			process_alignments_sequence_match(aln_input, os, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
 		else if (args_info.output_alignment_match_ops_given)
-			process_alignments_alignment_match(aln_input, aln_output, args_info.status_output_interval_arg);
+			process_alignments_alignment_match(aln_input, os, args_info.status_output_interval_arg);
 		else
 			libbio_fail("Unexpected mode");
 	}
@@ -560,7 +513,7 @@ int main(int argc, char **argv)
 	}
 
 	if (args_info.print_pid_given)
-		std::cerr << "PID: " << getpid() << '\n';
+		std::cerr << "PID: " << ::getpid() << '\n';
 	
 	process(args_info, argc, argv);
 	

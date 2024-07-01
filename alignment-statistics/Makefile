@@ -18,7 +18,7 @@ clean:
 	$(RM) $(OBJECTS) alignment_statistics cmdline.h cmdline.c
 
 alignment_statistics: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
+	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h

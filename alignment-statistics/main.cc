@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -21,15 +21,15 @@
 #include <libbio/assert.hh>
 #include <libbio/bits.hh>
 #include <libbio/file_handling.hh>
+#include <panvc3/alignment_input.hh>
 #include <range/v3/all.hpp>
-#include <seqan3/alphabet/cigar/cigar.hpp>
-#include <seqan3/io/sam_file/all.hpp>
+#include <set>
 #include "cmdline.h"
 
 namespace accs	= boost::accumulators;
-namespace fs	= std::filesystem;
 namespace lb	= libbio;
 namespace rsv	= ranges::views;
+namespace sam	= libbio::sam;
 
 
 namespace {
@@ -67,18 +67,15 @@ namespace {
 	};
 	
 	
-	template <typename t_aln_record>
-	std::size_t calculate_record_length(t_aln_record const &aln_record, bool const should_include_soft_clipping)
+	std::size_t calculate_record_length(sam::record const &aln_record, bool const should_include_soft_clipping)
 	{
 		std::size_t reference_length{};
 		
-		for (auto const &cigar_item : aln_record.cigar_sequence())
+		for (auto const &cigar_item : aln_record.cigar)
 		{
-			using seqan3::get;
-			
-			auto const op_count(get <0>(cigar_item));
-			auto const operation(get <1>(cigar_item));
-			auto const cc(operation.to_char());
+			auto const op_count(cigar_item.count());
+			auto const operation(cigar_item.operation());
+			auto const cc(sam::to_char(operation));
 			
 			switch (cc)
 			{
@@ -113,42 +110,13 @@ namespace {
 	}
 	
 	
-	constexpr static auto sam_reader_fields()
+	template <typename t_cb>
+	void process_alignments(panvc3::alignment_input &aln_input, gengetopt_args_info const &args_info, alignment_statistics &stats, t_cb &&cb)
 	{
-		return seqan3::fields <
-			seqan3::field::ref_id,
-			seqan3::field::ref_offset,
-			seqan3::field::mapq,
-			seqan3::field::mate,
-			seqan3::field::flag,
-			seqan3::field::cigar
-		>{};
-	}
-	
-	
-	static auto open_alignment_input_file(fs::path const &path)
-	{
-		return seqan3::sam_file_input(path, sam_reader_fields());
-	}
-	
-	
-	template <typename t_format>
-	static auto open_alignment_input_stream(std::istream &stream, t_format &&format)
-	{
-		return seqan3::sam_file_input(stream, std::forward <t_format>(format), sam_reader_fields());
-	}
-
-
-	template <typename t_aln_input, typename t_cb>
-	void process_alignments(t_aln_input &&aln_input, gengetopt_args_info const &args_info, alignment_statistics &stats, t_cb &&cb)
-	{
-		typedef typename std::remove_cvref_t <t_aln_input>::traits_type	alignment_input_traits_type;
-		typedef typename alignment_input_traits_type::ref_ids			reference_ids_type;
-		
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
 		bool const requires_same_contig_in_next(args_info.same_ref_flag);
 		
-		reference_ids_type const &reference_ids(aln_input.header().ref_ids());
+		auto const &reference_ids(aln_input.header.reference_sequences);
 		std::vector <std::size_t> filtered_ref_ids; // Filter == keep.
 		std::vector <std::size_t> ref_id_eq_classes(reference_ids.size(), SIZE_MAX);
 
@@ -158,8 +126,9 @@ namespace {
 			auto const *rname(args_info.rname_arg[i]);
 			std::string_view const rname_sv(rname);
 			
-			for (auto const &[ref_id, ref_name] : rsv::enumerate(reference_ids))
+			for (auto const &[ref_id, ref_entry] : rsv::enumerate(reference_ids))
 			{
+				auto const &ref_name(ref_entry.name);
 				if (ref_name == rname_sv || (args_info.rname_prefix_given && ref_name.starts_with(rname_sv)))
 				{
 					std::cerr << "Filtering by reference '" << ref_name << "' (" << ref_id << ").\n";
@@ -172,86 +141,94 @@ namespace {
 
 		std::size_t reads_processed{};
 
-		for (auto const &aln_rec : aln_input)
-		{
-			++reads_processed;
-			if (0 == reads_processed % 10000000)
-				lb::log_time(std::cerr) << "Processed " << reads_processed << " alignments…\n";
+		aln_input.read_records(
+			[
+				&cb,
+				&filtered_ref_ids,
+				&reads_processed,
+				&ref_id_eq_classes,
+				&stats,
+				requires_same_contig_in_next,
+				should_consider_primary_alignments_only
+			](sam::record const &aln_rec){
+				++reads_processed;
+				if (0 == reads_processed % 10000000)
+					lb::log_time(std::cerr) << "Processed " << reads_processed << " alignments…\n";
 			
-			// If POS is zero, skip the record.
-			auto const flags(aln_rec.flag());
-			
-			if (lb::to_underlying(flags & (
-				seqan3::sam_flag::unmapped					|
-				seqan3::sam_flag::failed_filter				|
-				seqan3::sam_flag::duplicate					|
-				seqan3::sam_flag::supplementary_alignment
-			))) // Ignore unmapped, filtered, duplicate and supplementary.
-			{
-				++stats.flags_not_matched;
-				continue;
-			}
-			
-			// Ignore secondary if requested.
-			if (should_consider_primary_alignments_only && lb::to_underlying(flags & seqan3::sam_flag::secondary_alignment))
-			{
-				++stats.flags_not_matched;
-				continue;
-			}
-			
-			// Check the contig name if requested.
-			if (!filtered_ref_ids.empty())
-			{
-				auto const ref_id(aln_rec.reference_id());
+				// If POS is zero, skip the record.
+				auto const flags(aln_rec.flag);
+				
+				if (std::to_underlying(flags & (
+					sam::flag::unmapped					|
+					sam::flag::failed_filter			|
+					sam::flag::duplicate				|
+					sam::flag::supplementary_alignment
+				))) // Ignore unmapped, filtered, duplicate and supplementary.
+				{
+					++stats.flags_not_matched;
+					return;
+				}
+				
+				// Ignore secondary if requested.
+				if (should_consider_primary_alignments_only && std::to_underlying(flags & sam::flag::secondary_alignment))
+				{
+					++stats.flags_not_matched;
+					return;
+				}
+				
+				// Check the contig name if requested.
+				if (!filtered_ref_ids.empty())
+				{
+					auto const ref_id(aln_rec.rname_id);
 
-				// Check the contig prefix for the current alignment.
-				if (!ref_id.has_value())
-				{
-					++stats.ref_id_mismatches;
-					continue;
-				}
-				
-				if (!std::binary_search(filtered_ref_ids.begin(), filtered_ref_ids.end(), *ref_id))
-				{
-					++stats.ref_id_mismatches;
-					continue;
-				}
-				
-				// Check the contig (prefix) of the next primary alignment.
-				// (Currently we do not try to determine the reference ID of all the possible alignments
-				// of the next read.)
-				if (requires_same_contig_in_next)
-				{
-					auto const mate_ref_id(aln_rec.mate_reference_id());
-					if (!mate_ref_id.has_value())
+					// Check the contig prefix for the current alignment.
+					if (sam::INVALID_REFERENCE_ID == ref_id)
 					{
-						++stats.mate_ref_id_mismatches;
-						continue;
+						++stats.ref_id_mismatches;
+						return;
 					}
+				
+					if (!std::binary_search(filtered_ref_ids.begin(), filtered_ref_ids.end(), ref_id))
+					{
+						++stats.ref_id_mismatches;
+						return;
+					}
+				
+					// Check the contig (prefix) of the next primary alignment.
+					// (Currently we do not try to determine the reference ID of all the possible alignments
+					// of the next read.)
+					if (requires_same_contig_in_next)
+					{
+						auto const mate_ref_id(aln_rec.rnext_id);
+						if (sam::INVALID_REFERENCE_ID == mate_ref_id)
+						{
+							++stats.mate_ref_id_mismatches;
+							return;
+						}
 					
-					if (ref_id_eq_classes[*ref_id] != ref_id_eq_classes[*mate_ref_id])
-					{
-						++stats.mate_ref_id_mismatches;
-						continue;
+						if (ref_id_eq_classes[ref_id] != ref_id_eq_classes[mate_ref_id])
+						{
+							++stats.mate_ref_id_mismatches;
+							return;
+						}
 					}
 				}
-			}
-			
-			auto const rec_ref_pos_(aln_rec.reference_position());
-			if (!rec_ref_pos_.has_value())
-			{
-				++stats.flags_not_matched;
-				continue;
-			}
+				
+				auto const rec_ref_pos(aln_rec.pos);
+				if (sam::INVALID_POSITION == rec_ref_pos)
+				{
+					++stats.flags_not_matched;
+					return;
+				}
 
-			cb(aln_rec);
-		}
+				cb(aln_rec);
+			}
+		);
 	}
 	
 	
-	template <typename t_aln_input>
 	void calculate_coverage(
-		t_aln_input &aln_input,
+		panvc3::alignment_input &aln_input,
 		alignment_statistics &stats,
 		gengetopt_args_info const &args_info
 	)
@@ -272,11 +249,10 @@ namespace {
 				&coverage_left,
 				&coverage_right
 			](auto const &aln_rec){
-				auto const rec_ref_pos_(aln_rec.reference_position());
+				auto const rec_ref_pos(aln_rec.pos); // Check done earlier.
 				
 				// The following assertion checks that rec_ref_pos is non-negative, too.
-				libbio_always_assert_lte(prev_record_pos, *rec_ref_pos_); // FIXME: error message: alignments need to be sorted by position.
-				std::size_t const rec_ref_pos(*rec_ref_pos_);
+				libbio_always_assert_lte(prev_record_pos, rec_ref_pos); // FIXME: error message: alignments need to be sorted by position.
 				auto const ref_length(calculate_record_length(aln_rec, should_include_clipping));
 				auto const rec_ref_end(rec_ref_pos + ref_length);
 				
@@ -332,9 +308,8 @@ namespace {
 	}
 
 
-	template <typename t_aln_input>
 	void count_alignments_by_contig(
-		t_aln_input &aln_input,
+		panvc3::alignment_input &aln_input,
 		alignment_statistics &stats,
 		gengetopt_args_info const &args_info
 	)
@@ -342,19 +317,18 @@ namespace {
 		lb::log_time(std::cerr) << "Counting alignments…\n";
 		std::cout << "CONTIG\tCOUNT\n";
 
-		auto const &ref_names_by_id(aln_input.header().ref_ids());
+		auto const &ref_names_by_id(aln_input.header.reference_sequences);
 		std::vector <std::size_t> counts_by_ref_id(ref_names_by_id.size(), 0);
 
 		process_alignments(aln_input, args_info, stats,
 			[
 				&counts_by_ref_id
 			](auto const &aln_rec){
-				auto const &ref_id(aln_rec.reference_id());
-				if (!ref_id.has_value())
+				auto const ref_id(aln_rec.rname_id);
+				if (sam::INVALID_REFERENCE_ID == ref_id)
 					return;
 
-				auto const ref_id_(*ref_id);
-				++counts_by_ref_id[ref_id_];
+				++counts_by_ref_id[ref_id];
 			}
 		);
 
@@ -363,9 +337,8 @@ namespace {
 	}
 
 
-	template <typename t_aln_input>
 	void mapq_histogram(
-		t_aln_input &aln_input,
+		panvc3::alignment_input &aln_input,
 		alignment_statistics &stats,
 		gengetopt_args_info const &args_info
 	)
@@ -380,7 +353,7 @@ namespace {
 			[
 				&histogram
 			](auto const &aln_rec){
-				auto const mapq(aln_rec.mapping_quality());
+				auto const mapq(aln_rec.mapq);
 				typedef decltype(mapq) mapq_type;
 				static_assert(std::numeric_limits <mapq_type>::max() < MAPQ_LIMIT);
 				++histogram[mapq];
@@ -397,9 +370,8 @@ namespace {
 	}
 
 
-	template <typename t_aln_input>
 	void mapq_box_plot(
-		t_aln_input &aln_input,
+		panvc3::alignment_input &aln_input,
 		alignment_statistics &stats,
 		gengetopt_args_info const &args_info
 	)
@@ -447,7 +419,7 @@ namespace {
 				&probabilities,
 				&print_cb
 			](auto const &aln_rec){
-				auto const rec_ref_pos(*aln_rec.reference_position()); // Check done earlier.
+				auto const rec_ref_pos(aln_rec.pos); // Check done earlier.
 				auto const bin(rec_ref_pos / bin_width);
 				if (bin != current_bin)
 				{
@@ -456,42 +428,13 @@ namespace {
 					acc = accumulator_type(accs::extended_p_square_probabilities = probabilities);
 				}
 
-				auto const mapq(aln_rec.mapping_quality());
+				auto const mapq(aln_rec.mapq);
 				if (mapq < 255) // Ignore invalid values.
 					acc(mapq);
 			}
 		);
 
 		print_cb();
-	}
-	
-	
-	template <typename t_cb>
-	void read_input(gengetopt_args_info const &args_info, t_cb &&cb)
-	{
-		// Open the SAM input. We expect the alignements to have been sorted by the leftmost co-ordinate.
-		if (args_info.alignments_arg)
-		{
-			if (args_info.bam_input_flag)
-				std::cerr << "WARNING: --bam-input has no effect when reading from file.\n";
-
-			fs::path const alignments_path(args_info.alignments_arg);
-			auto aln_input(open_alignment_input_file(alignments_path));
-			cb(aln_input);
-		}
-		else
-		{
-			if (args_info.bam_input_flag)
-			{
-				auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_bam{}));
-				cb(aln_input);
-			}
-			else
-			{
-				auto aln_input(open_alignment_input_stream(std::cin, seqan3::format_sam{}));
-				cb(aln_input);
-			}
-		}
 	}
 }
 
@@ -520,15 +463,17 @@ int main(int argc, char **argv)
 	}
 	
 	{
+		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
 		alignment_statistics stats;
+		
 		if (args_info.coverage_given)
-			read_input(args_info, [&stats, &args_info](auto &aln_input){ calculate_coverage(aln_input, stats, args_info); });
+			calculate_coverage(aln_input, stats, args_info);
 		else if (args_info.count_alignments_given)
-			read_input(args_info, [&stats, &args_info](auto &aln_input){ count_alignments_by_contig(aln_input, stats, args_info); });
+			count_alignments_by_contig(aln_input, stats, args_info);
 		else if (args_info.mapq_histogram_given)
-			read_input(args_info, [&stats, &args_info](auto &aln_input){ mapq_histogram(aln_input, stats, args_info); });
+			mapq_histogram(aln_input, stats, args_info);
 		else if (args_info.mapq_box_plot_given)
-			read_input(args_info, [&stats, &args_info](auto &aln_input){ mapq_box_plot(aln_input, stats, args_info); });
+			mapq_box_plot(aln_input, stats, args_info);
 		else
 		{
 			std::cerr << "ERROR: No mode given." << std::endl;
