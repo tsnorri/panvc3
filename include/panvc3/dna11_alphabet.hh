@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -9,6 +9,14 @@
 #include <seqan3/alphabet/nucleotide/dna5.hpp>
 
 namespace panvc3 {
+	
+	constexpr inline seqan3::dna5 dna5_from_char(char const cc)
+	{
+		seqan3::dna5 retval;
+		retval.assign_char(cc);
+		return retval;
+	}
+	
 	
 	// Alphabet for representing soft-clipped bases with lowercase letters.
 	// FIXME: this could be rewritten as a decorator.
@@ -27,9 +35,14 @@ namespace panvc3 {
 		constexpr dna11 &operator=(dna11 &&)		noexcept = default;
 		~dna11()									noexcept = default;
 		
-		constexpr dna11(seqan3::dna5 const cc, bool const is_clipped = false) noexcept // Not explicit.
+		/* implicit */ constexpr dna11(seqan3::dna5 const cc, bool const is_clipped = false) noexcept
 		{
 			assign_rank(cc.to_rank() + is_clipped * alphabet_size / 2);
+		}
+		
+		/* implicit */ constexpr dna11(char const cc, bool const is_clipped = false) noexcept:
+			dna11(dna5_from_char(cc), is_clipped)
+		{
 		}
 		
 		using base_t::base_t;
