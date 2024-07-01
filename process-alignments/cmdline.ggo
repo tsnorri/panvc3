@@ -1,0 +1,21 @@
+# Copyright (c) 2024 Tuukka Norri
+# This code is licensed under MIT license (see LICENSE for details).
+
+package		"process-alignments"
+version		"0.1"
+purpose		"Process the aligner output."
+usage		"process_alignments --alignments=alignments.sam [ ... ]"
+description	"The resulting alignments will be written to stdout. Currently only the SEQ field of non-primary alignments can be rewritten."
+
+section		"Input options"
+option		"alignments"				a	"Alignment file path"														string	typestr = "filename"	optional
+
+#section		"Processing options"
+#option		"rewrite-seq"				-	"Rewrite the SEQ field according to that of the primary alignment if empty"	flag	off
+
+section		"Output options"
+option		"output-path"				o	"Output path (stdin by default)"										string	typestr = "path"		optional
+
+section		"Debugging options"
+option		"print-invocation"			-	"Output the invocation to stderr"										flag	off									hidden
+option		"print-pid"					-	"Output the PID to stderr"												flag	off									hidden

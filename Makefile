@@ -21,6 +21,7 @@ BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
 					count-supporting-reads/count_supporting_reads \
 					index-msa/index_msa \
 					libpanvc3/libpanvc3.a \
+					process-alignments/process_alignments \
 					project-alignments/project_alignments \
 					recalculate-mapq/recalculate_mapq \
 					rewrite-cigar/rewrite_cigar \
@@ -88,6 +89,9 @@ index-msa/index_msa: lib/libbio/build-llvm/libbio.a $(LIBDISPATCH_LINUX_BIN)
 
 libpanvc3/libpanvc3.a:
 	$(MAKE) -C libpanvc3
+
+process-alignments/process_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+	$(MAKE) -C process-alignments
 
 project-alignments/project_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C project-alignments
