@@ -23,3 +23,5 @@ LIBDISPATCH_CXXFLAGS    =
 LIBDISPATCH_LDFLAGS     = 
 
 BOOST_LIBS = -L CONDA_PREFIX/lib -lboost_iostreams
+
+LDFLAGS	= -static
