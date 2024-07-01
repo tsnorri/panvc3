@@ -50,6 +50,10 @@
 /index-msa/cmdline.h
 /index-msa/config.h
 /index-msa/index_msa
+/process-alignments/cmdline.c
+/process-alignments/cmdline.h
+/process-alignments/config.h
+/process-alignments/process_alignments
 /project-alignments/cmdline.c
 /project-alignments/cmdline.h
 /project-alignments/config.h
