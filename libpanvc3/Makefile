@@ -5,7 +5,8 @@ include  $(MAKEFILE_DIR)/../make/$(OS_NAME)-gcc.mk
 include  $(MAKEFILE_DIR)/../make/common.mk
 include  $(MAKEFILE_DIR)/../make/seqan3.mk
 
-OBJECTS		=	cigar.o \
+OBJECTS		=	alignment_input.o \
+				cigar.o \
 				compressed_fasta_reader.o \
 				dispatch.o \
 				dispatch_event.o \
