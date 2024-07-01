@@ -178,6 +178,14 @@ int main(int argc, char **argv)
 	{
 		process(args_info, argc, argv);
 	}
+	catch (lb::parsing::parse_error const &exc)
+	{
+		std::cerr << "ERROR: " << exc << '\n';
+		auto const trace(boost::get_error_info <lb::traced>(exc));
+		if (trace)
+			std::cerr << "Stack trace:\n" << (*trace) << '\n';
+		return EXIT_FAILURE;
+	}
 	catch (std::exception const &exc)
 	{
 		std::cerr << "ERROR: Caught an exception: " << exc.what() << '\n';
