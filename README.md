@@ -2,7 +2,7 @@
 
 PanVC 3 is a set of tools to be used as part of a variant calling workflow that uses short reads as its input. The reads are aligned to an index generated from a multiple sequence alignment. A suitable index may be built from founder sequences.
 
-Running a variant calling workflow that utilises PanVC consists of the following phases:
+Running a variant calling workflow that utilises PanVC may consist of e.g. the following phases:
 
 - Generating founder sequences from known variants
 - Indexing the founder sequences
@@ -10,9 +10,32 @@ Running a variant calling workflow that utilises PanVC consists of the following
 
 The founder sequences may be generated with [vcf2multialign](https://github.com/tsnorri/vcf2multialign).
 
-## Testing
+## Academic Use
 
-A simple workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 as well as other required software automatically from [Anaconda](https://anaconda.org). Please see [README.md](test-workflow/README.md) in the subdirectory.
+If you use the software in an academic setting, we kindly ask you to cite [Tackling reference bias in genotyping by using founder sequences with PanVC 3](https://doi.org/10.1093/bioadv/vbae027).
+
+```TeX
+@article{Norri2024TacklingReferenceBias,
+  author = {Norri, Tuukka and Mäkinen, Veli},
+  title = {Tackling reference bias in genotyping by using founder sequences with PanVC 3},
+  journal = {Bioinformatics Advances},
+  volume = {4},
+  number = {1},
+  pages = {vbae027},
+  year = {2024},
+  month = {03},
+  issn = {2635-0041},
+  doi = {10.1093/bioadv/vbae027},
+  url = {https://doi.org/10.1093/bioadv/vbae027},
+  eprint = {https://academic.oup.com/bioinformaticsadvances/article-pdf/4/1/vbae027/56912765/vbae027.pdf},
+}
+```
+
+## Running
+
+A simple example workflow and test data are provided in the [test-workflow](test-workflow) subdirectory. The workflow downloads PanVC 3 as well as other required software automatically from [Anaconda](https://anaconda.org). Please see [README.md](test-workflow/README.md) in the subdirectory.
+
+A more complex workflow that uses Bowtie 2 and loads the settings using Snakemake’s configuration (e.g. a YAML file) is in the [bowtie2-workflow](bowtie2-workflow) subdirectory. Please see [README.md](bowtie2-workflow/README.md) in the subdirectory.
 
 ## Contents
 
@@ -42,7 +65,7 @@ A conda package can be built with conda-build as follows. The build script has b
 
 Conda-build will then report the location of the package from which binaries may be extracted.
 
-### By hand
+### By Hand
 
 The following software and libraries are required to build PanVC 3. The tested versions are also listed.
 

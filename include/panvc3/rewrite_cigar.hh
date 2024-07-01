@@ -93,6 +93,8 @@ namespace panvc3 {
 						else
 						{
 							// Non-gap; excess is equal to the unaligned position of the dst. character.
+							libbio_assert_lt(query_pos, query_seq.size());
+							libbio_assert_lt(excess, dst_seq.size());
 							auto const query_cc(query_seq[query_pos]);
 							auto const dst_cc(dst_seq[excess]);
 							

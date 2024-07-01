@@ -1,0 +1,17 @@
+"output_root":                        "output"                           # Output prefix, may be left empty (but please use snakemake --dry-run first).
+
+"alignment_id":                       "SAMPLE"                           # Some sample identifier
+"reference_fasta":                    "input/genome.fa"                  # Path to uncompressed reference FASTA
+
+# Path to the known variants s.t. the chromosome identifier is pasted in the middle.
+# Here we use the uncompressed (fix hopefully upcoming) 1000G variants.
+"known_variants_prefix":              "input/merged."
+"known_variants_suffix":              ".vcf"
+"chromosomes":                        ['test']
+
+"reads_1":                            "../test-workflow/reads/left.fq.gz" # gzipped FASTQ
+"reads_2":                            "../test-workflow/reads/right.fq.gz"
+
+# Founder sequence generation parameters.
+"founder_count":                      3
+"founder_minimum_component_distance": 5

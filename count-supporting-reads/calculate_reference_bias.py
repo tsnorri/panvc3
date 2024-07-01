@@ -1,4 +1,6 @@
-# Copyright (c) 2022 Tuukka Norri
+#!/usr/bin/env python3
+
+# Copyright (c) 2022-2023 Tuukka Norri
 # This code is licensed under MIT license (see LICENSE for details).
 
 import argparse

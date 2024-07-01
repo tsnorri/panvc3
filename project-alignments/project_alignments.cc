@@ -148,6 +148,7 @@ namespace {
 	{
 		std::size_t flags_not_matched{};
 		std::size_t ref_id_missing{};
+		std::size_t seq_missing{};
 		std::size_t matched_reads{};
 	};
 	
@@ -556,8 +557,7 @@ namespace {
 					m_current_rec_idx.store(rec_idx, std::memory_order_relaxed);
 					if (0 == (1 + rec_idx) % 10'000'000)
 						lb::log_time(std::osyncstream(std::cerr)) << "Processed " << (1 + rec_idx) << " alignments…\n" << std::flush;
-
-					if (m_status_output_interval)
+					
 					{
 						auto const pp(clock_type::now());
 						if (std::chrono::minutes(m_status_output_interval) <= chrono::duration_cast <chrono::minutes>(pp - prev_status_logging_time))
@@ -594,6 +594,12 @@ namespace {
 					if (sam::INVALID_POSITION == aln_rec.pos)
 					{
 						++m_statistics.flags_not_matched;
+						goto finish;
+					}
+					
+					if (aln_rec.seq.empty())
+					{
+						++m_statistics.seq_missing;
 						goto finish;
 					}
 					
@@ -1037,6 +1043,7 @@ namespace {
 		std::cerr << "Matched reads:     " << m_statistics.matched_reads << '\n';
 		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
+		std::cerr << "Sequence missing:  " << m_statistics.seq_missing << '\n';
 		
 		if (m_realn_range_output.is_open() && !m_should_keep_duplicate_realigned_ranges)
 			std::cerr << "Re-aligned ranges: " << m_realigned_ranges.size() << '\n';
@@ -1138,17 +1145,19 @@ namespace {
 				std::size_t idx{};
 				while (std::getline(stream, buffer))
 				{
-					std::string_view const ref_id(buffer);
+					std::string_view const buffer_(buffer);
+					auto const ref_id(buffer_.substr(0, buffer_.find('\t'))); // Find the first tabulator if one exists; for handling .fai input.
+
 					if (!unique_chr_ids.contains(ref_id))
 					{
-						std::cerr << "WARNING: Identifier ‘" << buffer << "’ specified in reference name order but does not appear in the alignments.\n";
+						std::cerr << "WARNING: Identifier ‘" << ref_id << "’ specified in reference name order but does not appear in the alignments.\n";
 						continue;
 					}
 
-					auto const res(output_ref_name_order.emplace(buffer, output_ref_name_value(idx, false)));
+					auto const res(output_ref_name_order.emplace(ref_id, output_ref_name_value(idx, false)));
 					if (!res.second)
 					{
-						std::cerr << "WARNING: Identifier ‘" << buffer << "’ specified in reference name order more than once.\n";
+						std::cerr << "WARNING: Identifier ‘" << ref_id << "’ specified in reference name order more than once.\n";
 						continue;
 					}
 
