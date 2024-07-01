@@ -59,7 +59,10 @@ namespace {
 		
 		// Output.
 		for (auto const &aln_rec : alignments)
+		{
 			sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
+			os << '\n';
+		}
 	}
 	
 	
