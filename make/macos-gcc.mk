@@ -7,7 +7,7 @@ OPT_FLAGS			?= -O2 -gdwarf-3
 ISYSROOT			?= -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
 
 CPPFLAGS			?= -D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_STACKTRACE_USE_NOOP -DLIBBIO_NO_DISPATCH
-LDFLAGS				?= -lz $(GCC_LDFLAGS)
+LDFLAGS				?= $(GCC_LDFLAGS)
 WARNING_FLAGS_		+= -Wno-deprecated-builtins
 WARNING_CXXFLAGS_	+= -Wno-interference-size
 
