@@ -18,7 +18,7 @@ clean:
 	$(RM) $(OBJECTS) index_msa cmdline.h cmdline.c
 
 index_msa: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
+	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LIBKQUEUE_FLAGS) $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h
