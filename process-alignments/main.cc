@@ -137,11 +137,13 @@ namespace {
 
 			aln_input.read_header();
 			auto &header(aln_input.header);
+#if 0
 			if (sam::sort_order_type::queryname != header.sort_order)
 			{
 				std::cerr << "ERROR: Expected input to be sorted by QNAME, got " << header.sort_order << " instead.\n";
 				std::exit(EXIT_FAILURE);
 			}
+#endif
 			
 			append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
 			process_(aln_input, os, args_info);
@@ -173,7 +175,26 @@ int main(int argc, char **argv)
 	if (args_info.print_pid_given)
 		std::cerr << "PID: " << getpid() << '\n';
 	
-	process(args_info, argc, argv);
+	try
+	{
+		process(args_info, argc, argv);
+	}
+	catch (lb::parsing::parse_error const &exc)
+	{
+		std::cerr << "ERROR: " << exc << '\n';
+		auto const trace(boost::get_error_info <lb::traced>(exc));
+		if (trace)
+			std::cerr << "Stack trace:\n" << (*trace) << '\n';
+		return EXIT_FAILURE;
+	}
+	catch (std::exception const &exc)
+	{
+		std::cerr << "ERROR: Caught an exception: " << exc.what() << '\n';
+		auto const trace(boost::get_error_info <lb::traced>(exc));
+		if (trace)
+			std::cerr << "Stack trace:\n" << (*trace) << '\n';
+		return EXIT_FAILURE;
+	}
 	
 	return EXIT_SUCCESS;
 }
