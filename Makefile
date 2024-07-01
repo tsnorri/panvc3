@@ -7,7 +7,6 @@ include  $(PANVC3_PROJECT_DIR)/make/common.mk
 # Unfortunately using either libstdc++ or libc++ with all of the tools
 # was not possible, so we build two versions of libbio.
 DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
-				lib/libbio/build-llvm/libbio.a \
 				lib/rapidcheck/build/librapidcheck.a
 
 BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
@@ -68,16 +67,16 @@ tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a lib/Catch2/sin
 
 libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm/tests
 
-alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a
+alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C alignment-statistics
 
-convert-bed-positions/convert_bed_positions: lib/libbio/build-llvm/libbio.a
+convert-bed-positions/convert_bed_positions: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C convert-bed-positions
 	
-count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
+count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C count-supporting-reads
 
-index-msa/index_msa: lib/libbio/build-llvm/libbio.a
+index-msa/index_msa: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C index-msa
 
 libpanvc3/libpanvc3.a:
@@ -95,10 +94,10 @@ recalculate-mapq/recalculate_mapq: lib/libbio/build-gcc/libbio.a libpanvc3/libpa
 rewrite-cigar/rewrite_cigar: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C rewrite-cigar
 
-split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a
+split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C split-alignments-by-reference
 
-subset-alignments/subset_alignments: lib/libbio/build-gcc/libbio.a
+subset-alignments/subset_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
 	$(MAKE) -C subset-alignments
 
 $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
