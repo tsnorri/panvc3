@@ -135,6 +135,7 @@ namespace {
 			lb::file_ostream os;
 			lb::open_stream_with_file_handle(os, aln_output_fh);
 
+			aln_input.read_header();
 			auto &header(aln_input.header);
 			if (sam::sort_order_type::queryname != header.sort_order)
 			{
