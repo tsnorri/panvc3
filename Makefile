@@ -10,12 +10,6 @@ DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
 				lib/libbio/build-llvm/libbio.a \
 				lib/rapidcheck/build/librapidcheck.a
 
-LIBDISPATCH_LINUX_BIN :=
-ifeq ($(OS_NAME),linux)
-	LIBDISPATCH_LINUX_BIN := lib/swift-corelibs-libdispatch/build/src/libdispatch.a
-	DEPENDENCIES += $(LIBDISPATCH_LINUX_BIN)
-endif
-
 BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
 					convert-bed-positions/convert_bed_positions \
 					count-supporting-reads/count_supporting_reads \
@@ -60,7 +54,6 @@ clean:
 
 clean-dependencies:
 	$(RM) -r lib/libbio/build-gcc lib/libbio/build-llvm
-	$(RM) -r lib/swift-corelibs-libdispatch/build
 	$(RM) -r lib/rapidcheck/build
 
 clean-dist:
@@ -84,7 +77,7 @@ convert-bed-positions/convert_bed_positions: lib/libbio/build-llvm/libbio.a
 count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a
 	$(MAKE) -C count-supporting-reads
 
-index-msa/index_msa: lib/libbio/build-llvm/libbio.a $(LIBDISPATCH_LINUX_BIN)
+index-msa/index_msa: lib/libbio/build-llvm/libbio.a
 	$(MAKE) -C index-msa
 
 libpanvc3/libpanvc3.a:
@@ -114,7 +107,6 @@ $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(CP) count-supporting-reads/calculate_reference_bias.py $(DIST_TARGET_DIR)/panvc3_calculate_reference_bias.py
 	$(CP) README.md $(DIST_TARGET_DIR)
 	$(CP) LICENSE $(DIST_TARGET_DIR)
-	$(CP) lib/swift-corelibs-libdispatch/LICENSE $(DIST_TARGET_DIR)/swift-corelibs-libdispatch-license.txt
 	$(CP) lib/cereal/LICENSE $(DIST_TARGET_DIR)/cereal-license.txt
 	$(TAR) czf $(DIST_TAR_GZ) $(DIST_TARGET_DIR)
 	$(RM) -rf $(DIST_TARGET_DIR)
@@ -132,9 +124,6 @@ lib/libbio/lib/rapidcheck/build-%/librapidcheck.a:
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
-
-lib/swift-corelibs-libdispatch/build/src/libdispatch.a:
-	$(MAKE) -f make/libdispatch.mk
 
 lib/Catch2/single_include/catch2/catch.hpp: $(CATCH2_HEADERS)
 	cd lib/libbio/lib/Catch2 && $(PYTHON) scripts/generateSingleHeader.py
