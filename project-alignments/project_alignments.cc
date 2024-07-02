@@ -959,7 +959,7 @@ namespace {
 		
 		for (auto const &aln_rec : task.alignment_records())
 		{
-			libbio_assert_eq(aln_rec.seq.size(), aln_rec.qual.size());
+			libbio_assert(aln_rec.qual.empty() || aln_rec.seq.size() == aln_rec.qual.size());
 			m_reference_buffer_store.release_buffer(aln_rec.rname_id);
 			m_aln_output.output_record(aln_rec);
 		}
