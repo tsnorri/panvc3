@@ -452,16 +452,20 @@ namespace panvc3::dispatch {
 	
 	bool thread_local_queue::run()
 	{
-		std::unique_lock lock(m_mutex, std::defer_lock_t{});
+		std::unique_lock lock(m_mutex);
 		while (true)
 		{
-			// Critical section.
-			lock.lock();
-			
+			// Critical section; we now have the lock.
 			if (!m_should_continue)
-				return m_task_queue.empty();
+				return m_task_queue.empty(); // std::unique_lock unlocks automatically.
 			
-			if (!m_task_queue.empty())
+			if (m_task_queue.empty())
+			{
+				// Task queue is empty and we still hold the lock.
+				m_cv.wait(lock); // Unlocks, waits, locks again.
+				continue;
+			}
+
 			{
 				// Get the next item from the queue.
 				queue_item item;
@@ -479,11 +483,8 @@ namespace panvc3::dispatch {
 				if (item.group_)
 					item.group_->exit();
 				
-				continue;
+				lock.lock();
 			}
-			
-			// Task queue is empty but we still hold the lock.
-			m_cv.wait(lock);
 		}
 	}
 	
