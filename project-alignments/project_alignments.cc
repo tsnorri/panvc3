@@ -3,6 +3,12 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/max.hpp>
+#include <boost/accumulators/statistics/mean.hpp>
+#include <boost/accumulators/statistics/median.hpp>
+#include <boost/accumulators/statistics/min.hpp>
+#include <boost/accumulators/statistics/stats.hpp>
 #include <chrono>
 #include <iostream>
 #include <libbio/algorithm/sorted_set_union.hh>
@@ -28,6 +34,7 @@
 #include <syncstream>
 #include "cmdline.h"
 
+namespace accs		= boost::accumulators;
 namespace chrono	= std::chrono;
 namespace dispatch	= panvc3::dispatch;
 namespace fs		= std::filesystem;
@@ -301,6 +308,7 @@ namespace {
 		std::size_t							m_last_rec_idx{};
 		time_point							m_realignment_start_time{};
 		std::uint64_t						m_realignment_time{};
+		std::uint64_t						m_execution_time{};
 		std::uint32_t						m_realigned_range_count{};
 		std::uint32_t						m_realigned_range_total_length{};
 		std::atomic <project_task_status>	m_status{}; // FIXME: make this conditional.
@@ -336,6 +344,13 @@ namespace {
 		typedef clock_type::time_point								time_point;
 		typedef clock_type::duration								duration_type;
 
+		typedef accs::accumulator_set <double, accs::stats <
+			accs::tag::mean,
+			accs::tag::median,
+			accs::tag::min,
+			accs::tag::max
+		>>															execution_time_accumulator_type;
+
 	public:
 		typedef panvc3::spsc_queue <project_task, QUEUE_SIZE>		queue_type;
 		typedef	void												(*exit_callback_type)(void);
@@ -368,6 +383,7 @@ namespace {
 		std::uint32_t					m_realigned_range_total_length{};
 		
 		alignment_statistics			m_statistics;
+		execution_time_accumulator_type	m_task_execution_time_acc;
 		tag_count_map					m_removed_tag_counts;
 		realigned_range_vector			m_realigned_ranges;
 		realigned_range_vector			m_realigned_range_buffer;
@@ -379,10 +395,11 @@ namespace {
 		std::int32_t					m_gap_extension_cost{};
 		sam_tag_specification			m_sam_tag_identifiers{};
 		std::uint16_t					m_status_output_interval{};
+		bool							m_verbose_status_output{};
+		bool							m_should_output_debugging_information{};
 		bool							m_should_consider_primary_alignments_only{};
 		bool							m_should_use_read_base_qualities{};
 		bool							m_should_keep_duplicate_realigned_ranges{};
-		bool							m_should_output_debugging_information{};
 		bool							m_should_process_tasks_in_parallel{true};
 		
 	public:
@@ -406,6 +423,7 @@ namespace {
 			std::int32_t					gap_opening_cost,
 			std::int32_t					gap_extension_cost,
 			std::uint16_t					status_output_interval,
+			bool							verbose_status_output,
 			bool							should_consider_primary_alignments_only,
 			bool							should_use_read_base_qualities,
 			bool							should_keep_duplicate_realigned_ranges,
@@ -431,10 +449,11 @@ namespace {
 			m_gap_extension_cost(gap_extension_cost),
 			m_sam_tag_identifiers(tag_identifiers),
 			m_status_output_interval(status_output_interval),
+			m_verbose_status_output(verbose_status_output),
+			m_should_output_debugging_information(should_output_debugging_information),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_should_use_read_base_qualities(should_use_read_base_qualities),
-			m_should_keep_duplicate_realigned_ranges(should_keep_duplicate_realigned_ranges),
-			m_should_output_debugging_information(should_output_debugging_information)
+			m_should_keep_duplicate_realigned_ranges(should_keep_duplicate_realigned_ranges)
 		{
 			for (auto &task : m_task_queue.values())
 			{
@@ -444,7 +463,7 @@ namespace {
 		}
 		
 		void process_input() override;
-		void output_records(project_task &task);
+		void finish_task(project_task &task);
 		void output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id = 0);
 		void finish();
 
@@ -508,7 +527,19 @@ namespace {
 			cerr << "; " << usecs_per_realn << " µs / realignment, mean length " << mean_realn_length << " characters)";
 		}
 
-		cerr << ".\n" << std::flush;
+		cerr << '.';
+
+		if (m_verbose_status_output)
+		{
+			cerr
+				<< " Mean task execution time: " << (accs::mean(m_task_execution_time_acc) / 1000.0) << " µs"
+				<< " median: " << (accs::median(m_task_execution_time_acc) / 1000.0) << " µs"
+				<< " min: " << (accs::min(m_task_execution_time_acc) / 1000.0) << " µs"
+				<< " max: " << (accs::max(m_task_execution_time_acc) / 1000.0) << " µs"
+				<< '.';
+		}
+
+		cerr << '\n' << std::flush;
 	}
 
 
@@ -707,6 +738,8 @@ namespace {
 	
 	void project_task::process()
 	{
+		auto const start_time(clock_type::now()); // For profiling.
+
 		auto &output_header(m_input_processor->alignment_output().header);
 		auto const &src_seq_entries(m_input_processor->src_seq_entries());
 		auto const &dst_seq_entries(m_input_processor->dst_seq_entries());
@@ -917,6 +950,12 @@ namespace {
 			aln_rec.cigar = m_alignment_projector.alignment();
 			aln_rec.rname_id = dst_ref_id;
 		}
+
+		{
+			auto const end_time(clock_type::now()); // For profiling.
+			auto const diff(end_time - start_time);
+			m_execution_time = chrono::duration_cast <chrono::nanoseconds>(diff).count();
+		}
 		
 		// Continue in the output queue.
 		libbio_assert(project_task_status::processing == m_status.load());
@@ -948,11 +987,11 @@ namespace {
 		// Now we are in the correct thread and also able to pass parameters to functions
 		// without calling malloc, since we do not need to call via libdispatch.
 		libbio_assert(project_task_status::finishing == m_status.load());
-		m_input_processor->output_records(*this);
+		m_input_processor->finish_task(*this);
 	}
 	
 	
-	void input_processor::output_records(project_task &task)
+	void input_processor::finish_task(project_task &task)
 	{
 		// Not thread-safe; needs to be executed in a serial queue.
 		
@@ -993,6 +1032,7 @@ namespace {
 		m_realigned_range_count += task.m_realigned_range_count;
 		m_realignment_time += task.m_realignment_time;
 		m_realigned_range_total_length += task.m_realigned_range_total_length;
+		m_task_execution_time_acc(task.m_execution_time);
 		
 		// Clean up.
 		task.reset();
@@ -1422,6 +1462,7 @@ namespace {
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
 			args_info.status_output_interval_arg,
+			args_info.verbose_status_output_flag,
 			false, // args_info.primary_only_flag,
 			args_info.use_read_base_qualities_flag,
 			args_info.keep_duplicate_ranges_flag,

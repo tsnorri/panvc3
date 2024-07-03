@@ -17,6 +17,7 @@ option		"reference-order-input"		u	"Read output reference order from the given p
 section		"Output options"
 option		"output-path"				o	"Output path (stdout by default)"											string	typestr = "path"		optional
 option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
+option		"verbose-status-output"		-	"Output additional statistics"												flag	off
 
 section		"Re-aligned range output"
 option		"output-realigned-ranges"	l	"Output the re-aligned ranges as TSV to the given path"						string	typestr = "filename"	optional
