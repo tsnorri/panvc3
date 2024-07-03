@@ -141,8 +141,8 @@ namespace {
 		typedef std::vector <std::uint8_t>				ref_n_position_vector;
 		
 	private:
-		quality_lookup_array	m_mismatch_penalties;
-		quality_lookup_array	m_n_penalties;
+		quality_lookup_array	m_mismatch_penalties{};
+		quality_lookup_array	m_n_penalties{};
 		alignment_scoring		m_scoring{};
 		sam::tag_type			m_ref_n_positions_tag{};
 		
@@ -868,7 +868,7 @@ namespace {
 		std::osyncstream cerr(std::cerr);
 
 		auto print_tag([&cerr](auto const tag){
-			std::array <char, 2> buffer;
+			std::array <char, 2> buffer{};
 			sam::from_tag(tag, buffer);
 			ranges::copy(buffer, std::ostream_iterator <char>(cerr));
 		});

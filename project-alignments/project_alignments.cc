@@ -292,7 +292,7 @@ namespace {
 
 	protected:
 		input_processor						*m_input_processor{};
-		record_array						m_records;
+		record_array						m_records{};
 		alignment_projector_type			m_alignment_projector;
 		tag_count_map						m_removed_tag_counts;
 		realigned_range_vector				m_realigned_ranges;

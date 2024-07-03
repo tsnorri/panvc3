@@ -74,8 +74,8 @@ namespace panvc3 {
 #endif
 		
 	protected:
-		value_array				m_values;
-		index_array				m_indices;
+		value_array				m_values{};
+		index_array				m_indices;			// Initialised in the constructor.
 		semaphore_type			m_semaphore;
 		size_type				m_read_idx{};		// Used by thread 1.
 		size_type				m_write_idx{};		// Used by thread 2.
