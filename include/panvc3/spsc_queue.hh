@@ -86,9 +86,11 @@ namespace panvc3 {
 		{
 			std::iota(m_indices.begin(), m_indices.end(), 0);
 		}
+
+		constexpr size_type size() const { return t_size; }
 		
 		value_array &values() { return m_values; }
-		value_type &operator[](size_type const idx) { return m_values[idx]; }
+		value_type &operator[](size_type const idx) { libbio_assert_lt(idx, m_values.size()); return m_values[idx]; }
 		
 		size_type pop_index();
 		void push(value_type &value);
@@ -101,6 +103,7 @@ namespace panvc3 {
 		// Called from thread 1.
 		m_semaphore.acquire();
 
+		libbio_assert_lt(m_read_idx, m_indices.size());
 		size_type const val_idx(m_indices[m_read_idx]);
 		++m_read_idx;
 		m_read_idx %= t_size;
@@ -114,6 +117,7 @@ namespace panvc3 {
 	{
 		// Called from thread 2.
 		auto const val_idx(std::distance(&m_values.front(), &val));
+		libbio_assert_lt(m_write_idx, m_indices.size());
 		m_indices[m_write_idx] = val_idx;
 		++m_write_idx;
 		m_write_idx %= t_size;
