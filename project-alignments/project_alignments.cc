@@ -383,7 +383,7 @@ namespace {
 		bool							m_should_use_read_base_qualities{};
 		bool							m_should_keep_duplicate_realigned_ranges{};
 		bool							m_should_output_debugging_information{};
-		bool							m_should_process_tasks_in_parallel{};
+		bool							m_should_process_tasks_in_parallel{true};
 		
 	public:
 		template <
@@ -607,6 +607,7 @@ namespace {
 
 					// Load the reference sequence if needed.
 					{
+						libbio_assert_lt(aln_rec.rname_id, m_ref_id_mapping.size());
 						auto const dst_ref_id(m_ref_id_mapping[aln_rec.rname_id]);
 						auto const &dst_ref_names(m_aln_output.header.reference_sequences);
 						libbio_assert_lt(dst_ref_id, dst_ref_names.size());
@@ -884,6 +885,7 @@ namespace {
 			auto const rnext_id(aln_rec.rnext_id);
 			if (sam::INVALID_REFERENCE_ID != rnext_id)
 			{
+				libbio_assert_lt(rnext_id, ref_id_mapping.size());
 				auto const dst_rnext_id(ref_id_mapping[rnext_id]);
 				aln_rec.rnext_id = dst_rnext_id;
 				
@@ -910,11 +912,10 @@ namespace {
 				aln_rec.pnext = sam::INVALID_POSITION;
 			}
 			
-			// Finally (esp. after setting OA/OC) update the CIGAR, the positions,
-			// and RNAME and RNEXT.
+			// Finally (esp. after setting OA/OC) update the CIGAR, the positions, and RNAME.
 			aln_rec.pos = dst_pos;
 			aln_rec.cigar = m_alignment_projector.alignment();
-			aln_rec.rnext_id = dst_ref_id;
+			aln_rec.rname_id = dst_ref_id;
 		}
 		
 		// Continue in the output queue.
