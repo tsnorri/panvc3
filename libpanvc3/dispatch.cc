@@ -417,16 +417,25 @@ namespace panvc3::dispatch {
 	
 	void thread_local_queue::async_(task &&tt)
 	{
-		std::lock_guard lock(m_mutex);
-		m_task_queue.emplace(std::move(tt), nullptr);
+		{
+			std::lock_guard lock(m_mutex);
+			m_task_queue.emplace(std::move(tt), nullptr);
+		}
+
+		m_cv.notify_one();
 	}
 	
 	
 	void thread_local_queue::group_async(group &gg, task tt)
 	{
 		gg.enter();
-		std::lock_guard lock(m_mutex);
-		m_task_queue.emplace(std::move(tt), &gg);
+
+		{
+			std::lock_guard lock(m_mutex);
+			m_task_queue.emplace(std::move(tt), &gg);
+		}
+
+		m_cv.notify_one();
 	}
 	
 	
