@@ -439,6 +439,17 @@ namespace panvc3::dispatch {
 	}
 	
 	
+	void thread_local_queue::stop()
+	{
+		{
+			std::lock_guard lock(m_mutex);
+			m_should_continue = false;
+		}
+		
+		m_cv.notify_one();
+	}
+	
+	
 	bool thread_local_queue::run()
 	{
 		std::unique_lock lock(m_mutex, std::defer_lock_t{});
@@ -474,17 +485,6 @@ namespace panvc3::dispatch {
 			// Task queue is empty but we still hold the lock.
 			m_cv.wait(lock);
 		}
-	}
-	
-	
-	void thread_local_queue::stop()
-	{
-		{
-			std::lock_guard lock(m_mutex);
-			m_should_continue = false;
-		}
-		
-		m_cv.notify_one();
 	}
 	
 	
