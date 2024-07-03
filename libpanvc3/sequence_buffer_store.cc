@@ -22,10 +22,14 @@ namespace panvc3 {
 
 		// Find a spare buffer if possible. If 0 < prev_count, the buffer is still in use
 		// in thread 2.
-		if (0 == prev_count && 0 == retval.m_buffer.capacity() && !m_spare_buffers.empty())
+		if (0 == prev_count)
 		{
-			retval.m_buffer = std::move(m_spare_buffers.back());
-			m_spare_buffers.pop_back();
+			retval.m_buffer.clear();
+			if (0 == retval.m_buffer.capacity() && !m_spare_buffers.empty())
+			{
+				retval.m_buffer = std::move(m_spare_buffers.back());
+				m_spare_buffers.pop_back();
+			}
 		}
 
 		return retval;
@@ -41,6 +45,7 @@ namespace panvc3 {
 			auto const use_count(item.m_use_count.load(std::memory_order_acquire));
 			if (0 == use_count)
 			{
+				item.m_buffer.clear();
 				if (m_spare_buffers.size() < SPARE_BUFFER_COUNT)
 					m_spare_buffers.emplace_back(std::move(item.m_buffer));
 				else
