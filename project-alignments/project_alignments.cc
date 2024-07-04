@@ -491,6 +491,8 @@ namespace {
 		bool should_use_read_base_qualities() const { return m_should_use_read_base_qualities; }
 		bool should_keep_duplicate_realigned_ranges() const { return m_should_keep_duplicate_realigned_ranges; }
 		bool should_process_tasks_in_parallel() const { return m_should_process_tasks_in_parallel; }
+
+		dispatch::group &dispatch_group() { return m_group; }
 	};
 	
 	
@@ -961,9 +963,15 @@ namespace {
 		libbio_assert(project_task_status::processing == m_status.load());
 		m_status = project_task_status::finishing;
 		if (should_process_tasks_in_parallel)
-			m_input_processor->output_dispatch_queue().async(dispatch::task_from_member_fn <&project_task::output>(this));
+		{
+			auto &queue(m_input_processor->output_dispatch_queue());
+			auto &group(m_input_processor->dispatch_group());
+			queue.group_async(group, dispatch::task_from_member_fn <&project_task::output>(this));
+		}
 		else
+		{
 			output();
+		}
 	}
 
 
