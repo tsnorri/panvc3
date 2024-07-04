@@ -189,6 +189,7 @@ namespace panvc3::dispatch {
 		
 	end_worker_loop:
 		pool.m_workers.fetch_sub(1, std::memory_order_release);
+		pool.m_workers.notify_one();
 	}
 	
 	
