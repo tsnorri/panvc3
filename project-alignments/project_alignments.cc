@@ -835,7 +835,7 @@ namespace {
 					oa_buffer.clear();
 					
 					// RNAME
-					oa_buffer << ref_ids[ref_id] << ',';
+					oa_buffer << ref_ids[ref_id].name << ',';
 
 					// POS
 					oa_buffer << src_pos << ',';
