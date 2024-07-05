@@ -48,8 +48,7 @@ using namespace libbio::sam::literals;
 
 namespace {
 
-	constexpr inline std::size_t	QUEUE_SIZE{16};
-	constexpr inline std::size_t	CHUNK_SIZE{4};
+	constexpr std::size_t const	CHUNK_SIZE{64};
 
 	constinit static auto const preserved_sam_tags{[]() constexpr {
 		// Consider saving UQ.
@@ -338,8 +337,6 @@ namespace {
 	// FIXME: Now that we are not (indirectly) calling pthread_exit() in main(), we could store some of the instance variables on the stack instead.
 	class input_processor final : public input_processor_base
 	{
-		static_assert(panvc3::is_power_of_2(QUEUE_SIZE));
-
 		typedef chrono::steady_clock								clock_type; // For profiling.
 		typedef clock_type::time_point								time_point;
 		typedef clock_type::duration								duration_type;
@@ -352,7 +349,7 @@ namespace {
 		>>															execution_time_accumulator_type;
 
 	public:
-		typedef panvc3::spsc_queue <project_task, QUEUE_SIZE>		queue_type;
+		typedef panvc3::spsc_queue <project_task>					queue_type;
 		typedef	void												(*exit_callback_type)(void);
 		typedef panvc3::compressed_fasta_reader						fasta_reader;
 		typedef fasta_reader::sequence_vector						sequence_vector;
@@ -373,7 +370,7 @@ namespace {
 		dispatch::group					m_group;
 		exit_callback_type				m_exit_cb{};
 		
-		queue_type						m_task_queue{};
+		queue_type						m_task_queue;
 
 		time_point						m_start_time{};
 		
@@ -422,6 +419,7 @@ namespace {
 			sam_tag_specification const		&tag_identifiers,
 			std::int32_t					gap_opening_cost,
 			std::int32_t					gap_extension_cost,
+			queue_type::size_type			worker_thread_count,
 			std::uint16_t					status_output_interval,
 			bool							verbose_status_output,
 			bool							should_consider_primary_alignments_only,
@@ -441,6 +439,7 @@ namespace {
 			m_reference_buffer_store(m_aln_output.header.reference_sequences.size()),
 			m_output_dispatch_queue(dispatch::parallel_queue::shared_queue()),
 			m_exit_cb(exit_cb),
+			m_task_queue(worker_thread_count),
 			m_ref_id_mapping(std::move(ref_id_mapping)),
 			m_additional_preserved_tags(std::move(additional_preserved_tags)),
 			m_msa_ref_id(std::forward <t_msa_ref_id>(msa_ref_id)),
@@ -566,8 +565,6 @@ namespace {
 		
 		// Output the header.
 		m_aln_output.stream << m_aln_output.header;
-		
-		static_assert(0 < QUEUE_SIZE);
 		
 		auto &parallel_dispatch_queue(dispatch::parallel_queue::shared_queue());
 		
@@ -1338,7 +1335,37 @@ namespace {
 	void process(gengetopt_args_info const &args_info, int const argc, char const * const * const argv)
 	{
 		libbio_assert(args_info.ref_id_separator_arg);
+
+		// Number of threads.
+		if (args_info.threads_arg < 0)
+		{
+			std::cerr << "ERROR: Number of worker threads must be non-negative.\n";
+			std::exit(EXIT_FAILURE);
+		}
 		
+		typedef input_processor::queue_type queue_type;
+		auto const thread_count([&]() -> queue_type::size_type {
+
+			if (0 == args_info.threads_arg)
+			{
+				queue_type::size_type retval{1};
+				auto const hwc(std::thread::hardware_concurrency());
+				if (0 < hwc)
+					retval = lb::min_ct(queue_type::MAX_SIZE, hwc);
+
+				lb::log_time(std::cerr) << "Using " << retval << " worker thread(s).\n";
+				return retval;
+			}
+
+			if (queue_type::MAX_SIZE < args_info.threads_arg)
+			{
+				lb::log_time(std::cerr) << "WARNING: Using " << queue_type::MAX_SIZE << " worker threads.\n";
+				return queue_type::MAX_SIZE;
+			}
+
+			return args_info.threads_arg;
+		});
+
 		// Open the SAM input.
 		auto aln_input{[&] -> alignment_input {
 			if (args_info.alignments_arg)
@@ -1469,6 +1496,7 @@ namespace {
 			tag_identifiers,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
+			thread_count(),
 			args_info.status_output_interval_arg,
 			args_info.verbose_status_output_flag,
 			false, // args_info.primary_only_flag,

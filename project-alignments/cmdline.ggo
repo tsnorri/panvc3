@@ -1,10 +1,12 @@
-# (c) 2022-2023 Tuukka Norri
+# (c) 2022-2024 Tuukka Norri
 # This code is licensed under MIT license (see LICENSE for details).
 
 package		"project-alignments"
 version		"0.1"
 purpose		"Project alignments to founder sequences to a given reference sequence"
 usage		"project_alignments --alignments=alignments.sam --msa-index=msa-index.dat --reference=ref.fa.gz > projected.sam"
+
+option		"threads"					c	"Number of worker threads to use (zero to determine automatically)"			short	default = "0"			optional
 
 section		"Input options"
 option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
