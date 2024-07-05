@@ -9,6 +9,7 @@
 #include <boost/accumulators/statistics/median.hpp>
 #include <boost/accumulators/statistics/min.hpp>
 #include <boost/accumulators/statistics/stats.hpp>
+#include <boost/accumulators/statistics/sum.hpp>
 #include <chrono>
 #include <iostream>
 #include <libbio/algorithm/sorted_set_union.hh>
@@ -98,7 +99,6 @@ namespace {
 		sam::tag_type	original_pnext{};
 		sam::tag_type	realn_query_ranges{};
 		sam::tag_type	realn_ref_ranges{};
-		sam::tag_type	rec_idx{};
 	};
 
 
@@ -294,6 +294,13 @@ namespace {
 		typedef panvc3::alignment_projector_libbio				alignment_projector_type;
 		
 	public:
+		struct realigned_range_stat
+		{
+			std::uint64_t	time{};		// Nanoseconds
+			std::uint32_t	length{};
+		};
+		
+		typedef std::vector <realigned_range_stat>				realigned_range_stat_vector;
 		typedef std::array <sam::record, CHUNK_SIZE>			record_array;
 
 	protected:
@@ -301,15 +308,12 @@ namespace {
 		record_array						m_records{};
 		alignment_projector_type			m_alignment_projector;
 		tag_count_map						m_removed_tag_counts;
-		realigned_range_vector				m_realigned_ranges;
+		realigned_range_vector				m_realigned_ranges;			// For extra output
+		realigned_range_stat_vector			m_realigned_range_stats;	// For statistics
 		std::size_t							m_valid_records{};
 		std::size_t							m_task_id{};
-		std::size_t							m_last_rec_idx{};
 		time_point							m_realignment_start_time{};
-		std::uint64_t						m_realignment_time{};
 		std::uint64_t						m_execution_time{};
-		std::uint32_t						m_realigned_range_count{};
-		std::uint32_t						m_realigned_range_total_length{};
 		std::atomic <project_task_status>	m_status{}; // FIXME: make this conditional.
 		bool								m_should_store_realigned_range_qnames{};
 		
@@ -340,14 +344,26 @@ namespace {
 		typedef chrono::steady_clock								clock_type; // For profiling.
 		typedef clock_type::time_point								time_point;
 		typedef clock_type::duration								duration_type;
-
+		
+		typedef accs::accumulator_set <double, accs::stats <
+			accs::tag::count,
+			accs::tag::mean,
+			accs::tag::median
+		>>															realignment_length_accumulator_type;
+		
+		typedef accs::accumulator_set <double, accs::stats <
+			accs::tag::sum,
+			accs::tag::mean,
+			accs::tag::median
+		>>															realignment_time_accumulator_type;
+		
 		typedef accs::accumulator_set <double, accs::stats <
 			accs::tag::mean,
 			accs::tag::median,
 			accs::tag::min,
 			accs::tag::max
 		>>															execution_time_accumulator_type;
-
+		
 	public:
 		typedef panvc3::spsc_queue <project_task>					queue_type;
 		typedef	void												(*exit_callback_type)(void);
@@ -373,14 +389,13 @@ namespace {
 		queue_type						m_task_queue;
 
 		time_point						m_start_time{};
+		time_point						m_prev_status_logging_time{};
 		
-		std::uint64_t					m_realignment_time{}; // nanoseconds
-		std::atomic_uint32_t			m_current_rec_idx{};
-		std::uint32_t					m_realigned_range_count{};
-		std::uint32_t					m_realigned_range_total_length{};
+		realignment_length_accumulator_type	m_realignment_length_acc;
+		realignment_time_accumulator_type	m_realignment_time_acc;
+		execution_time_accumulator_type		m_task_execution_time_acc;
 		
 		alignment_statistics			m_statistics;
-		execution_time_accumulator_type	m_task_execution_time_acc;
 		tag_count_map					m_removed_tag_counts;
 		realigned_range_vector			m_realigned_ranges;
 		realigned_range_vector			m_realigned_range_buffer;
@@ -388,6 +403,7 @@ namespace {
 		sam::tag_vector					m_additional_preserved_tags;
 		std::string						m_msa_ref_id;
 		std::string						m_ref_id_separator;
+		std::uint64_t					m_record_count{};
 		std::int32_t					m_gap_opening_cost{};
 		std::int32_t					m_gap_extension_cost{};
 		sam_tag_specification			m_sam_tag_identifiers{};
@@ -468,10 +484,10 @@ namespace {
 
 		void output_status() const override;
 
-		std::uint64_t realignment_time() const { return m_realignment_time; }
-		std::uint32_t realigned_range_count() const { return m_realigned_range_count; }
-		std::uint32_t current_record_index() const { return m_current_rec_idx.load(std::memory_order_relaxed); }
-		
+		realignment_length_accumulator_type const &realignment_length_accumulator() const { return m_realignment_length_acc; }
+		realignment_time_accumulator_type const &realignment_time_accumulator() const { return m_realignment_time_acc; }
+		execution_time_accumulator_type const &execution_time_accumulator() const { return m_task_execution_time_acc; }
+
 		sequence_entry_ptr_vector const &src_seq_entries() const { return m_src_seq_entries; }
 		sequence_entry_ptr_vector const &dst_seq_entries() const { return m_dst_seq_entries; }
 		struct alignment_input &alignment_input() { return m_aln_input; }
@@ -499,33 +515,29 @@ namespace {
 	{
 		auto const pp(clock_type::now());
 		auto const running_time{pp - m_start_time};
-		auto const rec_idx(current_record_index());
-		auto const realigned_ranges(realigned_range_count());
 
 		std::osyncstream cerr(std::cerr);
 		lb::log_time(cerr) << "Time spent processing: ";
 		panvc3::log_duration(cerr, running_time);
-		cerr << "; processed " << rec_idx << " records";
+		cerr << "; processed " << m_record_count << " records";
 
-		if (rec_idx)
+		if (m_record_count)
 		{
 			double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
-			usecs_per_record /= rec_idx;
+			usecs_per_record /= m_record_count;
 			cerr << " (in " << usecs_per_record << " μs / record)";
 		}
 		
-		cerr << "; realigned " << realigned_ranges << " ranges";
-		if (realigned_ranges)
+		auto const realn_range_count(accs::count(m_realignment_length_acc));
+		cerr << "; realigned " << realn_range_count << " ranges";
+		if (realn_range_count)
 		{
-			auto const realn_time{chrono::nanoseconds(realignment_time())};
-			cerr << " (in ";
-			panvc3::log_duration(cerr, realn_time);
-
-			double usecs_per_realn(chrono::duration_cast <chrono::microseconds>(realn_time).count());
-			double mean_realn_length(m_realigned_range_total_length);
-			usecs_per_realn /= realigned_ranges;
-			mean_realn_length /= realigned_ranges;
-			cerr << "; " << usecs_per_realn << " µs / realignment, mean length " << mean_realn_length << " characters)";
+			std::uint64_t const ns(accs::sum(m_realignment_time_acc));
+			cerr << " ( in ";
+			panvc3::log_duration(cerr, chrono::nanoseconds(ns));
+			cerr << "; ";
+			cerr << "mean time " << (accs::mean(m_realignment_time_acc) / 1000.0) << " µs / realignment, median " << (accs::median(m_realignment_time_acc) / 1000.0) << " µs; ";
+			cerr << "mean length " << accs::mean(m_realignment_length_acc) << " characters, median " << accs::median(m_realignment_length_acc) << " characters)";
 		}
 
 		cerr << '.';
@@ -547,6 +559,7 @@ namespace {
 	void input_processor::process_input()
 	{
 		m_start_time = clock_type::now();
+		m_prev_status_logging_time = m_start_time;
 
 		if (m_realn_range_output.is_open())
 		{
@@ -570,33 +583,16 @@ namespace {
 		
 		auto task_idx(m_task_queue.pop_index()); // Reserve one task.
 		std::size_t task_id{};
-		auto prev_status_logging_time(clock_type::now());
 		
-		std::size_t rec_idx{};
 		m_aln_input.read_records(
 			[
 				this,
 				&parallel_dispatch_queue,
-				&prev_status_logging_time,
-				&rec_idx,
 				&task_id,
 				&task_idx
 			](sam::record &aln_rec)
 			{
 				{
-					m_current_rec_idx.store(rec_idx, std::memory_order_relaxed);
-					if (0 == (1 + rec_idx) % 10'000'000)
-						lb::log_time(std::osyncstream(std::cerr)) << "Processed " << (1 + rec_idx) << " alignments…\n" << std::flush;
-					
-					{
-						auto const pp(clock_type::now());
-						if (std::chrono::minutes(m_status_output_interval) <= chrono::duration_cast <chrono::minutes>(pp - prev_status_logging_time))
-						{
-							prev_status_logging_time = pp;
-							output_status();
-						}
-					}
-
 					auto const flags(aln_rec.flag);
 					if (lb::to_underlying(flags & (
 						sam::flag::unmapped			|
@@ -605,32 +601,32 @@ namespace {
 					))) // Ignore unmapped, filtered, and duplicate. (BWA may set supplementary to non-chimeric?)
 					{
 						++m_statistics.flags_not_matched;
-						goto finish;
+						return;
 					}
 			
 					// Ignore secondary and supplementary if requested.
 					if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & sam::flag::secondary_alignment))
 					{
 						++m_statistics.flags_not_matched;
-						goto finish;
+						return;
 					}
 					
 					if (sam::INVALID_REFERENCE_ID == aln_rec.rname_id)
 					{
 						++m_statistics.ref_id_missing;
-						goto finish;
+						return;
 					}
 			
 					if (sam::INVALID_POSITION == aln_rec.pos)
 					{
 						++m_statistics.flags_not_matched;
-						goto finish;
+						return;
 					}
 					
 					if (aln_rec.seq.empty())
 					{
 						++m_statistics.seq_missing;
-						goto finish;
+						return;
 					}
 					
 					++m_statistics.matched_reads;
@@ -690,13 +686,8 @@ namespace {
 #else
 						current_task.next_record() = aln_rec; // Copy.
 #endif
-
-						current_task.m_last_rec_idx = rec_idx;
 					}
 				}
-			
-			finish:
-				++rec_idx;
 			}
 		);
 		
@@ -729,9 +720,7 @@ namespace {
 		m_valid_records = 0;
 		m_removed_tag_counts.clear();
 		m_realigned_ranges.clear();
-		m_realigned_range_count = 0;
-		m_realignment_time = 0;
-		m_realigned_range_total_length = 0;
+		m_realigned_range_stats.clear();
 	}
 	
 	
@@ -753,8 +742,7 @@ namespace {
 		auto const should_keep_duplicate_realigned_ranges(m_input_processor->should_keep_duplicate_realigned_ranges());
 		auto const should_process_tasks_in_parallel(m_input_processor->should_process_tasks_in_parallel());
 
-		libbio_assert_eq(0, m_realignment_time);
-		libbio_assert_eq(0, m_realigned_range_count);
+		libbio_assert(m_realigned_range_stats.empty());
 		
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
@@ -898,14 +886,6 @@ namespace {
 			if (tag_identifiers.realn_ref_ranges && realn_range_count)
 				output_realn_ranges(m_alignment_projector.realigned_reference_ranges(), tag_identifiers.realn_ref_ranges);
 			
-			// Store the record index if needed.
-			if (tag_identifiers.rec_idx)
-			{
-				auto const rec_idx(m_last_rec_idx - m_valid_records + 1);
-				if (rec_idx <= INT32_MAX)
-					aln_rec.optional_fields.template obtain <std::int32_t>(tag_identifiers.rec_idx) = rec_idx;
-			}
-			
 			// Original reference ID.
 			if (tag_identifiers.original_rname)
 				aln_rec.optional_fields.template obtain <sam::reference_id_type_>(tag_identifiers.original_rname) = ref_id;
@@ -976,14 +956,12 @@ namespace {
 	{
 		auto const pp(clock_type::now());
 		auto const diff(pp - m_realignment_start_time);
-		m_realignment_time += chrono::duration_cast <chrono::nanoseconds>(diff).count();
-		++m_realigned_range_count;
 
 		auto const &indel_run_checker(m_alignment_projector.indel_run_checker());
 		auto const ref_range(indel_run_checker.reference_range()); // Has segment-relative position.
 		auto const query_range(indel_run_checker.query_range());
 		auto const length(std::max(ref_range.length, query_range.length));
-		m_realigned_range_total_length += length;
+		m_realigned_range_stats.emplace_back(chrono::duration_cast <chrono::nanoseconds>(diff).count(), length);
 	}
 	
 	
@@ -1034,10 +1012,23 @@ namespace {
 		}
 
 		// Update statistics.
-		m_realigned_range_count += task.m_realigned_range_count;
-		m_realignment_time += task.m_realignment_time;
-		m_realigned_range_total_length += task.m_realigned_range_total_length;
+		m_record_count += task.m_valid_records;
 		m_task_execution_time_acc(task.m_execution_time);
+		for (auto const &stat : task.m_realigned_range_stats)
+		{
+			m_realignment_time_acc(stat.time);
+			m_realignment_length_acc(stat.length);
+		}
+		
+		// Output status if needed.
+		{
+			auto const pp(clock_type::now());
+			if (std::chrono::minutes(m_status_output_interval) <= chrono::duration_cast <chrono::minutes>(pp - m_prev_status_logging_time))
+			{
+				m_prev_status_logging_time = pp;
+				output_status();
+			}
+		}
 		
 		// Clean up.
 		task.reset();
@@ -1407,8 +1398,7 @@ namespace {
 			.original_rnext{make_sam_tag(args_info.original_rnext_tag_arg)},
 			.original_pnext{make_sam_tag(args_info.original_pnext_tag_arg)},
 			.realn_query_ranges{make_sam_tag(args_info.realigned_query_ranges_tag_arg)},
-			.realn_ref_ranges{make_sam_tag(args_info.realigned_ref_ranges_tag_arg)},
-			.rec_idx{make_sam_tag(args_info.record_index_tag_arg)}
+			.realn_ref_ranges{make_sam_tag(args_info.realigned_ref_ranges_tag_arg)}
 		};
 
 		// Additional preserved SAM tags.
