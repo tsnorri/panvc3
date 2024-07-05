@@ -533,7 +533,7 @@ namespace {
 		if (realn_range_count)
 		{
 			std::uint64_t const ns(accs::sum(m_realignment_time_acc));
-			cerr << " ( in ";
+			cerr << " (in ";
 			panvc3::log_duration(cerr, chrono::nanoseconds(ns));
 			cerr << "; ";
 			cerr << "mean time " << (accs::mean(m_realignment_time_acc) / 1000.0) << " µs / realignment, median " << (accs::median(m_realignment_time_acc) / 1000.0) << " µs; ";
@@ -545,10 +545,10 @@ namespace {
 		if (m_verbose_status_output)
 		{
 			cerr
-				<< " Mean task execution time: " << (accs::mean(m_task_execution_time_acc) / 1000.0) << " µs"
-				<< " median: " << (accs::median(m_task_execution_time_acc) / 1000.0) << " µs"
-				<< " min: " << (accs::min(m_task_execution_time_acc) / 1000.0) << " µs"
-				<< " max: " << (accs::max(m_task_execution_time_acc) / 1000.0) << " µs"
+				<< " Mean task execution time " << (accs::mean(m_task_execution_time_acc) / 1000.0) << " µs,"
+				<< " median " << (accs::median(m_task_execution_time_acc) / 1000.0) << " µs,"
+				<< " min " << (accs::min(m_task_execution_time_acc) / 1000.0) << " µs,"
+				<< " max " << (accs::max(m_task_execution_time_acc) / 1000.0) << " µs"
 				<< '.';
 		}
 
