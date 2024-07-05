@@ -648,7 +648,7 @@ namespace {
 						auto &buffer(ref_buffer.get());
 						if (buffer.empty())
 						{
-							lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence '" << ref_name << "'…\n" << std::flush;
+							lb::log_time(std::osyncstream(std::cerr)) << "(Re-)loading reference sequence ‘" << ref_name << "’…\n" << std::flush;
 							if (!m_fasta_reader.read_sequence(ref_name, buffer))
 							{
 								std::osyncstream(std::cerr) << "ERROR: Unable to load sequence ‘" << ref_name << "’ from the input FASTA.\n" << std::flush;
@@ -1151,7 +1151,7 @@ namespace {
 			auto const separator_pos(input_ref_id.find_first_of(ref_id_separator));
 			if (std::string_view::npos == separator_pos)
 			{
-				std::cerr << "ERROR: Separator '" << ref_id_separator << "' not found in reference ID '" << input_ref_id << "'.\n";
+				std::cerr << "ERROR: Separator ‘" << ref_id_separator << "’ not found in reference ID ‘" << input_ref_id << "’.\n";
 				std::exit(EXIT_FAILURE);
 			}
 			
@@ -1389,7 +1389,7 @@ namespace {
 
 			if (!std::regex_match(tag, (should_allow_any ? any_tag_regex : tag_regex)))
 			{
-				std::cerr << "ERROR: The given tag '" << tag << "' does not match the expected format.\n";
+				std::cerr << "ERROR: The given tag ‘" << tag << "’ does not match the expected format.\n";
 				std::exit(EXIT_FAILURE);
 			}
 
