@@ -41,6 +41,7 @@ clean:
 	$(MAKE) -C count-supporting-reads clean
 	$(MAKE) -C index-msa clean
 	$(MAKE) -C libpanvc3 clean
+	$(MAKE) -C process-alignments clean
 	$(MAKE) -C project-alignments clean
 	$(MAKE) -C recalculate-mapq clean
 	$(MAKE) -C rewrite-cigar clean
