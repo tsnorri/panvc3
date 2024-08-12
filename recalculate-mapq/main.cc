@@ -91,8 +91,15 @@ namespace {
 	{
 		return input_error{t_type{std::forward <t_args>(args)...}};
 	}
-
-
+	
+	
+	struct alignment_statistics
+	{
+		std::uint64_t flags_not_matched{};
+		std::uint64_t seq_missing{};
+	};
+	
+	
 	struct sam_tag_specification
 	{
 		sam::tag_type ref_n_positions_tag{};
@@ -1175,6 +1182,7 @@ namespace {
 			}};
 		}()};
 
+		alignment_statistics statistics;
 		aln_input.read_records(
 			[
 				&aln_input,
@@ -1182,18 +1190,23 @@ namespace {
 				&scorer,
 				&rec_buffer,
 				&rec_idx,
+				&statistics,
 				verbose_output_enabled
 			](sam::record &aln_rec){
-				if (rec_idx && 0 == rec_idx % 10'000'000)
-				{
-					std::osyncstream cerr(std::cerr);
-					lb::log_time(cerr) << "Processed " << rec_idx << " alignments…\n" << std::flush;
-				}
 				++rec_idx;
 				
 				// Ignore unmapped.
 				if (std::to_underlying(sam::flag::unmapped & aln_rec.flag))
+				{
+					++statistics.flags_not_matched;
 					return;
+				}
+				
+				if (aln_rec.seq.empty())
+				{
+					++statistics.seq_missing;
+					return;
+				}
 				
 				if (rec_buffer.empty())
 				{
@@ -1221,15 +1234,17 @@ namespace {
 			status_output_thread.join();
 
 		{
-			std::osyncstream cerr(std::cerr);
-			lb::log_time(cerr) << "Done.\n";
-			auto const &statistics(scorer.statistics());
-			cerr << "\tTotal alignments: " << statistics.total_alignments << '\n';
-			cerr << "\tUnpaired alignments: " << statistics.unpaired_alignments << '\n';
-			cerr << "\tRecords with mate missing: " << statistics.mate_not_found << '\n';
-			cerr << "\tReads with and without a mate: " << statistics.reads_with_and_without_mate << '\n';
-			cerr << "\tReads without valid positions: " << statistics.reads_without_valid_position << '\n';
-			cerr << std::flush;
+			lb::log_time(std::cerr) << "Done.\n";
+			std::cerr << "\tFlags not matched:                 " << statistics.flags_not_matched << '\n';
+			std::cerr << "\tSequence missing:                  " << statistics.seq_missing << '\n';
+				
+			auto const &statistics_(scorer.statistics());
+			std::cerr << "\tAlignments considered for scoring: " << statistics_.total_alignments << '\n';
+			std::cerr << "\tUnpaired alignments:               " << statistics_.unpaired_alignments << '\n';
+			std::cerr << "\tRecords with mate missing:         " << statistics_.mate_not_found << '\n';
+			std::cerr << "\tReads with and without a mate:     " << statistics_.reads_with_and_without_mate << '\n';
+			std::cerr << "\tReads without valid positions:     " << statistics_.reads_without_valid_position << '\n';
+			std::cerr << std::flush;
 		}
 	}
 

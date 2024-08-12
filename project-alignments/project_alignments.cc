@@ -153,8 +153,8 @@ namespace {
 	struct alignment_statistics
 	{
 		std::size_t flags_not_matched{};
-		std::size_t ref_id_missing{};
 		std::size_t seq_missing{};
+		std::size_t ref_id_missing{};
 		std::size_t matched_reads{};
 	};
 	
@@ -1077,10 +1077,10 @@ namespace {
 		lb::log_time(std::cerr) << "Done." << std::endl;
 		
 		// Output the statistics.
-		std::cerr << "Matched reads:     " << m_statistics.matched_reads << '\n';
-		std::cerr << "Ref. ID missing:   " << m_statistics.ref_id_missing << '\n';
-		std::cerr << "Flags not matched: " << m_statistics.flags_not_matched << '\n';
-		std::cerr << "Sequence missing:  " << m_statistics.seq_missing << '\n';
+		std::cerr << "\tMatched reads:     " << m_statistics.matched_reads << '\n';
+		std::cerr << "\tFlags not matched: " << m_statistics.flags_not_matched << '\n';
+		std::cerr << "\tSequence missing:  " << m_statistics.seq_missing << '\n';
+		std::cerr << "\tRef. ID missing:   " << m_statistics.ref_id_missing << '\n';
 		
 		if (m_realn_range_output.is_open() && !m_should_keep_duplicate_realigned_ranges)
 			std::cerr << "Re-aligned ranges: " << m_realigned_ranges.size() << '\n';

@@ -61,9 +61,10 @@ namespace {
 
 	struct alignment_statistics
 	{
-		std::size_t flags_not_matched{};
-		std::size_t ref_id_mismatches{};
-		std::size_t mate_ref_id_mismatches{};
+		std::uint64_t flags_not_matched{};
+		std::uint64_t seq_missing{};
+		std::uint64_t ref_id_mismatches{};
+		std::uint64_t mate_ref_id_mismatches{};
 	};
 	
 	
@@ -111,7 +112,7 @@ namespace {
 	
 	
 	template <typename t_cb>
-	void process_alignments(panvc3::alignment_input &aln_input, gengetopt_args_info const &args_info, alignment_statistics &stats, t_cb &&cb)
+	void process_alignments(panvc3::alignment_input &aln_input, gengetopt_args_info const &args_info, alignment_statistics &statistics, t_cb &&cb)
 	{
 		bool const should_consider_primary_alignments_only(args_info.primary_only_flag);
 		bool const requires_same_contig_in_next(args_info.same_ref_flag);
@@ -147,7 +148,7 @@ namespace {
 				&filtered_ref_ids,
 				&reads_processed,
 				&ref_id_eq_classes,
-				&stats,
+				&statistics,
 				requires_same_contig_in_next,
 				should_consider_primary_alignments_only
 			](sam::record const &aln_rec){
@@ -165,14 +166,20 @@ namespace {
 					sam::flag::supplementary_alignment
 				))) // Ignore unmapped, filtered, duplicate and supplementary.
 				{
-					++stats.flags_not_matched;
+					++statistics.flags_not_matched;
+					return;
+				}
+				
+				if (aln_rec.seq.empty())
+				{
+					++statistics.seq_missing;
 					return;
 				}
 				
 				// Ignore secondary if requested.
 				if (should_consider_primary_alignments_only && std::to_underlying(flags & sam::flag::secondary_alignment))
 				{
-					++stats.flags_not_matched;
+					++statistics.flags_not_matched;
 					return;
 				}
 				
@@ -184,13 +191,13 @@ namespace {
 					// Check the contig prefix for the current alignment.
 					if (sam::INVALID_REFERENCE_ID == ref_id)
 					{
-						++stats.ref_id_mismatches;
+						++statistics.ref_id_mismatches;
 						return;
 					}
 				
 					if (!std::binary_search(filtered_ref_ids.begin(), filtered_ref_ids.end(), ref_id))
 					{
-						++stats.ref_id_mismatches;
+						++statistics.ref_id_mismatches;
 						return;
 					}
 				
@@ -202,13 +209,13 @@ namespace {
 						auto const mate_ref_id(aln_rec.rnext_id);
 						if (sam::INVALID_REFERENCE_ID == mate_ref_id)
 						{
-							++stats.mate_ref_id_mismatches;
+							++statistics.mate_ref_id_mismatches;
 							return;
 						}
 					
 						if (ref_id_eq_classes[ref_id] != ref_id_eq_classes[mate_ref_id])
 						{
-							++stats.mate_ref_id_mismatches;
+							++statistics.mate_ref_id_mismatches;
 							return;
 						}
 					}
@@ -217,7 +224,7 @@ namespace {
 				auto const rec_ref_pos(aln_rec.pos);
 				if (sam::INVALID_POSITION == rec_ref_pos)
 				{
-					++stats.flags_not_matched;
+					++statistics.flags_not_matched;
 					return;
 				}
 
@@ -229,7 +236,7 @@ namespace {
 	
 	void calculate_coverage(
 		panvc3::alignment_input &aln_input,
-		alignment_statistics &stats,
+		alignment_statistics &statistics,
 		gengetopt_args_info const &args_info
 	)
 	{
@@ -242,7 +249,7 @@ namespace {
 		lb::log_time(std::cerr) << "Calculating coverage…\n";
 		std::cout << "POSITION\tCOVERAGE\n";
 		
-		process_alignments(aln_input, args_info, stats,
+		process_alignments(aln_input, args_info, statistics,
 			[
 				should_include_clipping,
 				&prev_record_pos,
@@ -310,7 +317,7 @@ namespace {
 
 	void count_alignments_by_contig(
 		panvc3::alignment_input &aln_input,
-		alignment_statistics &stats,
+		alignment_statistics &statistics,
 		gengetopt_args_info const &args_info
 	)
 	{
@@ -320,7 +327,7 @@ namespace {
 		auto const &ref_names_by_id(aln_input.header.reference_sequences);
 		std::vector <std::size_t> counts_by_ref_id(ref_names_by_id.size(), 0);
 
-		process_alignments(aln_input, args_info, stats,
+		process_alignments(aln_input, args_info, statistics,
 			[
 				&counts_by_ref_id
 			](auto const &aln_rec){
@@ -339,7 +346,7 @@ namespace {
 
 	void mapq_histogram(
 		panvc3::alignment_input &aln_input,
-		alignment_statistics &stats,
+		alignment_statistics &statistics,
 		gengetopt_args_info const &args_info
 	)
 	{
@@ -349,7 +356,7 @@ namespace {
 		constexpr std::size_t const MAPQ_LIMIT(256);
 		std::vector <std::size_t> histogram(256, 0);
 
-		process_alignments(aln_input, args_info, stats,
+		process_alignments(aln_input, args_info, statistics,
 			[
 				&histogram
 			](auto const &aln_rec){
@@ -372,7 +379,7 @@ namespace {
 
 	void mapq_box_plot(
 		panvc3::alignment_input &aln_input,
-		alignment_statistics &stats,
+		alignment_statistics &statistics,
 		gengetopt_args_info const &args_info
 	)
 	{
@@ -411,7 +418,7 @@ namespace {
 				<< accs::count(acc) << '\n';
 		});
 
-		process_alignments(aln_input, args_info, stats,
+		process_alignments(aln_input, args_info, statistics,
 			[
 				bin_width,
 				&current_bin,
@@ -464,25 +471,26 @@ int main(int argc, char **argv)
 	
 	{
 		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
-		alignment_statistics stats;
+		alignment_statistics statistics;
 		
 		if (args_info.coverage_given)
-			calculate_coverage(aln_input, stats, args_info);
+			calculate_coverage(aln_input, statistics, args_info);
 		else if (args_info.count_alignments_given)
-			count_alignments_by_contig(aln_input, stats, args_info);
+			count_alignments_by_contig(aln_input, statistics, args_info);
 		else if (args_info.mapq_histogram_given)
-			mapq_histogram(aln_input, stats, args_info);
+			mapq_histogram(aln_input, statistics, args_info);
 		else if (args_info.mapq_box_plot_given)
-			mapq_box_plot(aln_input, stats, args_info);
+			mapq_box_plot(aln_input, statistics, args_info);
 		else
 		{
 			std::cerr << "ERROR: No mode given." << std::endl;
 			return EXIT_FAILURE;
 		}
 
-		std::cerr << "Flags not matched:       " << stats.flags_not_matched << '\n';
-		std::cerr << "Ref. ID mismatches:      " << stats.ref_id_mismatches << '\n';
-		std::cerr << "Mate ref. ID mismatches: " << stats.mate_ref_id_mismatches << '\n';
+		std::cerr << "Flags not matched:       " << statistics.flags_not_matched << '\n';
+		std::cerr << "Sequence missing:        " << statistics.seq_missing << '\n';
+		std::cerr << "Ref. ID mismatches:      " << statistics.ref_id_mismatches << '\n';
+		std::cerr << "Mate ref. ID mismatches: " << statistics.mate_ref_id_mismatches << '\n';
 	}
 
 	lb::log_time(std::cerr) << "Done.\n";

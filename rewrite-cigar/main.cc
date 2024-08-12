@@ -35,6 +35,14 @@ namespace rsv		= ranges::views;
 
 namespace {
 	
+	struct alignment_statistics
+	{
+		std::uint64_t flags_not_matched{};
+		std::uint64_t seq_missing{};
+		std::uint64_t ref_id_missing{};
+	};
+	
+	
 	// For use with single thread.
 	struct sequence_buffer
 	{
@@ -376,6 +384,7 @@ namespace {
 		auto status_output_thread(start_status_output_thread(status_output_timer, rec_idx, status_output_interval));
 		std::vector <sam::cigar_run> cigar_buffer;
 		n_positions_buffer_type n_positions_buffer;
+		alignment_statistics statistics{};
 		
 		aln_input.read_records(
 			[
@@ -387,13 +396,30 @@ namespace {
 				&rec_idx,
 				&cigar_buffer,
 				&n_positions_buffer,
+				&statistics,
 				ref_n_positions_tag
 			](sam::record &aln_rec){
 				++rec_idx;
 				
+				// Ignore unmapped.
+				if (std::to_underlying(sam::flag::unmapped & aln_rec.flag))
+				{
+					++statistics.flags_not_matched;
+					sam::output_record(os, aln_input.header, aln_rec);
+					return;
+				}
+				
+				if (aln_rec.seq.empty())
+				{
+					++statistics.seq_missing;
+					sam::output_record(os, aln_input.header, aln_rec);
+					return;
+				}
+				
 				auto const pos(aln_rec.pos);
 				if (sam::INVALID_POSITION == pos)
 				{
+					++statistics.flags_not_matched;
 					sam::output_record(os, aln_input.header, aln_rec);
 					return;
 				}
@@ -401,6 +427,7 @@ namespace {
 				auto const ref_id(aln_rec.rname_id);
 				if (sam::INVALID_REFERENCE_ID == ref_id)
 				{
+					++statistics.ref_id_missing;
 					sam::output_record(os, aln_input.header, aln_rec);
 					return;
 				}
@@ -437,6 +464,11 @@ namespace {
 		status_output_timer.stop();
 		if (status_output_thread.joinable())
 			status_output_thread.join();
+		
+		lb::log_time(std::cerr) << "Done.\n";
+		std::cerr << "\tFlags not matched: " << statistics.flags_not_matched << '\n';
+		std::cerr << "\tSequence missing:  " << statistics.seq_missing << '\n';
+		std::cerr << "\tRef. ID missing:   " << statistics.ref_id_missing << '\n';
 	}
 	
 	

@@ -479,6 +479,7 @@ namespace {
 		{
 			std::size_t	reads_processed{};
 			std::size_t	flags_not_matched{};
+			std::size_t	seq_missing{};
 			std::size_t	ref_id_mismatches{};
 			std::size_t	mate_ref_id_mismatches{};
 			std::size_t	position_mismatches{};
@@ -567,6 +568,13 @@ namespace {
 					continue;
 				}
 				
+				// Check for empty sequence.
+				if (aln_rec.seq.empty())
+				{
+					++m_statistics.seq_missing;
+					continue;
+				}
+				
 				// Check the contig name if requested.
 				auto const ref_id(aln_rec.rname_id);
 				if (sam::INVALID_REFERENCE_ID == ref_id)
@@ -580,7 +588,7 @@ namespace {
 					++m_statistics.ref_id_mismatches;
 					continue;
 				}
-
+				
 				// Check the contig prefix of the next primary alignment.
 				// (Currently we do not try to determine the reference ID of all the possible alignments
 				// of the next read.)
@@ -934,6 +942,7 @@ namespace {
 			auto const &aln_statistics(aln_reader.statistics());
 			std::cout << "T\tReads processed\t"				<< aln_statistics.reads_processed			<< '\n';
 			std::cout << "T\tFlags not matched\t"			<< aln_statistics.flags_not_matched			<< '\n';
+			std::cout << "T\tSequence missing\t"			<< aln_statistics.seq_missing				<< '\n';
 			std::cout << "T\tRef. ID mismatches\t"			<< aln_statistics.ref_id_mismatches			<< '\n';
 			std::cout << "T\tPair ref. ID mismatches\t"		<< aln_statistics.mate_ref_id_mismatches	<< '\n';
 			std::cout << "T\tPosition mismatches\t"			<< aln_statistics.position_mismatches		<< '\n';
