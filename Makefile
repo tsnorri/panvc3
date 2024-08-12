@@ -60,7 +60,7 @@ dependencies: $(DEPENDENCIES)
 
 dist: $(DIST_TAR_GZ)
 
-tests: lib/rapidcheck/build/librapidcheck.a libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
+tests: lib/rapidcheck/build/librapidcheck.a lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
 	$(MAKE) -C tests
 
 libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm/tests
