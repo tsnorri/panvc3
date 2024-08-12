@@ -131,7 +131,7 @@ namespace {
 				auto const &ref_name(ref_entry.name);
 				if (ref_name == rname_sv || (args_info.rname_prefix_given && ref_name.starts_with(rname_sv)))
 				{
-					std::cerr << "Filtering by reference '" << ref_name << "' (" << ref_id << ").\n";
+					std::cerr << "Filtering by reference ‘" << ref_name << "’ (" << ref_id << ").\n";
 					filtered_ref_ids.push_back(ref_id);
 					ref_id_eq_classes[ref_id] = i;
 				}

@@ -453,7 +453,7 @@ namespace {
 
 			if (!std::regex_match(tag, tag_regex))
 			{
-				std::cerr << "ERROR: The given tag '" << tag << "' does not match the expected format.\n";
+				std::cerr << "ERROR: The given tag ‘" << tag << "’ does not match the expected format.\n";
 				std::exit(EXIT_FAILURE);
 			}
 

@@ -220,7 +220,7 @@ namespace {
 				auto const it(std::lower_bound(reference_names.begin(), reference_names.end(), ref_entry.name, cmp));
 				if (reference_names.end() == it)
 				{
-					std::cerr << "ERROR: No entry for reference ID '" << ref_entry.name << "'.\n";
+					std::cerr << "ERROR: No entry for reference ID ‘" << ref_entry.name << "’.\n";
 					std::exit(EXIT_FAILURE);
 				}
 				

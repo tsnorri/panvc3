@@ -27,6 +27,8 @@ namespace panvc3 {
 		
 		static alignment_input open_path_or_stdin(char const *path);
 		
+		void read_header() { reader.read_header(header, input_range); }
+		
 		template <typename t_cb>
 		void read_records(t_cb &&cb) { reader.read_records(header, input_range, std::forward <t_cb>(cb)); }
 	};

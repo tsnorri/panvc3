@@ -59,7 +59,10 @@ namespace {
 		
 		// Output.
 		for (auto const &aln_rec : alignments)
+		{
 			sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
+			os << '\n';
+		}
 	}
 	
 	
@@ -135,6 +138,7 @@ namespace {
 			lb::file_ostream os;
 			lb::open_stream_with_file_handle(os, aln_output_fh);
 
+			aln_input.read_header();
 			auto &header(aln_input.header);
 #if 0
 			if (sam::sort_order_type::queryname != header.sort_order)

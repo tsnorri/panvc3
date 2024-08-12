@@ -1,10 +1,12 @@
-# (c) 2022-2023 Tuukka Norri
+# (c) 2022-2024 Tuukka Norri
 # This code is licensed under MIT license (see LICENSE for details).
 
 package		"project-alignments"
 version		"0.1"
 purpose		"Project alignments to founder sequences to a given reference sequence"
 usage		"project_alignments --alignments=alignments.sam --msa-index=msa-index.dat --reference=ref.fa.gz > projected.sam"
+
+option		"threads"					c	"Number of worker threads to use (zero to determine automatically)"			short	default = "0"			optional
 
 section		"Input options"
 option		"alignments"				a	"Alignment file path (stdin by default)"									string	typestr = "filename"	optional
@@ -17,6 +19,7 @@ option		"reference-order-input"		u	"Read output reference order from the given p
 section		"Output options"
 option		"output-path"				o	"Output path (stdout by default)"											string	typestr = "path"		optional
 option		"status-output-interval"	-	"Status output interval in minutes, zero to disable"						short	default = "5"			optional
+option		"verbose-status-output"		-	"Output additional statistics"												flag	off
 
 section		"Re-aligned range output"
 option		"output-realigned-ranges"	l	"Output the re-aligned ranges as TSV to the given path"						string	typestr = "filename"	optional
@@ -33,7 +36,6 @@ option		"original-rnext-tag"		-	"SAM tag for the original value of the RNEXT fie
 option		"original-pnext-tag"		-	"SAM tag for the original value of the PNEXT field"							string	default = "YP"			optional
 option		"realigned-query-ranges-tag"	-	"SAM tag for the re-aligned query ranges"										string	default = "XB"			optional
 option		"realigned-ref-ranges-tag"	-	"SAM tag for the re-aligned reference ranges"								string	default = "YB"			optional
-option		"record-index-tag"			-	"SAM tag for the original record index"										string							optional
 text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
 section		"Re-alignment options"

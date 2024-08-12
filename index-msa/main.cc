@@ -100,7 +100,7 @@ namespace {
 		auto const chr_rng(std::equal_range(chr_entries.begin(), chr_entries.end(), chr_id, chr_cmp));
 		if (chr_rng.first == chr_rng.second)
 		{
-			std::cerr << "ERROR: No entry for chromosome '" <<  chr_id << "'.\n";
+			std::cerr << "ERROR: No entry for chromosome ‘" <<  chr_id << "’.\n";
 			std::exit(EXIT_FAILURE);
 		}
 
@@ -110,7 +110,7 @@ namespace {
 			auto const seq_rng(std::equal_range(seq_entries.begin(), seq_entries.end(), seq_id, seq_cmp));
 			if (seq_rng.first == seq_rng.second)
 			{
-				std::cerr << "No entry for sequence '" << seq_id << "'.\n";
+				std::cerr << "No entry for sequence ‘" << seq_id << "’.\n";
 				return nullptr;
 			}
 
@@ -156,7 +156,7 @@ namespace {
 
 		while (true)
 		{
-			std::cout << "[" << src_seq_entry->seq_id << " → " << dst_seq_entry->seq_id << "] Source co-ordinate or 's' or 'd' to switch sequence? ([0, " << pos_limit << ")) " << std::flush;
+			std::cout << "[" << src_seq_entry->seq_id << " → " << dst_seq_entry->seq_id << "] Source co-ordinate or ‘s’ or ‘d’ to switch sequence? ([0, " << pos_limit << ")) " << std::flush;
 
 			std::cin >> buffer;
 			if (std::cin.eof())

@@ -189,6 +189,7 @@ namespace panvc3::dispatch {
 		
 	end_worker_loop:
 		pool.m_workers.fetch_sub(1, std::memory_order_release);
+		pool.m_workers.notify_one();
 	}
 	
 	
@@ -417,31 +418,55 @@ namespace panvc3::dispatch {
 	
 	void thread_local_queue::async_(task &&tt)
 	{
-		std::lock_guard lock(m_mutex);
-		m_task_queue.emplace(std::move(tt), nullptr);
+		{
+			std::lock_guard lock(m_mutex);
+			m_task_queue.emplace(std::move(tt), nullptr);
+		}
+
+		m_cv.notify_one();
 	}
 	
 	
 	void thread_local_queue::group_async(group &gg, task tt)
 	{
 		gg.enter();
-		std::lock_guard lock(m_mutex);
-		m_task_queue.emplace(std::move(tt), &gg);
+
+		{
+			std::lock_guard lock(m_mutex);
+			m_task_queue.emplace(std::move(tt), &gg);
+		}
+
+		m_cv.notify_one();
+	}
+	
+	
+	void thread_local_queue::stop()
+	{
+		{
+			std::lock_guard lock(m_mutex);
+			m_should_continue = false;
+		}
+		
+		m_cv.notify_one();
 	}
 	
 	
 	bool thread_local_queue::run()
 	{
-		std::unique_lock lock(m_mutex, std::defer_lock_t{});
+		std::unique_lock lock(m_mutex);
 		while (true)
 		{
-			// Critical section.
-			lock.lock();
-			
+			// Critical section; we now have the lock.
 			if (!m_should_continue)
-				return m_task_queue.empty();
+				return m_task_queue.empty(); // std::unique_lock unlocks automatically.
 			
-			if (!m_task_queue.empty())
+			if (m_task_queue.empty())
+			{
+				// Task queue is empty and we still hold the lock.
+				m_cv.wait(lock); // Unlocks, waits, locks again.
+				continue;
+			}
+
 			{
 				// Get the next item from the queue.
 				queue_item item;
@@ -459,23 +484,9 @@ namespace panvc3::dispatch {
 				if (item.group_)
 					item.group_->exit();
 				
-				continue;
+				lock.lock();
 			}
-			
-			// Task queue is empty but we still hold the lock.
-			m_cv.wait(lock);
 		}
-	}
-	
-	
-	void thread_local_queue::stop()
-	{
-		{
-			std::lock_guard lock(m_mutex);
-			m_should_continue = false;
-		}
-		
-		m_cv.notify_one();
 	}
 	
 	
