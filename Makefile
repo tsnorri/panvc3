@@ -3,7 +3,7 @@ include  $(PANVC3_PROJECT_DIR)/make/os-name.mk
 -include $(PANVC3_PROJECT_DIR)/local.mk
 include  $(PANVC3_PROJECT_DIR)/make/common.mk
 
-DEPENDENCIES =	lib/libbio/build-gcc/libbio.a \
+DEPENDENCIES =	$(LIBBIO_LIB) \
 				lib/rapidcheck/build/librapidcheck.a
 
 BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
@@ -28,7 +28,7 @@ CATCH2_HEADERS	= $(shell find lib/libbio/lib/Catch2/include)
 
 
 .PHONY: all clean-all clean clean-dependencies dependencies libbio-tests
-.PRECIOUS: lib/libbio/lib/rapidcheck/build-gcc/librapidcheck.a lib/libbio/lib/rapidcheck/build-llvm/librapidcheck.a
+#.PRECIOUS: lib/libbio/lib/rapidcheck/build/librapidcheck.a
 
 
 all: $(BUILD_PRODUCTS)
@@ -50,8 +50,8 @@ clean:
 	$(MAKE) -C tests clean
 
 clean-dependencies:
-	$(RM) -r lib/libbio/build-gcc lib/libbio/build-llvm
-	$(RM) -r lib/rapidcheck/build
+	$(MAKE) -C lib/libbio clean
+	$(MAKE) -f make/librapidcheck.mk clean
 
 clean-dist:
 	$(RM) -rf $(DIST_TARGET_DIR)
@@ -60,42 +60,42 @@ dependencies: $(DEPENDENCIES)
 
 dist: $(DIST_TAR_GZ)
 
-tests: lib/rapidcheck/build/librapidcheck.a lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
+tests: lib/rapidcheck/build/librapidcheck.a $(LIBBIO_LIB) libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
 	$(MAKE) -C tests
 
-libbio-tests: lib/libbio/build-tests-gcc/tests lib/libbio/build-tests-llvm/tests
+libbio-tests: lib/libbio/tests/tests
 
-alignment-statistics/alignment_statistics: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+alignment-statistics/alignment_statistics: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C alignment-statistics
 
-convert-bed-positions/convert_bed_positions: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+convert-bed-positions/convert_bed_positions: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C convert-bed-positions
 	
-count-supporting-reads/count_supporting_reads: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+count-supporting-reads/count_supporting_reads: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C count-supporting-reads
 
-index-msa/index_msa: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+index-msa/index_msa: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C index-msa
 
 libpanvc3/libpanvc3.a:
 	$(MAKE) -C libpanvc3
 
-process-alignments/process_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+process-alignments/process_alignments: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C process-alignments
 
-project-alignments/project_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+project-alignments/project_alignments: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C project-alignments
 
-recalculate-mapq/recalculate_mapq: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+recalculate-mapq/recalculate_mapq: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C recalculate-mapq
 
-rewrite-cigar/rewrite_cigar: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+rewrite-cigar/rewrite_cigar: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C rewrite-cigar
 
-split-alignments-by-reference/split_alignments_by_reference: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+split-alignments-by-reference/split_alignments_by_reference: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C split-alignments-by-reference
 
-subset-alignments/subset_alignments: lib/libbio/build-gcc/libbio.a libpanvc3/libpanvc3.a
+subset-alignments/subset_alignments: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C subset-alignments
 
 $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
@@ -108,16 +108,14 @@ $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(TAR) czf $(DIST_TAR_GZ) $(DIST_TARGET_DIR)
 	$(RM) -rf $(DIST_TARGET_DIR)
 
-lib/libbio/build-%/libbio.a:
-	$(MKDIR) -p lib/libbio/build-$*
-	VPATH=../src $(MAKE) -C lib/libbio/build-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../src/Makefile
+lib/libbio/local.mk:
+	$(CP) make/libbio-local.mk $@
 
-lib/libbio/build-tests-%/tests: lib/libbio/build-%/libbio.a lib/libbio/lib/rapidcheck/build-%/librapidcheck.a
-	$(MKDIR) -p lib/libbio/build-tests-$*
-	VPATH=../tests LIBBIO_PATH=../build-$*/libbio.a RAPIDCHECK_BUILD_DIR="build-$*" $(MAKE) -C lib/libbio/build-tests-$* -f ../../../local.mk -f ../../../make/$*.mk -f ../../../make/$(OS_NAME)-$*.mk -f ../tests/Makefile tests
+$(LIBBIO_LIB): lib/libbio/local.mk
+	$(MAKE) -C lib/libbio
 
-lib/libbio/lib/rapidcheck/build-%/librapidcheck.a:
-	RAPIDCHECK_BUILD_DIR="build-$*" $(MAKE) -C lib/libbio -f ../../local.mk -f ../../make/$*.mk -f ../../make/$(OS_NAME)-$*.mk -f Makefile lib/rapidcheck/build-$*/librapidcheck.a
+lib/libbio/tests/tests: lib/libbio/local.mk
+	$(MAKE) -C lib/libbio tests
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk

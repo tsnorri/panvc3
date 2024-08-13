@@ -1,7 +1,4 @@
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-include  $(MAKEFILE_DIR)/../make/os-name.mk
--include $(MAKEFILE_DIR)/../local.mk
-include  $(MAKEFILE_DIR)/../make/$(OS_NAME)-gcc.mk
 include  $(MAKEFILE_DIR)/../make/common.mk
 
 .PRECIOUS: 
@@ -17,8 +14,8 @@ all: index_msa
 clean:
 	$(RM) $(OBJECTS) index_msa cmdline.h cmdline.c
 
-index_msa: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LIBKQUEUE_FLAGS) $(LDFLAGS)
+index_msa: $(OBJECTS) ../libpanvc3/libpanvc3.a ../$(LIBBIO_LIB)
+	$(CXX) -o $@ $^ $(LIBKQUEUE_FLAGS) $(LDFLAGS) -pthread
 
 main.cc: cmdline.c
 cmdline.c: config.h

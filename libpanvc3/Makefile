@@ -1,9 +1,5 @@
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-include  $(MAKEFILE_DIR)/../make/os-name.mk
--include $(MAKEFILE_DIR)/../local.mk
-include  $(MAKEFILE_DIR)/../make/$(OS_NAME)-gcc.mk
 include  $(MAKEFILE_DIR)/../make/common.mk
-include  $(MAKEFILE_DIR)/../make/seqan3.mk
 
 OBJECTS		=	alignment_input.o \
 				cigar.o \

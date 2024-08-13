@@ -1,9 +1,5 @@
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-include  $(MAKEFILE_DIR)/../make/os-name.mk
--include $(MAKEFILE_DIR)/../local.mk
-include  $(MAKEFILE_DIR)/../make/$(OS_NAME)-gcc.mk
 include  $(MAKEFILE_DIR)/../make/common.mk
-include  $(MAKEFILE_DIR)/../make/seqan3.mk
 
 .PRECIOUS: 
 
@@ -21,8 +17,8 @@ all: project_alignments
 clean:
 	$(RM) $(OBJECTS) project_alignments cmdline.h cmdline.c
 
-project_alignments: $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
+project_alignments: $(OBJECTS) ../libpanvc3/libpanvc3.a ../$(LIBBIO_LIB)
+	$(CXX) -o $@ $^ $(LDFLAGS) -pthread
 
 main.c: cmdline.c
 project_alignments.cc: cmdline.c

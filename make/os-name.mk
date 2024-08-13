@@ -1,2 +1,2 @@
-MAKE_SCRIPT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-OS_NAME := $(shell $(MAKE_SCRIPT_DIR)/../tools/os_name.sh)
+MAKE_SCRIPT_DIR_ := $(dir $(lastword $(MAKEFILE_LIST)))
+OS_NAME := $(shell $(MAKE_SCRIPT_DIR_)/../tools/os_name.sh)

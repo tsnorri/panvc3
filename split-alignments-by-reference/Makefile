@@ -1,9 +1,5 @@
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-include  $(MAKEFILE_DIR)/../make/os-name.mk
--include $(MAKEFILE_DIR)/../local.mk
-include  $(MAKEFILE_DIR)/../make/$(OS_NAME)-gcc.mk
 include  $(MAKEFILE_DIR)/../make/common.mk
-include  $(MAKEFILE_DIR)/../make/seqan3.mk
 
 .PRECIOUS: 
 
@@ -15,8 +11,8 @@ all: split_alignments_by_reference
 clean:
 	$(RM) $(OBJECTS) split_alignments_by_reference cmdline.h cmdline.c
 
-split_alignments_by_reference: $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a
-	$(CXX) -o $@ $(OBJECTS) ../libpanvc3/libpanvc3.a ../lib/libbio/build-gcc/libbio.a $(LDFLAGS)
+split_alignments_by_reference: $(OBJECTS) ../libpanvc3/libpanvc3.a ../$(LIBBIO_LIB)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 main.cc: cmdline.c
 cmdline.c: config.h

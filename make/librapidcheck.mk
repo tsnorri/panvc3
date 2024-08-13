@@ -1,11 +1,12 @@
 MAKE_SCRIPT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-include  $(MAKE_SCRIPT_DIR)/os-name.mk
--include $(MAKE_SCRIPT_DIR)/../local.mk
-include  $(MAKE_SCRIPT_DIR)/$(OS_NAME)-gcc.mk
 include  $(MAKE_SCRIPT_DIR)/common.mk
 
 
 all: lib/rapidcheck/build/librapidcheck.a
+
+
+clean:
+	$(RM) -rf lib/rapidcheck/build
 
 
 lib/rapidcheck/build/librapidcheck.a:
