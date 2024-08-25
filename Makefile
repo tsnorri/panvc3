@@ -108,9 +108,9 @@ $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(CP) lib/cereal/LICENSE $(DIST_TARGET_DIR)/cereal-license.txt
 	$(CP) lib/libkqueue/LICENSE $(DIST_TARGET_DIR)/libkqueue-license.txt
 	$(CP) lib/sdsl-lite/LICENSE $(DIST_TARGET_DIR)/sdsl-lite-license.txt
-	$(CP) lib/seqan3/LICENSE.md $(DIST_TARGET_DIR)/seqan3-license.md"
-	$(CP) lib/libbio/lib/GSL/LICENSE $(DIST_TARGET_DIR)/GSL-license.txt"
-	$(CP) lib/libbio/lib/range-v3/LICENSE.txt $(DIST_TARGET_DIR)/range-v3-license.txt"
+	$(CP) lib/seqan3/LICENSE.md $(DIST_TARGET_DIR)/seqan3-license.md
+	$(CP) lib/libbio/lib/GSL/LICENSE $(DIST_TARGET_DIR)/GSL-license.txt
+	$(CP) lib/libbio/lib/range-v3/LICENSE.txt $(DIST_TARGET_DIR)/range-v3-license.txt
 	$(TAR) czf $(DIST_TAR_GZ) $(DIST_TARGET_DIR)
 	$(RM) -rf $(DIST_TARGET_DIR)
 
