@@ -51,6 +51,7 @@ clean:
 
 clean-dependencies:
 	$(MAKE) -C lib/libbio clean
+	$(MAKE) -f make/libkqueue.mk clean
 	$(MAKE) -f make/librapidcheck.mk clean
 
 clean-dist:
@@ -116,6 +117,9 @@ $(LIBBIO_LIB): lib/libbio/local.mk
 
 lib/libbio/tests/tests: lib/libbio/local.mk
 	$(MAKE) -C lib/libbio tests
+
+lib/libkqueue/build/libkqueue.a:
+	$(MAKE) -f make/libkqueue.mk
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
