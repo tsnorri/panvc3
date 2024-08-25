@@ -12,7 +12,8 @@ echo "Generating local.mk"
 m4 -D CONDA_PREFIX="${PREFIX}" conda/local.mk.m4 > local.mk
 
 echo "Running make"
-make -j ${CPU_COUNT}
+make -j ${CPU_COUNT} lib/libkqueue/build/libkqueue.a
+make -j ${CPU_COUNT} all
 
 echo "Copying build products"
 dst_bin="${PREFIX}/bin"
@@ -23,6 +24,7 @@ cp count-supporting-reads/count_supporting_reads				"${dst_bin}/panvc3_count_sup
 cp count-supporting-reads/calculate_reference_bias.py			"${dst_bin}/panvc3_calculate_reference_bias.py"
 cp index-msa/index_msa											"${dst_bin}/panvc3_index_msa"
 cp project-alignments/project_alignments						"${dst_bin}/panvc3_project_alignments"
+cp process-alignments/process_alignments						"${dst_bin}/panvc3_process_alignments"
 cp recalculate-mapq/recalculate_mapq							"${dst_bin}/panvc3_recalculate_mapq"
 cp rewrite-cigar/rewrite_cigar									"${dst_bin}/panvc3_rewrite_cigar"
 cp split-alignments-by-reference/split_alignments_by_reference	"${dst_bin}/panvc3_split_alignments_by_reference"
