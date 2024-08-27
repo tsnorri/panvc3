@@ -323,7 +323,6 @@ namespace panvc3::dispatch::detail {
 		/* implicit */ inline task(empty_callable_type const &): task{private_tag <empty_callable_type>{}} {}
 		
 		// Construct from a target that produces an indirect_member_callable. (I.e. pointer, std::unique_ptr, std::shared_ptr, std::weak_ptr.)
-		// (See note above about task <t_args...>.)
 		template <ClassIndirectCallableTarget <task <t_args...>, t_args...> t_target>
 		/* implicit */ inline task(t_target &&target):
 			task{private_tag <indirect_member_callable_t <std::remove_reference_t <t_target>>>{}, std::forward <t_target>(target)} {} // operator() by default
@@ -335,7 +334,6 @@ namespace panvc3::dispatch::detail {
 		
 		// Construct from a target that produces an indirect_member_callable. (I.e. pointer, std::unique_ptr, std::shared_ptr, std::weak_ptr.)
 		// The size check is in the constructor.
-		// (See note above about task <t_args...>.)
 		template <ClassIndirectTarget <task <t_args...>, t_args...> t_target, indirect_member_callable_fn_t <t_target, t_args...> t_fn>
 		static task from_member_fn(t_target &&target) { return task{private_tag <indirect_member_callable_t <t_target, t_fn>>{}, std::forward <t_target>(target)}; }
 		
