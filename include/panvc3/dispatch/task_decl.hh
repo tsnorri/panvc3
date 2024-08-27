@@ -131,9 +131,10 @@ namespace panvc3::dispatch::detail {
 	using indirect_member_callable_fn_argt_t = typename indirect_member_callable_fn_argt <t_target, t_arg_tuple>::type;
 	
 	
-	template <typename t_target, typename t_arg_tuple, bool t_is_invocable = is_invocable_v <t_target, t_arg_tuple>> // Check for operator().
+	template <typename t_target, typename t_arg_tuple, bool t_is_invocable = is_invocable_v <ptr_value_type_t <t_target>, t_arg_tuple>> // Check for operator() after dereferencing the target.
 	struct indirect_member_callable_default_fn
 	{
+		
 		template <typename ... t_args_>
 		using fn_t = indirect_member_callable_fn_t <t_target, t_args_...>;
 		
@@ -150,7 +151,7 @@ namespace panvc3::dispatch::detail {
 		
 		typedef libbio::tuples::forward_to <fn_t>::template parameters_of_t <t_arg_tuple> fn_type;
 		
-		constexpr static inline fn_type const value{&t_target::operator()}; // Call operator().
+		constexpr static inline fn_type const value{&ptr_value_type_t <t_target>::operator()}; // Call operator().
 	};
 	
 	template <typename t_target, typename t_arg_tuple>
@@ -256,6 +257,8 @@ namespace panvc3::dispatch::detail {
 	template <typename t_target, typename ... t_args, indirect_member_callable_fn_argt_t <t_target, std::tuple <t_args...>> t_fn>
 	struct indirect_member_callable <t_target, std::tuple <t_args...>, t_fn> : public callable <t_args...>
 	{
+		static_assert(nullptr != t_fn);
+
 		t_target	target;
 		
 		template <typename t_target_>

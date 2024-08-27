@@ -67,7 +67,7 @@ namespace panvc3::dispatch::events {
 		void fire() final;
 	
 	public:
-		void operator()() { if (is_enabled()) m_task(*this); }
+		void operator()() { if (is_enabled()) this->m_task(static_cast <t_self &>(*this)); }
 	};
 	
 	
