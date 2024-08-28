@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -52,6 +52,16 @@ namespace panvc3::dispatch::events {
 	};
 	
 	typedef file_descriptor_source::task_type file_descriptor_task;
+}
+
+
+namespace panvc3::dispatch::detail {
+	
+	template <>
+	struct member_callable_target <events::file_descriptor_source>
+	{
+		typedef events::source_tpl <events::file_descriptor_source>	type;
+	};
 }
 
 #endif

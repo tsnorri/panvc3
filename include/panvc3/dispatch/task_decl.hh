@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -102,14 +102,29 @@ namespace panvc3::dispatch::detail {
 	using indirect_callable_fn_type = void (*)(t_args...); // For non-member functions.
 	
 	
+	// GCC requires that the class name in a pointer to member function matches the class where
+	// the function has been defined, hence we have this customisation point for the target type.
+	// (Clang does not have such requirement, not sure which one is correct w.r.t. the language
+	// specification.)
+	template <typename t_target>
+	struct member_callable_target
+	{
+		typedef t_target	type;
+	};
+	
+	template <typename t_target>
+	using member_callable_target_t = member_callable_target <t_target>::type;
+	
+	
 	template <typename t_target, typename... t_args>
 	struct indirect_member_callable_fn
 	{
-		typedef ptr_value_type_t <t_target> value_type;
+		typedef ptr_value_type_t <t_target>										value_type;
+		typedef member_callable_target_t <std::remove_reference_t <value_type>>	target_type;
 		typedef std::conditional_t <
 			std::is_const_v <value_type>,
-			void(value_type::*)(t_args...) const,
-			void(value_type::*)(t_args...)
+			void(target_type::*)(t_args...) const,
+			void(target_type::*)(t_args...)
 		> type; // For member functions.
 	};
 	
@@ -134,7 +149,6 @@ namespace panvc3::dispatch::detail {
 	template <typename t_target, typename t_arg_tuple, bool t_is_invocable = is_invocable_v <ptr_value_type_t <t_target>, t_arg_tuple>> // Check for operator() after dereferencing the target.
 	struct indirect_member_callable_default_fn
 	{
-		
 		template <typename ... t_args_>
 		using fn_t = indirect_member_callable_fn_t <t_target, t_args_...>;
 		

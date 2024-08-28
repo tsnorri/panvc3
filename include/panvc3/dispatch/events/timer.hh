@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -35,12 +35,22 @@ namespace panvc3::dispatch::events {
 			m_repeats(repeats)
 		{
 		}
-	
+		
 		duration_type interval() const { return m_interval; }
 		bool repeats() const { return m_repeats; }
 	};
 	
 	typedef timer::task_type timer_task;
+}
+
+
+namespace panvc3::dispatch::detail {
+	
+	template <>
+	struct member_callable_target <events::timer>
+	{
+		typedef events::source_tpl <events::timer>	type;
+	};
 }
 
 #endif

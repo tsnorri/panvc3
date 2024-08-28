@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -41,7 +41,7 @@ namespace panvc3::dispatch::events {
 		queue							*m_queue{};
 		event_listener_identifier_type	m_identifier{EVENT_LISTENER_IDENTIFIER_MAX};
 		std::atomic_bool				m_is_enabled{true};
-	
+		
 		template <typename t_task_>
 		source_tpl_(queue &qq, t_task_ &&tt, event_listener_identifier_type const identifier = 0):
 			m_task(std::forward <t_task_>(tt)),

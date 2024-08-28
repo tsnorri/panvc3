@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -53,10 +53,7 @@ namespace panvc3::dispatch::events {
 	};
 	
 	typedef signal_source::task_type signal_task;
-}
-
-
-namespace panvc3::dispatch::events {
+	
 	
 	struct sigchld_handler
 	{
@@ -67,6 +64,16 @@ namespace panvc3::dispatch::events {
 	};
 	
 	void install_sigchld_handler(events::manager &mgr, queue &qq, sigchld_handler &handler);
+}
+
+
+namespace panvc3::dispatch::detail {
+	
+	template <>
+	struct member_callable_target <events::signal_source>
+	{
+		typedef events::source_tpl <events::signal_source>	type;
+	};
 }
 
 #endif
