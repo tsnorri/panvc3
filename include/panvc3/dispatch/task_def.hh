@@ -66,11 +66,11 @@ namespace panvc3::dispatch::detail {
 	
 	
 	template <typename ... t_args>
-	template <typename t_callable, typename ... t_args_>
-	task <t_args...>::task(private_tag <t_callable>, t_args_ && ... args)
+	template <typename t_callable, typename ... t_callable_args>
+	task <t_args...>::task(private_tag <t_callable>, t_callable_args && ... args)
 	{
 		static_assert(sizeof(t_callable) <= BUFFER_SIZE);
-		new(m_buffer) t_callable(std::forward <t_args_>(args)...);
+		new(m_buffer) t_callable(std::forward <t_callable_args>(args)...);
 	}
 	
 	
