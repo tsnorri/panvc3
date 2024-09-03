@@ -233,7 +233,7 @@ namespace panvc3::dispatch::events::platform::linux {
 			auto const it(m_sources.emplace(
 				std::piecewise_construct,
 				std::forward_as_tuple(sig_fd, source_key::fd_tag{}),
-				std::forward_as_tuple(std::make_shared <synchronous_source>(synchronous_source::task_type::from_lambda([this](synchronous_source &){
+				std::forward_as_tuple(std::make_shared <synchronous_source>([this](synchronous_source &){
 					struct signalfd_siginfo buffer{};
 					while (m_signal_monitor.read(buffer))
 					{
@@ -246,7 +246,7 @@ namespace panvc3::dispatch::events::platform::linux {
 							++range.first;
 						}
 					}
-				})))
+				}))
 			));
 			
 			listen_for_fd_events(sig_fd, true, false);
