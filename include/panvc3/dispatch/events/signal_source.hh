@@ -16,13 +16,8 @@
 
 namespace panvc3::dispatch::events {
 	
-	class manager; // Fwd.
-	
-	
 	class signal_source final : public source_tpl <signal_source>
 	{
-		friend class manager;
-		
 	public:
 		typedef task_t <signal_source &>	task_type;
 	
@@ -53,8 +48,6 @@ namespace panvc3::dispatch::events {
 		virtual void child_received_signal(pid_t const pid, int const signal_number) = 0;
 		virtual void finish_handling(bool const did_report_error) = 0;
 	};
-	
-	void install_sigchld_handler(events::manager &mgr, queue &qq, sigchld_handler &handler);
 }
 
 

@@ -17,8 +17,6 @@ namespace panvc3::dispatch::events {
 	
 	class file_descriptor_source final : public source_tpl <file_descriptor_source>
 	{
-		friend class manager;
-		
 	public:
 		typedef task_t <file_descriptor_source &>	task_type;
 		

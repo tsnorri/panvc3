@@ -17,4 +17,11 @@ namespace panvc3::dispatch::events {
 	typedef ::panvc3::dispatch::events::platform::kqueue::manager manager;
 }
 #	endif
+
+
+namespace panvc3::dispatch::events {
+	
+	void install_sigchld_handler(manager &mgr, queue &qq, sigchld_handler &handler);
+}
+
 #endif

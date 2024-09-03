@@ -50,6 +50,8 @@ namespace panvc3::dispatch::events {
 		constexpr static inline event_type_		EVENT_LIMIT{0x2};
 		constexpr static inline event_type_		EVENT_COUNT{0x2};
 		
+		typedef std::shared_ptr <timer>			timer_ptr;
+		
 	protected:
 		typedef timer::clock_type				clock_type;
 		typedef clock_type::duration			duration_type;
@@ -59,7 +61,7 @@ namespace panvc3::dispatch::events {
 		struct timer_entry
 		{
 			time_point_type						firing_time{};
-			std::shared_ptr <class timer>		timer{};
+			timer_ptr							timer{};
 			
 			constexpr bool operator<(timer_entry const &other) const { return firing_time < other.firing_time; }
 			constexpr bool operator>(timer_entry const &other) const { return firing_time > other.firing_time; }
@@ -74,40 +76,49 @@ namespace panvc3::dispatch::events {
 	public:
 		virtual ~manager_base() {}
 		
-		void setup() = 0;
-		void run() = 0;
+		virtual void setup() = 0;
+		virtual void run() = 0;
 		std::jthread start_thread_and_run() { return std::jthread([this]{ run(); }); }
 		
-		void schedule_timer(
+		virtual void trigger_event(event_type const evt) = 0;
+		
+		// The fact that the non-timer sources are stored in shared pointers
+		// is an implementation detail b.c. they are guaranteed to persist
+		// until one of the remove_*_event_source() member functions is called.
+		// In case of timers this is not an implementation detail b.c. they are
+		// in fact removed either after having been disabled or, for non-repeating
+		// timers, after having been fired.
+		
+		timer_ptr schedule_timer(
 			timer::duration_type const interval,
 			bool repeats,
 			queue &qq,
 			timer::task_type tt
 		);											// Thread-safe.
 		
-		file_descriptor_source &add_file_descriptor_read_event_source(
+		virtual file_descriptor_source &add_file_descriptor_read_event_source(
 			file_descriptor_type const fd,
 			queue &qq,
 			file_descriptor_source::task_type tt
 		) = 0;										// Thread-safe.
 		
-		file_descriptor_source &add_file_descriptor_write_event_source(
+		virtual file_descriptor_source &add_file_descriptor_write_event_source(
 			file_descriptor_type const fd,
 			queue &qq,
 			file_descriptor_source::task_type tt
 		) = 0;										// Thread-safe.
 		
-		signal_source &add_signal_event_source(
+		virtual signal_source &add_signal_event_source(
 			signal_type const sig,
 			queue &qq,
 			signal_source::task_type tt
 		) = 0;										// Thread-safe.
 		
-		void remove_file_descriptor_event_source(
+		virtual void remove_file_descriptor_event_source(
 			file_descriptor_source &es
 		) = 0;										// Thread-safe.
 		
-		void remove_signal_event_source(
+		virtual void remove_signal_event_source(
 			signal_source &es
 		) = 0;										// Thread-safe.
 		

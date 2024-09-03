@@ -15,8 +15,6 @@ namespace panvc3::dispatch::events {
 	// the event can be handled in the manager’s thread.
 	class synchronous_source final : public source_tpl <synchronous_source, false>
 	{
-		friend class manager;
-		
 	public:
 		typedef task_t <synchronous_source &>	task_type;
 		

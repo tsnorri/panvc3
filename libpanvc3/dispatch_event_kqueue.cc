@@ -3,10 +3,16 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <chrono>
 #include <panvc3/dispatch/events/platform/manager_kqueue.hh>
+#include <panvc3/dispatch/task_def.hh>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
+
+namespace chrono	= std::chrono;
+namespace events	= panvc3::dispatch::events;
+namespace kq		= panvc3::dispatch::events::platform::kqueue;
 
 
 namespace {
@@ -34,7 +40,7 @@ namespace {
 	}
 	
 	
-	void add_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, filter_type const filter)
+	void add_listener(events::file_descriptor_type const kqfd, std::uintptr_t const ident, kq::filter_type const filter)
 	{
 		struct kevent kev{};
 		EV_SET(&kev, ident, filter, EV_ADD | EV_ENABLE | EV_RECEIPT | EV_CLEAR, 0, 0, nullptr);
@@ -42,7 +48,7 @@ namespace {
 	}
 	
 	
-	void remove_listener(file_descriptor_type const kqfd, std::uintptr_t const ident, filter_type const filter)
+	void remove_listener(events::file_descriptor_type const kqfd, std::uintptr_t const ident, kq::filter_type const filter)
 	{
 		struct kevent kev{};
 		EV_SET(&kev, ident, filter, EV_DELETE | EV_DISABLE | EV_RECEIPT, 0, 0, 0);
@@ -55,21 +61,21 @@ namespace panvc3::dispatch::events::platform::kqueue {
 	
 	void signal_monitor::listen(int const sig)
 	{
-		::sigaddset(&mask, sig);
+		sigaddset(&m_mask, sig);
 		
-		if (-1 == ::sigprocmask(SIG_BLOCK, &m_mask, m_is_empty ? &original_mask : nullptr))
+		if (-1 == ::sigprocmask(SIG_BLOCK, &m_mask, m_is_empty ? &m_original_mask : nullptr))
 			throw std::runtime_error(::strerror(errno));
 	}
 	
 	
-	int signal_monitor::unlisten(int sig)
+	void signal_monitor::unlisten(int sig)
 	{
-		if (!::sigismember(&m_original_mask, sig))
+		if (!sigismember(&m_original_mask, sig))
 		{
 			sigset_t mask{};
-			::sigemptyset(&mask);
-			::sigaddset(&mask, sig);
-			::sigdelset(&m_mask, sig);
+			sigemptyset(&mask);
+			sigaddset(&mask, sig);
+			sigdelset(&m_mask, sig);
 			
 			if (-1 == ::sigprocmask(SIG_UNBLOCK, &mask, nullptr))
 				throw std::runtime_error(::strerror(errno));
@@ -77,7 +83,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 	}
 	
 	
-	void manager::setup() override
+	void manager::setup()
 	{
 		libbio_assert(!m_kqueue_handle);
 		m_kqueue_handle.fd = ::kqueue();
@@ -91,11 +97,11 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		for (event_type_ i(EVENT_MIN); i < EVENT_LIMIT; ++i)
 			EV_SET(&events[i], i, EVFILT_USER, EV_ADD | EV_ENABLE | EV_RECEIPT, NOTE_FFNOP, 0, 0);
 	
-		modify_kqueue(m_kqueue_handle.fd, monitored_events.data(), monitored_events.size());
+		modify_kqueue(m_kqueue_handle.fd, events.data(), events.size());
 	}
 	
 	
-	void manager::run() override
+	void manager::run()
 	{
 		int modified_event_count{};
 		std::array <struct kevent, 16> event_buffer;
@@ -111,6 +117,8 @@ namespace panvc3::dispatch::events::platform::kqueue {
 				nullptr
 			));
 			
+			modified_event_count = 0;
+			
 			if (-1 == res)
 				throw std::runtime_error{::strerror(errno)};
 		
@@ -118,17 +126,17 @@ namespace panvc3::dispatch::events::platform::kqueue {
 				std::lock_guard const lock{m_mutex};
 				for (int i(0); i < res; ++i)
 				{
-					auto const &rec(m_event_buffer[i]);
+					auto const &rec(event_buffer[i]);
 					switch (rec.filter)
 					{
 						case EVFILT_USER:
 						{
 							switch (static_cast <event_type>(rec.ident))
 							{
-								case event_type::STOP:
+								case event_type::stop:
 									return;
 						
-								case event_type::WAKE_UP:
+								case event_type::wake_up:
 									continue;
 							}
 						}
@@ -143,7 +151,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 							auto range(m_sources.equal_range(source_key{ident, rec.filter}));
 							while (range.first != range.second)
 							{
-								range.first->fire_if_enabled();
+								range.first->second->fire_if_enabled();
 								++range.first;
 							}
 							
@@ -162,7 +170,9 @@ namespace panvc3::dispatch::events::platform::kqueue {
 			if (events::timer::DURATION_MAX != next_firing_time)
 			{
 				auto const next_firing_time_ms(chrono::duration_cast <chrono::milliseconds>(next_firing_time).count());
+				auto &timer_event(event_buffer[modified_event_count]); // Make sure that modified_event_count is less than size in case more modifications are needed.
 				EV_SET(&timer_event, 0, EVFILT_TIMER, EV_ADD | EV_ENABLE | EV_ONESHOT | EV_CLEAR, 0, next_firing_time_ms, 0); // EV_CLEAR implicit for timers.
+				++modified_event_count;
 			}
 		}
 	}
@@ -177,18 +187,24 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		source_key const key{fd, EVFILT_READ};
 		bool should_add_listener{};
 		
-		{
+		auto &retval([&] -> file_descriptor_source & {
 			std::lock_guard const lock{m_mutex};
 			should_add_listener = !m_sources.contains(key);
+			auto ptr(std::make_shared <file_descriptor_source>(qq, std::move(tt), fd, file_descriptor_source::type::read_source));
+			auto &retval(*ptr);
 			auto it(m_sources.emplace(
-				std::piecewise_construct{},
+				std::piecewise_construct,
 				std::forward_as_tuple(key),
-				std::forward_as_tuple(std::make_shared <file_descriptor_source>(qq, std::move(tt), fd, file_descriptor_source::type::read_source))
+				std::forward_as_tuple(std::move(ptr))
 			));
-		}
+			
+			return retval;
+		}());
 		
 		if (should_add_listener)
 			add_listener(m_kqueue_handle.fd, fd, EVFILT_READ);
+		
+		return retval;
 	}
 	
 	
@@ -201,18 +217,24 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		source_key const key{fd, EVFILT_WRITE};
 		bool should_add_listener{};
 		
-		{
+		auto &retval([&] -> file_descriptor_source & {
 			std::lock_guard const lock{m_mutex};
 			should_add_listener = !m_sources.contains(key);
+			auto ptr(std::make_shared <file_descriptor_source>(qq, std::move(tt), fd, file_descriptor_source::type::write_source));
+			auto &retval(*ptr);
 			auto it(m_sources.emplace(
-				std::piecewise_construct{},
+				std::piecewise_construct,
 				std::forward_as_tuple(key),
-				std::forward_as_tuple(std::make_shared <file_descriptor_source>(qq, std::move(tt), fd, file_descriptor_source::type::write_source))
+				std::forward_as_tuple(std::move(ptr))
 			));
-		}
+			
+			return retval;
+		}());
 		
 		if (should_add_listener)
 			add_listener(m_kqueue_handle.fd, fd, EVFILT_WRITE);
+		
+		return retval;
 	}
 	
 	
@@ -225,18 +247,24 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		source_key const key{sig, EVFILT_SIGNAL};
 		bool should_add_listener{};
 		
-		{
+		auto &retval([&]() -> signal_source & {
 			std::lock_guard const lock{m_mutex};
 			should_add_listener = !m_sources.contains(key);
+			auto ptr(std::make_shared <signal_source>(qq, std::move(tt), sig));
+			auto &retval(*ptr);
 			auto const it(m_sources.emplace(
-				std::piecewise_construct{},
+				std::piecewise_construct,
 				std::forward_as_tuple(key),
-				std::forward_as_tuple(std::make_shared <signal_source>(qq, std::move(tt), sig))
+				std::forward_as_tuple(std::move(ptr))
 			));
-		}
+				
+			return retval;
+		}());
 		
 		if (should_add_listener)
 			add_listener(m_kqueue_handle.fd, sig, EVFILT_SIGNAL);
+		
+		return retval;
 	}
 	
 	
@@ -249,7 +277,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 			auto range(m_sources.equal_range(key));
 			while (true)
 			{
-				if (&*range.first == &es)
+				if (&*range.first->second == &es)
 				{
 					es.disable();
 					m_sources.erase(range.first);

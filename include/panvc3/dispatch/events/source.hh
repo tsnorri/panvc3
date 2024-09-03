@@ -38,7 +38,6 @@ namespace panvc3::dispatch::events {
 	struct source
 	{
 		virtual ~source() {}
-		virtual event_listener_identifier_type identifier() const = 0;
 		virtual bool is_enabled() const = 0;
 		virtual void disable() = 0;
 		virtual void fire() = 0;
@@ -84,6 +83,7 @@ namespace panvc3::dispatch::events {
 		{
 		}
 		
+	public:
 		bool is_enabled() const final { return bool(m_is_enabled); }
 		void disable() final { m_is_enabled.disable(); }
 		void fire_if_enabled() final { if (is_enabled()) fire(); }
@@ -95,7 +95,7 @@ namespace panvc3::dispatch::events {
 						private std::enable_shared_from_this <t_self>
 	{
 	public:
-		using source_tpl_ <t_task>::source_tpl_;
+		using source_tpl_ <t_task, t_needs_queue>::source_tpl_;
 		void fire() final;
 		void operator()() { if (this->is_enabled()) this->m_task(static_cast <t_self &>(*this)); }
 	};
@@ -105,7 +105,7 @@ namespace panvc3::dispatch::events {
 	template <typename t_self, bool t_needs_queue>
 	struct source_tpl <t_self, t_needs_queue, task> : public source_tpl_ <task, t_needs_queue>
 	{
-		using source_tpl_ <task>::source_tpl_;
+		using source_tpl_ <task, t_needs_queue>::source_tpl_;
 		void fire() final;
 		void operator()() { if (this->is_enabled()) this->m_task(); }
 	};
@@ -115,12 +115,14 @@ namespace panvc3::dispatch::events {
 	void source_tpl <t_self, t_needs_queue, t_task>::fire()
 	{
 		if constexpr (t_needs_queue)
-			(*this)();
-		else
 		{
 			libbio_assert(this->m_queue);
 			// operator() checks is_enabled().
 			this->m_queue->async(std::enable_shared_from_this <t_self>::shared_from_this());
+		}
+		else
+		{
+			(*this)();
 		}
 	}
 	
@@ -129,12 +131,14 @@ namespace panvc3::dispatch::events {
 	void source_tpl <t_self, t_needs_queue, task>::fire()
 	{
 		if constexpr (t_needs_queue)
-			(*this)();
+		{
+			libbio_assert(this->m_queue);
+			if (this->is_enabled())
+				this->m_task.enqueue_transient_async(*this->m_queue);
+		}
 		else
 		{
-			libbio_assert(m_queue);
-			if (is_enabled())
-				m_task.enqueue_transient_async(*m_queue);
+			(*this)();
 		}
 	}
 }

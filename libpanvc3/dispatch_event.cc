@@ -3,8 +3,11 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <chrono>
 #include <panvc3/dispatch/event.hh>
 #include <panvc3/dispatch/task_def.hh>
+
+namespace chrono	= std::chrono;
 
 
 namespace panvc3::dispatch::events
@@ -17,7 +20,7 @@ namespace panvc3::dispatch::events
 			std::lock_guard lock{m_timer_mutex};
 		
 			if (m_timer_entries.empty())
-				return false;
+				return next_firing_time;
 			
 			do
 			{
@@ -64,22 +67,25 @@ namespace panvc3::dispatch::events
 	}
 	
 	
-	void manager_base::schedule_timer(
+	auto manager_base::schedule_timer(
 		timer::duration_type const interval,
 		bool repeats,
 		queue &qq,
 		timer::task_type tt
-	)												// Thread-safe.
+	) -> timer_ptr										// Thread-safe.
 	{
-		{
+		auto retval([&]{
 			std::lock_guard lock(m_timer_mutex);
 			auto const now(clock_type::now());
 		
 			// Insert to the correct position.
-			m_timer_entries.emplace_back(now + interval, std::make_shared <timer>(qq, std::move(tt), interval, repeats));
+			auto &entry(m_timer_entries.emplace_back(now + interval, std::make_shared <timer>(qq, std::move(tt), interval, repeats)));
+			auto retval(entry.timer);
 			std::push_heap(m_timer_entries.begin(), m_timer_entries.end(), heap_cmp_type{});
-		}
+			return retval;
+		}());
 	
 		trigger_event(event_type::wake_up);
+		return retval;
 	}
 }
