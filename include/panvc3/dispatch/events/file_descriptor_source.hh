@@ -21,34 +21,34 @@ namespace panvc3::dispatch::events {
 		
 	public:
 		typedef task_t <file_descriptor_source &>	task_type;
+		
+		enum class type
+		{
+			read_source,
+			write_source
+		};
 	
 	private:
 		file_descriptor_type			m_fd{-1};
-		filter_type						m_filter{};
+		type							m_source_type;
 	
 	public:
 		file_descriptor_source(
 			queue &qq,
 			task_type &&tt,
-			event_listener_identifier_type const identifier,
 			file_descriptor_type const fd,
-			filter_type const filter
+			type const st
 		):
-			source_tpl(qq, std::move(tt), identifier),
+			source_tpl(qq, std::move(tt)),
 			m_fd(fd),
-			m_filter(filter)
+			m_source_type(st)
 		{
 		}
 		
-		template <typename ... t_args>
-		static std::shared_ptr <file_descriptor_source>
-		make_shared(t_args && ... args) { return std::make_shared <file_descriptor_source>(std::forward <t_args>(args)...); }
-		
 		file_descriptor_type file_descriptor() const { return m_fd; }
-		
-		// Equivalence class in kqueue.
-		file_descriptor_type ident() const { return m_fd; }
-		filter_type filter() const { return m_filter; }
+		type file_descriptor_source_type() const { return m_source_type; }
+		bool is_read_event_source() const override { return type::read_source == m_source_type; }
+		bool is_write_event_source() const override { return type::write_source == m_source_type; }
 	};
 	
 	typedef file_descriptor_source::task_type file_descriptor_task;

@@ -16,9 +16,21 @@
 #include <utility>						// std::forward
 
 
+namespace panvc3::dispatch::events::detail {
+	
+	class enabled_status
+	{
+		std::atomic_bool	m_status{true};
+		
+	public:
+		operator bool() const { return m_status.load(std::memory_order_acquire); }
+		void disable() { m_status.store(false, std::memory_order_release); }
+	};
+}
+
+
 namespace panvc3::dispatch::events {
 	
-	typedef std::int16_t	filter_type;				// Type from struct kevent.
 	typedef int				file_descriptor_type;
 	typedef int				signal_type;
 	
@@ -30,71 +42,100 @@ namespace panvc3::dispatch::events {
 		virtual bool is_enabled() const = 0;
 		virtual void disable() = 0;
 		virtual void fire() = 0;
+		virtual void fire_if_enabled() = 0;
+		
+		// Needed by the Linux implementation.
+		virtual bool is_read_event_source() const { return false; }
+		virtual bool is_write_event_source() const { return false; }
 	};
-
-
-	template <typename t_task>
+	
+	
+	template <typename t_task, bool t_needs_queue>
 	struct source_tpl_ : public source
 	{
 	protected:
 		t_task							m_task{};
-		queue							*m_queue{};
-		event_listener_identifier_type	m_identifier{EVENT_LISTENER_IDENTIFIER_MAX};
-		std::atomic_bool				m_is_enabled{true};
+		detail::enabled_status			m_is_enabled;
 		
 		template <typename t_task_>
-		source_tpl_(queue &qq, t_task_ &&tt, event_listener_identifier_type const identifier = 0):
-			m_task(std::forward <t_task_>(tt)),
-			m_queue(&qq),
-			m_identifier(identifier)
+		source_tpl_(t_task_ &&tt):
+			m_task(std::forward <t_task_>(tt))
 		{
 		}
-	
-	public:
-		event_listener_identifier_type identifier() const override { return m_identifier; }
-		bool is_enabled() const override { return m_is_enabled.load(std::memory_order_acquire); } // Possibly relaxed would be enough.
-		void disable() override { m_is_enabled.store(false, std::memory_order_release); }
+		
+		bool is_enabled() const final { return bool(m_is_enabled); }
+		void disable() final { m_is_enabled.disable(); }
+		void fire_if_enabled() final { if (is_enabled()) fire(); }
 	};
 	
 	
-	template <typename t_self, typename t_task = task_t <t_self &>>
-	class source_tpl :	public source_tpl_ <t_task>,
+	template <typename t_task>
+	struct source_tpl_ <t_task, true> : public source
+	{
+	protected:
+		t_task							m_task{};
+		queue							*m_queue{};
+		detail::enabled_status			m_is_enabled;
+		
+		template <typename t_task_>
+		source_tpl_(queue &qq, t_task_ &&tt):
+			m_task(std::forward <t_task_>(tt)),
+			m_queue(&qq)
+		{
+		}
+		
+		bool is_enabled() const final { return bool(m_is_enabled); }
+		void disable() final { m_is_enabled.disable(); }
+		void fire_if_enabled() final { if (is_enabled()) fire(); }
+	};
+
+
+	template <typename t_self, bool t_needs_queue = true, typename t_task = task_t <t_self &>>
+	class source_tpl :	public source_tpl_ <t_task, t_needs_queue>,
 						private std::enable_shared_from_this <t_self>
 	{
 	public:
 		using source_tpl_ <t_task>::source_tpl_;
-		using source_tpl_ <t_task>::is_enabled;
 		void fire() final;
-	
-	public:
-		void operator()() { if (is_enabled()) this->m_task(static_cast <t_self &>(*this)); }
+		void operator()() { if (this->is_enabled()) this->m_task(static_cast <t_self &>(*this)); }
 	};
 	
 	
 	// Partial specialisation for task without any parameters.
-	template <typename t_self>
-	struct source_tpl <t_self, task> : public source_tpl_ <task>
+	template <typename t_self, bool t_needs_queue>
+	struct source_tpl <t_self, t_needs_queue, task> : public source_tpl_ <task, t_needs_queue>
 	{
 		using source_tpl_ <task>::source_tpl_;
 		void fire() final;
+		void operator()() { if (this->is_enabled()) this->m_task(); }
 	};
 	
 	
-	template <typename t_self, typename t_task>
-	void source_tpl <t_self, t_task>::fire()
+	template <typename t_self, bool t_needs_queue, typename t_task>
+	void source_tpl <t_self, t_needs_queue, t_task>::fire()
 	{
-		libbio_assert(this->m_queue);
-		// operator() checks is_enabled().
-		this->m_queue->async(std::enable_shared_from_this <t_self>::shared_from_this());
+		if constexpr (t_needs_queue)
+			(*this)();
+		else
+		{
+			libbio_assert(this->m_queue);
+			// operator() checks is_enabled().
+			this->m_queue->async(std::enable_shared_from_this <t_self>::shared_from_this());
+		}
 	}
 	
 	
-	template <typename t_self>
-	void source_tpl <t_self, task>::fire()
+	template <typename t_self, bool t_needs_queue>
+	void source_tpl <t_self, t_needs_queue, task>::fire()
 	{
-		libbio_assert(m_queue);
-		if (is_enabled())
-			m_task.enqueue_transient_async(*m_queue);
+		if constexpr (t_needs_queue)
+			(*this)();
+		else
+		{
+			libbio_assert(m_queue);
+			if (is_enabled())
+				m_task.enqueue_transient_async(*m_queue);
+		}
 	}
 }
 
