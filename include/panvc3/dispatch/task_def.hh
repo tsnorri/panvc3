@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -67,10 +67,20 @@ namespace panvc3::dispatch::detail {
 	
 	template <typename ... t_args>
 	template <typename t_callable, typename ... t_callable_args>
-	task <t_args...>::task(private_tag <t_callable>, t_callable_args && ... args)
+	task <t_args...>::task(callable_type_tag <t_callable>, t_callable_args && ... args)
 	{
 		static_assert(sizeof(t_callable) <= BUFFER_SIZE);
 		new(m_buffer) t_callable(std::forward <t_callable_args>(args)...);
+	}
+
+
+	// Useful especially for lambda_callable since its exact type can be difficult to pass using callable_type_tag.
+	template <typename ... t_args>
+	template <typename t_callable>
+	task <t_args...>::task(callable_tag, t_callable &&callable)
+	{
+		static_assert(sizeof(t_callable) <= BUFFER_SIZE);
+		new(m_buffer) t_callable(std::forward <t_callable>(callable));
 	}
 	
 	

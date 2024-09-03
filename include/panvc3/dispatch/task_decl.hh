@@ -46,6 +46,12 @@ namespace panvc3::dispatch {
 		{
 			(*target)(args...);
 		};
+
+	// Lambda or similar
+	template <typename t_type, typename ... t_args>
+	concept Invocable =
+		std::is_invocable_v <std::remove_reference_t <t_type>, t_args...> &&
+		(!Callable <t_type, t_args...>);
 }
 
 
@@ -322,11 +328,16 @@ namespace panvc3::dispatch::detail {
 		std::byte m_buffer[BUFFER_SIZE];
 		
 	private:
+		struct callable_tag {};
+
 		template <typename t_type>
-		struct private_tag {};
+		struct callable_type_tag {};
 		
 		template <typename t_callable, typename ... t_args_>
-		explicit inline task(private_tag <t_callable>, t_args_ && ... args);
+		explicit inline task(callable_type_tag <t_callable>, t_args_ && ... args);
+
+		template <typename t_callable>
+		explicit inline task(callable_tag, t_callable &&callable);
 		
 		callable_type &get_callable() { return to_callable(m_buffer); }
 		
@@ -334,27 +345,33 @@ namespace panvc3::dispatch::detail {
 		virtual ~task() { get_callable().~callable(); }
 		
 		// Default constructor, produces an empty_callable.
-		task(): task{private_tag <empty_callable_type>{}} {}
+		task(): task{callable_type_tag <empty_callable_type>{}} {}
 		
 		// Construct from an empty_callable.
-		/* implicit */ inline task(empty_callable_type const &): task{private_tag <empty_callable_type>{}} {}
+		/* implicit */ inline task(empty_callable_type const &): task{callable_type_tag <empty_callable_type>{}} {}
 		
 		// Construct from a target that produces an indirect_member_callable. (I.e. pointer, std::unique_ptr, std::shared_ptr, std::weak_ptr.)
 		template <ClassIndirectCallableTarget <task <t_args...>, t_args...> t_target>
 		/* implicit */ inline task(t_target &&target):
-			task{private_tag <indirect_member_callable_t <std::remove_reference_t <t_target>>>{}, std::forward <t_target>(target)} {} // operator() by default
+			task{callable_type_tag <indirect_member_callable_t <std::remove_reference_t <t_target>>>{}, std::forward <t_target>(target)} {} // operator() by default
 		
 		// Construct from a callable.
 		template <Callable <t_args...> t_callable>
 		/* implicit */ inline task(t_callable &&callable):
-			task{private_tag <std::remove_reference_t <t_callable>>{}, std::forward <t_callable>(callable)} {}
+			task{callable_tag{}, std::forward <t_callable>(callable)} {}
+
+		// Construct from a lambda (or similar).
+		template <Invocable <t_args...> t_fn>
+		/* implicit */ inline task(t_fn &&fn):
+			task{callable_tag{}, make_lambda_callable(std::forward <t_fn>(fn))} {}
 		
 		// Construct from a target that produces an indirect_member_callable. (I.e. pointer, std::unique_ptr, std::shared_ptr, std::weak_ptr.)
 		// The size check is in the constructor.
 		template <ClassIndirectTarget <task <t_args...>, t_args...> t_target, indirect_member_callable_fn_t <t_target, t_args...> t_fn>
-		static task from_member_fn(t_target &&target) { return task{private_tag <indirect_member_callable_t <t_target, t_fn>>{}, std::forward <t_target>(target)}; }
+		static task from_member_fn(t_target &&target) { return task{callable_type_tag <indirect_member_callable_t <t_target, t_fn>>{}, std::forward <t_target>(target)}; }
 		
-		template <typename t_fn>
+		// Construct from a lambda (or similar).
+		template <Invocable <t_args...> t_fn>
 		static task from_lambda(t_fn &&fn) { return make_lambda_callable(std::forward <t_fn>(fn)); }
 		
 		// Move constructor and assignment.
