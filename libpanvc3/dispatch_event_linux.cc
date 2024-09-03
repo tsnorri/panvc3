@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <panvc3/dispatch/events/platform/manager_linux.hh>
+#include <panvc3/dispatch/task_def.hh>
 #include <range/v3/view/take_exactly.hpp>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -232,7 +233,7 @@ namespace panvc3::dispatch::events::platform::linux {
 			auto const it(m_sources.emplace(
 				std::piecewise_construct,
 				std::forward_as_tuple(sig_fd, source_key::fd_tag{}),
-				std::forward_as_tuple(std::make_shared <synchronous_source>([this](synchronous_source &){
+				std::forward_as_tuple(std::make_shared <synchronous_source>(synchronous_source::task_type::from_lambda([this](synchronous_source &){
 					struct signalfd_siginfo buffer{};
 					while (m_signal_monitor.read(buffer))
 					{
@@ -245,7 +246,7 @@ namespace panvc3::dispatch::events::platform::linux {
 							++range.first;
 						}
 					}
-				}))
+				})))
 			));
 			
 			listen_for_fd_events(sig_fd, true, false);
@@ -465,6 +466,7 @@ namespace panvc3::dispatch::events::platform::linux {
 		
 		// Clear the fd.
 		std::uint64_t buffer{};
-		::read(m_handle.fd, &buffer, sizeof(std::uint64_t));
+		if (-1 == ::read(m_handle.fd, &buffer, sizeof(std::uint64_t)))
+			throw std::runtime_error(::strerror(errno));
 	}
 }
