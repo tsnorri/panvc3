@@ -141,6 +141,7 @@ namespace panvc3::dispatch::events::platform::linux {
 	public:
 		void setup() override;
 		void run() override;
+		void trigger_event(event_type const evt) override { m_event_monitor.post(evt); }
 		
 		file_descriptor_source &add_file_descriptor_read_event_source(
 			file_descriptor_type const fd,
