@@ -6,6 +6,7 @@
 #include <chrono>
 #include <panvc3/dispatch/event.hh>
 #include <panvc3/dispatch/task_def.hh>
+#include <sys/wait.h>					// ::waitpid()
 
 namespace chrono	= std::chrono;
 
@@ -87,5 +88,65 @@ namespace panvc3::dispatch::events
 	
 		trigger_event(event_type::wake_up);
 		return retval;
+	}
+
+
+	void install_sigchld_handler(manager &mgr, queue &qq, sigchld_handler &handler)
+	{
+		mgr.add_signal_event_source(SIGCHLD, qq, [&handler](signal_source const &source){
+			bool did_report_error(false);
+			while (true)
+			{
+				int status(0);
+				auto const pid(::waitpid(-1, &status, WNOHANG | WUNTRACED));
+				if (pid <= 0)
+					break;
+
+				if (WIFEXITED(status))
+				{
+					auto const exit_status(WEXITSTATUS(status));
+					if (0 != exit_status)
+					{
+						did_report_error = true;
+						char const *reason{nullptr};
+						switch (exit_status)
+						{
+							case 127:
+								reason = "command not found";
+								break;
+
+							case 126:
+								reason = "command invoked cannot execute";
+								break;
+
+							case 69: // EX_UNAVAILABLE
+								reason = "service unavailable";
+								break;
+
+							case 71: // EX_OSERR
+								reason = "unknown error from execvp()";
+								break;
+
+							case 74: // EX_IOERR
+								reason = "an I/O error occurred";
+								break;
+
+							default:
+								break;
+						}
+
+						handler.child_did_exit_with_nonzero_status(pid, exit_status, reason);
+					}
+				}
+				else if (WIFSIGNALED(status))
+				{
+					did_report_error = true;
+					auto const signal_number(WTERMSIG(status));
+					handler.child_received_signal(pid, signal_number);
+				}
+			}
+
+			handler.finish_handling(did_report_error);
+		});
 	}
 }
