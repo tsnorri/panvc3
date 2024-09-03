@@ -16,6 +16,3 @@
 [submodule "lib/rapidcheck"]
 	path = lib/rapidcheck
 	url = https://github.com/emil-e/rapidcheck.git
-[submodule "lib/libkqueue"]
-	path = lib/libkqueue
-	url = https://github.com/mheily/libkqueue.git

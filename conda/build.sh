@@ -12,7 +12,6 @@ echo "Generating local.mk"
 m4 -D CONDA_PREFIX="${PREFIX}" conda/local.mk.m4 > local.mk
 
 echo "Running make"
-make -j ${CPU_COUNT} lib/libkqueue/build/libkqueue.a
 make -j ${CPU_COUNT} all
 
 echo "Copying build products"
@@ -36,7 +35,6 @@ mkdir -p "${dst_doc}"
 cp README.md													"${dst_doc}"
 cp LICENSE														"${dst_doc}"
 cp lib/cereal/LICENSE											"${dst_doc}/cereal-license.txt"
-cp lib/libkqueue/LICENSE										"${dst_doc}/libkqueue-license.txt"
 cp lib/sdsl-lite/LICENSE										"${dst_doc}/sdsl-lite-license.txt"
 cp lib/seqan3/LICENSE.md										"${dst_doc}/seqan3-license.md"
 cp lib/libbio/lib/GSL/LICENSE									"${dst_doc}/GSL-license.txt"

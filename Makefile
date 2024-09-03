@@ -51,7 +51,6 @@ clean:
 
 clean-dependencies:
 	$(MAKE) -C lib/libbio clean
-	$(MAKE) -f make/libkqueue.mk clean
 	$(MAKE) -f make/librapidcheck.mk clean
 
 clean-dist:
@@ -106,7 +105,6 @@ $(DIST_TAR_GZ):	$(BUILD_PRODUCTS)
 	$(CP) README.md $(DIST_TARGET_DIR)
 	$(CP) LICENSE $(DIST_TARGET_DIR)
 	$(CP) lib/cereal/LICENSE $(DIST_TARGET_DIR)/cereal-license.txt
-	$(CP) lib/libkqueue/LICENSE $(DIST_TARGET_DIR)/libkqueue-license.txt
 	$(CP) lib/sdsl-lite/LICENSE $(DIST_TARGET_DIR)/sdsl-lite-license.txt
 	$(CP) lib/seqan3/LICENSE.md $(DIST_TARGET_DIR)/seqan3-license.md
 	$(CP) lib/libbio/lib/GSL/LICENSE $(DIST_TARGET_DIR)/GSL-license.txt
@@ -122,9 +120,6 @@ $(LIBBIO_LIB): lib/libbio/local.mk
 
 lib/libbio/tests/tests: lib/libbio/local.mk
 	$(MAKE) -C lib/libbio tests
-
-lib/libkqueue/build/libkqueue.a:
-	$(MAKE) -f make/libkqueue.mk
 
 lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
