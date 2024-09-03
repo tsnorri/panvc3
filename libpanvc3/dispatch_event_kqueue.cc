@@ -178,6 +178,17 @@ namespace panvc3::dispatch::events::platform::kqueue {
 	}
 	
 	
+	void manager::trigger_event(event_type const evt)
+	{
+		struct kevent kev{};
+		struct timespec ts{};
+		EV_SET(&kev, std::to_underlying(evt), EVFILT_USER, 0, NOTE_TRIGGER, 0, nullptr);
+		auto const res(::kevent(m_kqueue_handle.fd, &kev, 1, nullptr, 0, &ts));
+		if (res < 0)
+			throw std::runtime_error{::strerror(errno)};
+	}
+	
+	
 	auto manager::add_file_descriptor_read_event_source(
 		file_descriptor_type const fd,
 		queue &qq,

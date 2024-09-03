@@ -85,6 +85,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 	public:
 		void setup() override;
 		void run() override;
+		void trigger_event(event_type const evt) override;
 		
 		file_descriptor_source &add_file_descriptor_read_event_source(
 			file_descriptor_type const fd,
