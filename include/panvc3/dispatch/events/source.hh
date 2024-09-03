@@ -50,12 +50,13 @@ namespace panvc3::dispatch::events {
 	
 	
 	template <typename t_task, bool t_needs_queue>
-	struct source_tpl_ : public source
+	class source_tpl_ : public source
 	{
 	protected:
 		t_task							m_task{};
 		detail::enabled_status			m_is_enabled;
 		
+	public:
 		template <typename t_task_>
 		source_tpl_(t_task_ &&tt):
 			m_task(std::forward <t_task_>(tt))
@@ -69,13 +70,14 @@ namespace panvc3::dispatch::events {
 	
 	
 	template <typename t_task>
-	struct source_tpl_ <t_task, true> : public source
+	class source_tpl_ <t_task, true> : public source
 	{
 	protected:
 		t_task							m_task{};
 		queue							*m_queue{};
 		detail::enabled_status			m_is_enabled;
 		
+	public:
 		template <typename t_task_>
 		source_tpl_(queue &qq, t_task_ &&tt):
 			m_task(std::forward <t_task_>(tt)),
@@ -83,7 +85,6 @@ namespace panvc3::dispatch::events {
 		{
 		}
 		
-	public:
 		bool is_enabled() const final { return bool(m_is_enabled); }
 		void disable() final { m_is_enabled.disable(); }
 		void fire_if_enabled() final { if (is_enabled()) fire(); }
@@ -91,10 +92,9 @@ namespace panvc3::dispatch::events {
 
 
 	template <typename t_self, bool t_needs_queue = true, typename t_task = task_t <t_self &>>
-	class source_tpl :	public source_tpl_ <t_task, t_needs_queue>,
+	struct source_tpl :	public source_tpl_ <t_task, t_needs_queue>,
 						private std::enable_shared_from_this <t_self>
 	{
-	public:
 		using source_tpl_ <t_task, t_needs_queue>::source_tpl_;
 		void fire() final;
 		void operator()() { if (this->is_enabled()) this->m_task(static_cast <t_self &>(*this)); }
