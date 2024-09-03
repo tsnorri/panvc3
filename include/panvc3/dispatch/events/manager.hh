@@ -81,6 +81,7 @@ namespace panvc3::dispatch::events {
 		std::jthread start_thread_and_run() { return std::jthread([this]{ run(); }); }
 		
 		virtual void trigger_event(event_type const evt) = 0;
+		void stop() { trigger_event(event_type::stop); }
 		
 		// The fact that the non-timer sources are stored in shared pointers
 		// is an implementation detail b.c. they are guaranteed to persist
