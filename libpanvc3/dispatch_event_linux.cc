@@ -442,12 +442,18 @@ namespace panvc3::dispatch::events::platform::linux {
 
 				case -1:
 				{
-					if (EAGAIN == errno)
+					switch (errno)
 					{
-						// Should not happen?
-						struct timespec const ts{.tv_sec = 0, .tv_nsec = 50};
-						::nanosleep(&ts, nullptr);
-						continue;
+						case EAGAIN:
+						{
+							// Should not happen?
+							struct timespec const ts{.tv_sec = 0, .tv_nsec = 50};
+							::nanosleep(&ts, nullptr);
+							continue;
+						}
+
+						default:
+							break;
 					}
 
 					throw std::runtime_error(::strerror(errno));
@@ -467,6 +473,14 @@ namespace panvc3::dispatch::events::platform::linux {
 		// Clear the fd.
 		std::uint64_t buffer{};
 		if (-1 == ::read(m_handle.fd, &buffer, sizeof(std::uint64_t)))
-			throw std::runtime_error(::strerror(errno));
+		{
+			switch (errno)
+			{
+				case EAGAIN:
+					break;
+				default:
+					throw std::runtime_error(::strerror(errno));
+			}
+		}
 	}
 }
