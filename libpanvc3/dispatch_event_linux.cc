@@ -353,25 +353,33 @@ namespace panvc3::dispatch::events::platform::linux {
 	
 	bool signal_monitor::listen(int const sig)
 	{
-		auto res(m_actions.emplace(sig, nullptr));
+		struct sigaction const empty{};
+		auto res(m_actions.emplace(sig, empty));
 		libbio_assert(res.second);
 		auto &old_action(res.first->second);
 		
-		sigset_t mask{};
-		::sigemptyset(&mask);
-		struct sigaction new_action{.sa_handler = SIG_IGN, .sa_mask = mask, .sa_flags = 0};
-		if (-1 == ::sigaction(sig, &new_action, &old_action))
-			throw std::runtime_error(::strerror(errno));
-		
-		sigaddset(&m_mask, sig);
-		auto const res(::signalfd(m_handle.fd, &m_mask, SFD_NONBLOCK | SFD_CLOEXEC));
-		if (-1 == res)
-			throw std::runtime_error(::strerror(errno));
-		
-		if (-1 == m_handle.fd)
 		{
-			m_handle.fd = res;
-			return true;
+			sigset_t mask{};
+			::sigemptyset(&mask);
+			struct sigaction new_action{};
+			new_action.sa_handler = SIG_IGN;
+			new_action.sa_mask = mask;
+			new_action.sa_flags = 0;
+			if (-1 == ::sigaction(sig, &new_action, &old_action))
+				throw std::runtime_error(::strerror(errno));
+		}
+		
+		{
+			sigaddset(&m_mask, sig);
+			auto const res(::signalfd(m_handle.fd, &m_mask, SFD_NONBLOCK | SFD_CLOEXEC));
+			if (-1 == res)
+				throw std::runtime_error(::strerror(errno));
+
+			if (-1 == m_handle.fd)
+			{
+				m_handle.fd = res;
+				return true;
+			}
 		}
 		
 		return false;
