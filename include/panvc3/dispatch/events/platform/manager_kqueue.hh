@@ -75,6 +75,12 @@ namespace panvc3::dispatch::events::platform::kqueue {
 			source_key,
 			std::shared_ptr <events::source>
 		>										source_map;
+			
+		typedef std::pair <
+			std::unique_lock <std::mutex>,
+			bool
+		>										remove_event_source_return_type;
+		
 		
 		file_handle								m_kqueue_handle;
 		source_map								m_sources;
@@ -114,7 +120,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		) override;									// Thread-safe.
 		
 	private:
-		void remove_event_source(source &es, source_key const key);
+		remove_event_source_return_type remove_event_source(source &es, source_key const key);
 	};
 }
 

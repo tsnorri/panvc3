@@ -256,11 +256,10 @@ namespace panvc3::dispatch::events::platform::kqueue {
 	) -> signal_source &
 	{
 		source_key const key{sig, EVFILT_SIGNAL};
-		bool should_add_listener{};
 		
 		auto &retval([&]() -> signal_source & {
 			std::lock_guard const lock{m_mutex};
-			should_add_listener = !m_sources.contains(key);
+			libbio_assert(!m_sources.contains(key)); // Only one source per signal is currently supported.
 			auto ptr(std::make_shared <signal_source>(qq, std::move(tt), sig));
 			auto &retval(*ptr);
 			auto const it(m_sources.emplace(
@@ -268,46 +267,44 @@ namespace panvc3::dispatch::events::platform::kqueue {
 				std::forward_as_tuple(key),
 				std::forward_as_tuple(std::move(ptr))
 			));
-				
+			
+			m_signal_monitor.listen(sig);
+			
 			return retval;
 		}());
 		
-		if (should_add_listener)
-			add_listener(m_kqueue_handle.fd, sig, EVFILT_SIGNAL);
-		
+		add_listener(m_kqueue_handle.fd, sig, EVFILT_SIGNAL);
 		return retval;
 	}
 	
 	
-	void manager::remove_event_source(source &es, source_key const key)
+	auto manager::remove_event_source(source &es, source_key const key) -> remove_event_source_return_type
 	{
-		bool should_remove_listener{true};
+		remove_event_source_return_type retval{m_mutex, true};
 		
+		auto range(m_sources.equal_range(key));
+		while (true)
 		{
-			std::lock_guard const lock{m_mutex};
-			auto range(m_sources.equal_range(key));
-			while (true)
+			if (&*range.first->second == &es)
 			{
-				if (&*range.first->second == &es)
-				{
-					es.disable();
-					m_sources.erase(range.first);
-					break;
-				}
-				else
-				{
-					should_remove_listener = false;
-				}
+				es.disable();
+				m_sources.erase(range.first);
 				
 				++range.first;
+				if (range.first != range.second)
+					retval.second = false;
+				
+				return retval;
+			}
+			else
+			{
+				retval.second = false;
 			}
 			
-			if (range.first != range.second)
-				should_remove_listener = false;
+			++range.first;
 		}
 		
-		if (should_remove_listener)
-			remove_listener(m_kqueue_handle.fd, key.value, key.filter);
+		return retval;
 	}
 	
 	
@@ -331,15 +328,32 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		}
 		
 		source_key const key{es.file_descriptor(), filter};
-		remove_event_source(es, key);
+		bool should_remove_listener{};
+		
+		{
+			auto const res(remove_event_source(es, key));
+			should_remove_listener = res.second;
+		}
+		
+		// es no longer valid.
+		if (should_remove_listener)
+			remove_listener(m_kqueue_handle.fd, key.value, filter);
 	}
 	
 	
-	void manager::remove_signal_event_source(
-		signal_source &es
-	)
+	void manager::remove_signal_event_source(signal_source &es)
 	{
 		source_key const key{es.signal(), EVFILT_SIGNAL};
-		remove_event_source(es, key);
+		bool should_remove_listener{};
+		
+		{
+			auto const res(remove_event_source(es, key));
+			m_signal_monitor.unlisten(key.value);
+			should_remove_listener = res.second;
+		}
+		
+		// es no longer valid.
+		if (should_remove_listener)
+			remove_listener(m_kqueue_handle.fd, key.value, EVFILT_SIGNAL);
 	}
 }
