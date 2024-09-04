@@ -7,6 +7,7 @@
 #include <panvc3/dispatch/events/platform/manager_linux.hh>
 #include <panvc3/dispatch/task_def.hh>
 #include <range/v3/view/take_exactly.hpp>
+#include <signal.h>												// ::sigaction
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/timerfd.h>
@@ -56,7 +57,7 @@ namespace panvc3::dispatch::events::platform::linux {
 	}
 	
 	
-	void manager::run()
+	void manager::run_()
 	{
 		std::array <struct epoll_event, 16> events;
 		while (true)
@@ -352,11 +353,17 @@ namespace panvc3::dispatch::events::platform::linux {
 	
 	bool signal_monitor::listen(int const sig)
 	{
-		::sigaddset(&m_mask, sig);
+		auto res(m_actions.emplace(sig, nullptr));
+		libbio_assert(res.second);
+		auto &old_action(res.first->second);
 		
-		if (-1 == ::sigprocmask(SIG_BLOCK, &m_mask, m_handle ? nullptr : &m_original_mask))
+		sigset_t mask{};
+		::sigemptyset(&mask);
+		struct sigaction new_action{.sa_handler = SIG_IGN, .sa_mask = mask, .sa_flags = 0};
+		if (-1 == ::sigaction(sig, &new_action, &old_action))
 			throw std::runtime_error(::strerror(errno));
 		
+		sigaddset(&m_mask, sig);
 		auto const res(::signalfd(m_handle.fd, &m_mask, SFD_NONBLOCK | SFD_CLOEXEC));
 		if (-1 == res)
 			throw std::runtime_error(::strerror(errno));
@@ -374,13 +381,18 @@ namespace panvc3::dispatch::events::platform::linux {
 	int signal_monitor::unlisten(int sig)
 	{
 		int retval{-1};
-		sigset_t mask{};
-		::sigemptyset(&mask);
-		::sigaddset(&mask, sig);
-		::sigdelset(&m_mask, sig);
+		
+		auto it(m_actions.find(sig));
+		libbio_assert_neq(it, m_actions.end());
+		
+		if (-1 == ::sigaction(sig, &it->second, nullptr))
+			throw std::runtime_error(::strerror(errno));
+		
+		m_actions.erase(it);
+		sigdelset(&m_mask, sig);
 		
 		// Check if we still have signals to monitor.
-		if (::sigisemptyset(&m_mask))
+		if (m_actions.empty())
 		{
 			retval = m_handle.fd;
 			m_handle.release();
@@ -390,9 +402,6 @@ namespace panvc3::dispatch::events::platform::linux {
 			throw std::runtime_error(::strerror(errno));
 		}
 		
-		if (!::sigismember(&m_original_mask, sig) && -1 == ::sigprocmask(SIG_UNBLOCK, &mask, nullptr))
-			throw std::runtime_error(::strerror(errno));
-		
 		return retval;
 	}
 	
@@ -400,8 +409,15 @@ namespace panvc3::dispatch::events::platform::linux {
 	void signal_monitor::release()
 	{
 		m_handle.release();
-		if (-1 == ::sigprocmask(SIG_SETMASK, &m_original_mask, nullptr))
-			throw std::runtime_error(::strerror(errno));
+		sigemptyset(&m_mask);
+		
+		for (auto const &kv : m_actions)
+		{
+			if (-1 == ::sigaction(kv.first, &kv.second, nullptr))
+				throw std::runtime_error(::strerror(errno));
+		}
+		
+		m_actions.clear();
 	}
 
 

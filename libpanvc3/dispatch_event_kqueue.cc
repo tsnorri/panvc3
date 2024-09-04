@@ -6,6 +6,7 @@
 #include <chrono>
 #include <panvc3/dispatch/events/platform/manager_kqueue.hh>
 #include <panvc3/dispatch/task_def.hh>
+#include <signal.h>												// ::sigaction
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -61,25 +62,32 @@ namespace panvc3::dispatch::events::platform::kqueue {
 	
 	void signal_monitor::listen(int const sig)
 	{
-		sigaddset(&m_mask, sig);
+		// Can’t come up with the correct syntax for empty struct sigaction literal.
+		struct sigaction const empty{};
+		auto res(m_actions.emplace(sig, empty));
+		libbio_assert(res.second);
+		auto &old_action(res.first->second);
 		
-		if (-1 == ::sigprocmask(SIG_BLOCK, &m_mask, m_is_empty ? &m_original_mask : nullptr))
+		sigset_t mask{};
+		sigemptyset(&mask);
+		struct sigaction new_action{};
+		new_action.sa_handler = SIG_IGN;
+		new_action.sa_mask = mask;
+		new_action.sa_flags = 0;
+		if (-1 == ::sigaction(sig, &new_action, &old_action))
 			throw std::runtime_error(::strerror(errno));
 	}
 	
 	
 	void signal_monitor::unlisten(int sig)
 	{
-		if (!sigismember(&m_original_mask, sig))
-		{
-			sigset_t mask{};
-			sigemptyset(&mask);
-			sigaddset(&mask, sig);
-			sigdelset(&m_mask, sig);
-			
-			if (-1 == ::sigprocmask(SIG_UNBLOCK, &mask, nullptr))
-				throw std::runtime_error(::strerror(errno));
-		}
+		auto it(m_actions.find(sig));
+		libbio_assert_neq(it, m_actions.end());
+		
+		if (-1 == ::sigaction(sig, &it->second, nullptr))
+			throw std::runtime_error(::strerror(errno));
+		
+		m_actions.erase(it);
 	}
 	
 	
@@ -101,7 +109,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 	}
 	
 	
-	void manager::run()
+	void manager::run_()
 	{
 		int modified_event_count{};
 		std::array <struct kevent, 16> event_buffer;

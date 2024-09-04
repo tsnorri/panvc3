@@ -72,13 +72,14 @@ namespace panvc3::dispatch::events {
 	protected:
 		timer_entry_vector						m_timer_entries{};	// Protected by m_timer_mutex.
 		std::mutex								m_timer_mutex{};
+		std::atomic_bool						m_is_running_worker{};
 		
 	public:
 		virtual ~manager_base() {}
 		
 		virtual void setup() = 0;
-		virtual void run() = 0;
-		std::jthread start_thread_and_run() { return std::jthread([this]{ run(); }); }
+		void run();
+		void start_thread_and_run(std::jthread &);
 		
 		virtual void trigger_event(event_type const evt) = 0;
 		void stop() { trigger_event(event_type::stop); }
@@ -124,6 +125,8 @@ namespace panvc3::dispatch::events {
 		) = 0;										// Thread-safe.
 		
 	protected:
+		void stop_and_wait();
+		virtual void run_() = 0;
 		duration_type check_timers();
 	};
 }

@@ -51,19 +51,11 @@ namespace panvc3::dispatch::events::platform::kqueue {
 
 	class signal_monitor
 	{
-		sigset_t	m_mask{};
-		sigset_t	m_original_mask{};
-		bool		m_is_empty{true};
+		std::unordered_map <int, struct sigaction>	m_actions;
 		
 	public:
-		signal_monitor()
-		{
-			sigemptyset(&m_mask);
-			sigemptyset(&m_original_mask);
-		}
-		
 		void listen(int sig);
-		void unlisten(int sig); // Returns the old file descriptor.
+		void unlisten(int sig);
 	};
 
 
@@ -81,7 +73,6 @@ namespace panvc3::dispatch::events::platform::kqueue {
 			bool
 		>										remove_event_source_return_type;
 		
-		
 		file_handle								m_kqueue_handle;
 		source_map								m_sources;
 		signal_monitor							m_signal_monitor;
@@ -89,8 +80,8 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		std::mutex								m_mutex{};
 		
 	public:
+		~manager() { stop_and_wait(); } // Calls a virtual member function.
 		void setup() override;
-		void run() override;
 		void trigger_event(event_type const evt) override;
 		
 		file_descriptor_source &add_file_descriptor_read_event_source(
@@ -120,6 +111,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		) override;									// Thread-safe.
 		
 	private:
+		void run_() override;
 		remove_event_source_return_type remove_event_source(source &es, source_key const key);
 	};
 }
