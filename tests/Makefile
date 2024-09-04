@@ -6,6 +6,7 @@ CPPFLAGS += -DCATCH_CONFIG_NO_CPP17_UNCAUGHT_EXCEPTIONS -I../lib/libbio/lib/Catc
 OBJECTS	=	main.o \
 			alignment_projector.o \
 			cigar_eq.o \
+			dispatch_event_manager.o \
 			indel_run_checker.o \
 			indel_run_checker_arbitrary.o \
 			rewrite_cigar.o \
