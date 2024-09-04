@@ -18,6 +18,9 @@ namespace rsv		= ranges::views;
 
 namespace {
 
+	void signal_handler(int const sig) {}
+
+
 	void add_read_event_listener(int const epoll_fd, int const fd, int const user_fd)
 	{
 		struct epoll_event ev{};
@@ -362,7 +365,7 @@ namespace panvc3::dispatch::events::platform::linux {
 			sigset_t mask{};
 			::sigemptyset(&mask);
 			struct sigaction new_action{};
-			new_action.sa_handler = SIG_IGN;
+			new_action.sa_handler = &signal_handler;
 			new_action.sa_mask = mask;
 			new_action.sa_flags = 0;
 			if (-1 == ::sigaction(sig, &new_action, &old_action))
@@ -491,6 +494,9 @@ namespace panvc3::dispatch::events::platform::linux {
 		// Clear the fd.
 		std::uint64_t buffer{};
 		if (-1 == ::read(m_handle.fd, &buffer, sizeof(std::uint64_t)))
-			throw std::runtime_error(::strerror(errno));
+		{
+			if (EAGAIN != errno)
+				throw std::runtime_error(::strerror(errno));
+		}
 	}
 }
