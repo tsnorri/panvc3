@@ -93,7 +93,7 @@ namespace panvc3::dispatch::events {
 
 	template <typename t_self, bool t_needs_queue = true, typename t_task = task_t <t_self &>>
 	struct source_tpl :	public source_tpl_ <t_task, t_needs_queue>,
-						private std::enable_shared_from_this <t_self>
+						public std::enable_shared_from_this <t_self>
 	{
 		using source_tpl_ <t_task, t_needs_queue>::source_tpl_;
 		void fire() final;
@@ -118,7 +118,7 @@ namespace panvc3::dispatch::events {
 		{
 			libbio_assert(this->m_queue);
 			// operator() checks is_enabled().
-			this->m_queue->async(std::enable_shared_from_this <t_self>::shared_from_this());
+			this->m_queue->async(this->shared_from_this());
 		}
 		else
 		{
