@@ -7,7 +7,7 @@
 #include <panvc3/dispatch/events/platform/manager_linux.hh>
 #include <panvc3/dispatch/task_def.hh>
 #include <range/v3/view/take_exactly.hpp>
-#include <signal.h>												// ::sigaction
+#include <signal.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/timerfd.h>
@@ -17,6 +17,9 @@ namespace rsv		= ranges::views;
 
 
 namespace {
+
+	void signal_handler(int const sig) {}
+
 
 	void add_read_event_listener(int const epoll_fd, int const fd, int const user_fd)
 	{
@@ -463,6 +466,9 @@ namespace panvc3::dispatch::events::platform::linux {
 		// Clear the fd.
 		std::uint64_t buffer{};
 		if (-1 == ::read(m_handle.fd, &buffer, sizeof(std::uint64_t)))
-			throw std::runtime_error(::strerror(errno));
+		{
+			if (EAGAIN != errno)
+				throw std::runtime_error(::strerror(errno));
+		}
 	}
 }
