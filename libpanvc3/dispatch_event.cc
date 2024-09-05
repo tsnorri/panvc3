@@ -6,47 +6,13 @@
 #include <chrono>
 #include <panvc3/dispatch/event.hh>
 #include <panvc3/dispatch/task_def.hh>
-#include <panvc3/dispatch/events/signal_mask.hh>
-#include <sys/wait.h>								// ::waitpid()
+#include <sys/wait.h>					// ::waitpid()
 
 namespace chrono	= std::chrono;
 
 
 namespace panvc3::dispatch::events
 {
-	void signal_mask::add(int const sig)
-	{
-		sigaddset(&m_mask, sig);
-		if (-1 == ::sigprocmask(SIG_BLOCK, &m_mask, nullptr))
-			throw std::runtime_error(::strerror(errno));
-	}
-	
-	
-	void signal_mask::remove(int sig)
-	{
-		sigdelset(&m_mask, sig);
-		
-		sigset_t mask{};
-		sigemptyset(&mask);
-		sigaddset(&mask, sig);
-		if (-1 == ::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr))
-			throw std::runtime_error(::strerror(errno));
-	}
-	
-	
-	bool signal_mask::remove_all_()
-	{
-		return (-1 != ::pthread_sigmask(SIG_UNBLOCK, &m_mask, nullptr));
-	}
-	
-	
-	void signal_mask::remove_all()
-	{
-		if (!remove_all_())
-			throw std::runtime_error(::strerror(errno));
-	}
-	
-	
 	void manager_base::stop_and_wait()
 	{
 		stop();

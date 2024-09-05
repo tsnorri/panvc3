@@ -6,6 +6,7 @@
 #include <chrono>
 #include <panvc3/dispatch/events/platform/manager_kqueue.hh>
 #include <panvc3/dispatch/task_def.hh>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -58,6 +59,76 @@ namespace {
 
 
 namespace panvc3::dispatch::events::platform::kqueue {
+	
+	void signal_mask::add(int const sig)
+	{
+		typedef struct sigaction sigaction_;
+		auto res(m_old_actions.emplace(sig, sigaction_{}));
+		libbio_assert(res.second);
+		auto &old_action(res.first->second);
+		
+		sigaction_ new_action{};
+		new_action.sa_handler = SIG_IGN;
+		sigemptyset(&new_action.sa_mask);
+		sigaddset(&new_action.sa_mask, sig);
+		
+		if (-1 == ::sigaction(sig, &new_action, &old_action))
+			throw std::runtime_error(::strerror(errno));
+	}
+	
+	
+	void signal_mask::remove(int sig)
+	{
+		auto it(m_old_actions.find(sig));
+		libbio_assert_neq(it, m_old_actions.end());
+		if (-1 == ::sigaction(sig, &it->second, nullptr))
+			throw std::runtime_error(::strerror(errno));
+	}
+	
+	
+	void signal_mask::remove_all_()
+	{
+		auto it(m_old_actions.begin());
+		auto const end(m_old_actions.end());
+		while (it != end)
+		{
+			auto const sig(it->first);
+			auto &act(it->second);
+			if (-1 != ::sigaction(sig, &act, nullptr))
+			{
+				auto const it_(it);
+				++it;
+				m_old_actions.erase(it_);
+			}
+			else
+			{
+				++it;
+			}
+		}
+	}
+	
+	
+	void signal_mask::remove_all()
+	{
+		auto it(m_old_actions.begin());
+		auto const end(m_old_actions.end());
+		while (it != end)
+		{
+			auto const sig(it->first);
+			auto &act(it->second);
+			if (-1 != ::sigaction(sig, &act, nullptr))
+			{
+				auto const it_(it);
+				++it;
+				m_old_actions.erase(it_);
+			}
+			else
+			{
+				throw std::runtime_error(::strerror(errno));
+			}
+		}
+	}
+	
 	
 	void manager::setup()
 	{

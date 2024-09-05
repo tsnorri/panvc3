@@ -9,12 +9,13 @@
 #	ifdef __linux__
 #		include <panvc3/dispatch/events/platform/manager_linux.hh>
 namespace panvc3::dispatch::events {
-	typedef ::panvc3::dispatch::events::platform::linux::manager manager;
+	typedef platform::linux::manager		manager;
 }
 #	else
 #		include <panvc3/dispatch/events/platform/manager_kqueue.hh>
 namespace panvc3::dispatch::events {
-	typedef ::panvc3::dispatch::events::platform::kqueue::manager manager;
+	typedef platform::kqueue::manager		manager;
+	typedef platform::kqueue::signal_mask	signal_mask;
 }
 #	endif
 

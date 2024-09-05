@@ -4,12 +4,11 @@
  */
 
 #include <catch2/catch.hpp>
-#include <cstdio>									// ::strerror
+#include <cstdio>						// ::strerror
 #include <panvc3/dispatch.hh>
 #include <panvc3/dispatch/event.hh>
-#include <panvc3/dispatch/events/signal_mask.hh>
-#include <signal.h>									// ::kill
-#include <unistd.h>									// ::getpid
+#include <signal.h>						// ::kill
+#include <unistd.h>						// ::getpid
 #include "atomic_variable.hh"
 
 namespace dispatch	= panvc3::dispatch;

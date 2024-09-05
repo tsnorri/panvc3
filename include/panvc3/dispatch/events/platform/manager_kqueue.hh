@@ -47,7 +47,30 @@ struct std::hash <panvc3::dispatch::events::platform::kqueue::source_key>
 
 
 namespace panvc3::dispatch::events::platform::kqueue {
+	
+	class signal_mask
+	{
+		std::unordered_map <
+			int,
+			struct sigaction
+		>						m_old_actions;
 
+	private:
+		void remove_all_();
+
+	public:
+		signal_mask()
+		{
+		}
+	
+		~signal_mask() { remove_all_(); }
+	
+		void add(int sig);
+		void remove(int sig);
+		void remove_all();
+	};
+	
+	
 	class manager final : public events::manager_base
 	{
 		typedef events::detail::file_handle		file_handle;
