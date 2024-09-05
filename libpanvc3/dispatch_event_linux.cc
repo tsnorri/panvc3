@@ -18,9 +18,6 @@ namespace rsv		= ranges::views;
 
 namespace {
 
-	void signal_handler(int const sig) {}
-
-
 	void add_read_event_listener(int const epoll_fd, int const fd, int const user_fd)
 	{
 		struct epoll_event ev{};
@@ -41,6 +38,39 @@ namespace {
 
 
 namespace panvc3::dispatch::events::platform::linux {
+	
+	void signal_mask::add(int const sig)
+	{
+		sigaddset(&m_mask, sig);
+		if (-1 == ::pthread_sigmask(SIG_BLOCK, &m_mask, nullptr))
+			throw std::runtime_error(::strerror(errno));
+	}
+	
+	
+	void signal_mask::remove(int sig)
+	{
+		sigdelset(&m_mask, sig);
+		
+		sigset_t mask{};
+		sigemptyset(&mask);
+		sigaddset(&mask, sig);
+		if (-1 == ::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr))
+			throw std::runtime_error(::strerror(errno));
+	}
+	
+	
+	bool signal_mask::remove_all_()
+	{
+		return (-1 != ::pthread_sigmask(SIG_UNBLOCK, &m_mask, nullptr));
+	}
+	
+	
+	void signal_mask::remove_all()
+	{
+		if (!remove_all_())
+			throw std::runtime_error(::strerror(errno));
+	}
+	
 	
 	void manager::setup()
 	{

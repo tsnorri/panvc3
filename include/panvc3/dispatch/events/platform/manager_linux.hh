@@ -56,7 +56,28 @@ struct std::hash <panvc3::dispatch::events::platform::linux::source_key>
 namespace panvc3::dispatch::events::platform::linux {
 
 	typedef events::detail::file_handle	file_handle;
+	
+	
+	class signal_mask
+	{
+		sigset_t	m_mask{};
 
+	private:
+		bool remove_all_();
+
+	public:
+		signal_mask()
+		{
+			sigemptyset(&m_mask);
+		}
+	
+		~signal_mask() { remove_all_(); }
+	
+		void add(int sig);
+		void remove(int sig);
+		void remove_all();
+	};
+	
 	
 	struct fd_counter
 	{
