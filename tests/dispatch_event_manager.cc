@@ -47,7 +47,8 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 		WHEN("dispatch::events::manager monitors the write end")
 		{
 			tests::atomic_bool status{};
-			auto &queue(dispatch::parallel_queue::shared_queue());
+			dispatch::thread_pool thread_pool;
+			dispatch::parallel_queue queue(thread_pool);
 			std::jthread manager_thread;
 			events::manager event_manager;
 			
@@ -77,7 +78,8 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 		WHEN("dispatch::events::manager monitors the read end")
 		{
 			tests::atomic_bool status{};
-			auto &queue(dispatch::parallel_queue::shared_queue());
+			dispatch::thread_pool thread_pool;
+			dispatch::parallel_queue queue(thread_pool);
 			std::jthread manager_thread;
 			events::manager event_manager;
 			
@@ -116,7 +118,8 @@ SCENARIO("dispatch::events::manager can detect that a signal has been received",
 		AND_WHEN("dispatch::events::manager monitors the signal")
 		{
 			tests::atomic_bool status{};
-			auto &queue(dispatch::parallel_queue::shared_queue());
+			dispatch::thread_pool thread_pool;
+			dispatch::parallel_queue queue(thread_pool);
 			std::jthread manager_thread;
 			events::manager event_manager;
 		
@@ -146,7 +149,8 @@ SCENARIO("dispatch::events::manager can report non-repeating timer events", "[di
 	WHEN("dispatch::events::manager monitors a timer")
 	{
 		tests::atomic_uint32_t counter{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
+		dispatch::thread_pool thread_pool;
+		dispatch::parallel_queue queue(thread_pool);
 		std::jthread manager_thread;
 		events::manager event_manager;
 		
@@ -171,7 +175,8 @@ SCENARIO("dispatch::events::manager can report repeating timer events", "[dispat
 	WHEN("dispatch::events::manager monitors a timer")
 	{
 		tests::atomic_uint32_t counter{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
+		dispatch::thread_pool thread_pool;
+		dispatch::parallel_queue queue(thread_pool);
 		std::jthread manager_thread;
 		events::manager event_manager;
 		
@@ -199,7 +204,8 @@ SCENARIO("dispatch::events::manager can report repeating timer events for multip
 	WHEN("dispatch::events::manager monitors a pair of timers")
 	{
 		tests::atomic_uint32_t c1{}, c2{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
+		dispatch::thread_pool thread_pool;
+		dispatch::parallel_queue queue(thread_pool);
 		std::jthread manager_thread;
 		events::manager event_manager;
 		
