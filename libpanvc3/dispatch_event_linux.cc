@@ -353,16 +353,6 @@ namespace panvc3::dispatch::events::platform::linux {
 	
 	bool signal_monitor::listen(int const sig)
 	{
-		auto res(m_actions.emplace(sig, nullptr));
-		libbio_assert(res.second);
-		auto &old_action(res.first->second);
-		
-		sigset_t mask{};
-		::sigemptyset(&mask);
-		struct sigaction new_action{.sa_handler = SIG_IGN, .sa_mask = mask, .sa_flags = 0};
-		if (-1 == ::sigaction(sig, &new_action, &old_action))
-			throw std::runtime_error(::strerror(errno));
-		
 		sigaddset(&m_mask, sig);
 		auto const res(::signalfd(m_handle.fd, &m_mask, SFD_NONBLOCK | SFD_CLOEXEC));
 		if (-1 == res)
@@ -382,17 +372,9 @@ namespace panvc3::dispatch::events::platform::linux {
 	{
 		int retval{-1};
 		
-		auto it(m_actions.find(sig));
-		libbio_assert_neq(it, m_actions.end());
-		
-		if (-1 == ::sigaction(sig, &it->second, nullptr))
-			throw std::runtime_error(::strerror(errno));
-		
-		m_actions.erase(it);
-		sigdelset(&m_mask, sig);
-		
 		// Check if we still have signals to monitor.
-		if (m_actions.empty())
+		sigdelset(&m_mask, sig);
+		if (sigisemptyset(&m_mask))
 		{
 			retval = m_handle.fd;
 			m_handle.release();
@@ -410,14 +392,6 @@ namespace panvc3::dispatch::events::platform::linux {
 	{
 		m_handle.release();
 		sigemptyset(&m_mask);
-		
-		for (auto const &kv : m_actions)
-		{
-			if (-1 == ::sigaction(kv.first, &kv.second, nullptr))
-				throw std::runtime_error(::strerror(errno));
-		}
-		
-		m_actions.clear();
 	}
 
 
@@ -425,10 +399,13 @@ namespace panvc3::dispatch::events::platform::linux {
 	{
 		if (-1 == ::read(m_handle.fd, &buffer, sizeof(struct signalfd_siginfo)))
 		{
-			if (EAGAIN == errno)
-				return false;
-
-			throw std::runtime_error(::strerror(errno));
+			switch (errno)
+			{
+				case EAGAIN:
+					return false;
+				default:
+					throw std::runtime_error(::strerror(errno));
+			}
 		}
 
 		return true;
@@ -458,15 +435,18 @@ namespace panvc3::dispatch::events::platform::linux {
 
 				case -1:
 				{
-					if (EAGAIN == errno)
+					switch (errno)
 					{
-						// Should not happen?
-						struct timespec const ts{.tv_sec = 0, .tv_nsec = 50};
-						::nanosleep(&ts, nullptr);
-						continue;
+						case EAGAIN:
+						{
+							// Should not happen?
+							struct timespec const ts{.tv_sec = 0, .tv_nsec = 50};
+							::nanosleep(&ts, nullptr);
+							continue;
+						}
+						default:
+							throw std::runtime_error(::strerror(errno));
 					}
-
-					throw std::runtime_error(::strerror(errno));
 				}
 
 				default:

@@ -4,11 +4,12 @@
  */
 
 #include <catch2/catch.hpp>
-#include <cstdio>					// ::strerror
+#include <cstdio>									// ::strerror
 #include <panvc3/dispatch.hh>
 #include <panvc3/dispatch/event.hh>
-#include <signal.h>					// ::kill
-#include <unistd.h>					// ::getpid
+#include <panvc3/dispatch/events/signal_mask.hh>
+#include <signal.h>									// ::kill
+#include <unistd.h>									// ::getpid
 #include "atomic_variable.hh"
 
 namespace dispatch	= panvc3::dispatch;
@@ -108,27 +109,33 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 
 SCENARIO("dispatch::events::manager can detect that a signal has been received", "[dispatch_event_manager]")
 {
-	WHEN("dispatch::events::manager monitors a signal")
+	WHEN("A signal is blocked")
 	{
-		tests::atomic_bool status{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
-		std::jthread manager_thread;
-		events::manager event_manager;
+		events::signal_mask mask;
+		mask.add(SIGUSR1);
 		
-		event_manager.setup();
-		event_manager.start_thread_and_run(manager_thread);
-		event_manager.add_signal_event_source(SIGUSR1, queue, [&](events::signal_source &){
-			status.assign(true);
-		});
-		
-		AND_WHEN("a signal is received")
+		AND_WHEN("dispatch::events::manager monitors the signal")
 		{
-			::kill(::getpid(), SIGUSR1);
-			
-			THEN("an event is received")
+			tests::atomic_bool status{};
+			auto &queue(dispatch::parallel_queue::shared_queue());
+			std::jthread manager_thread;
+			events::manager event_manager;
+		
+			event_manager.setup();
+			event_manager.start_thread_and_run(manager_thread);
+			event_manager.add_signal_event_source(SIGUSR1, queue, [&](events::signal_source &){
+				status.assign(true);
+			});
+		
+			AND_WHEN("a signal is received")
 			{
-				auto const lock(status.wait_and_lock());
-				CHECK(true == status.value());
+				::kill(::getpid(), SIGUSR1);
+			
+				THEN("an event is received")
+				{
+					auto const lock(status.wait_and_lock());
+					CHECK(true == status.value());
+				}
 			}
 		}
 	}

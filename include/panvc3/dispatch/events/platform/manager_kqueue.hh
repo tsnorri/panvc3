@@ -7,7 +7,6 @@
 #define PANVC3_DISPATCH_EVENTS_PLATFORM_MANAGER_KQUEUE_HH
 
 #include <panvc3/dispatch/events/manager.hh>
-#include <signal.h>								// ::sigemptyset
 
 
 namespace panvc3::dispatch::events::platform::kqueue {
@@ -49,16 +48,6 @@ struct std::hash <panvc3::dispatch::events::platform::kqueue::source_key>
 
 namespace panvc3::dispatch::events::platform::kqueue {
 
-	class signal_monitor
-	{
-		std::unordered_map <int, struct sigaction>	m_actions;
-		
-	public:
-		void listen(int sig);
-		void unlisten(int sig);
-	};
-
-
 	class manager final : public events::manager_base
 	{
 		typedef events::detail::file_handle		file_handle;
@@ -75,7 +64,6 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		
 		file_handle								m_kqueue_handle;
 		source_map								m_sources;
-		signal_monitor							m_signal_monitor;
 		
 		std::mutex								m_mutex{};
 		

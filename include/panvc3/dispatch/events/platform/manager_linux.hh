@@ -80,13 +80,12 @@ namespace panvc3::dispatch::events::platform::linux {
 	class signal_monitor
 	{
 		file_handle									m_handle;
-		std::unordered_map <int, struct sigaction>	m_actions;
 		sigset_t									m_mask{};
 		
 	public:
 		signal_monitor()
 		{
-			::sigemptyset(&m_mask);
+			sigemptyset(&m_mask);
 		}
 		
 		int file_descriptor() const { return m_handle.fd; }

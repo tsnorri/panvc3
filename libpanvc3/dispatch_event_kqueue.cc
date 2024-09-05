@@ -6,7 +6,6 @@
 #include <chrono>
 #include <panvc3/dispatch/events/platform/manager_kqueue.hh>
 #include <panvc3/dispatch/task_def.hh>
-#include <signal.h>												// ::sigaction
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -59,37 +58,6 @@ namespace {
 
 
 namespace panvc3::dispatch::events::platform::kqueue {
-	
-	void signal_monitor::listen(int const sig)
-	{
-		// Can’t come up with the correct syntax for empty struct sigaction literal.
-		struct sigaction const empty{};
-		auto res(m_actions.emplace(sig, empty));
-		libbio_assert(res.second);
-		auto &old_action(res.first->second);
-		
-		sigset_t mask{};
-		sigemptyset(&mask);
-		struct sigaction new_action{};
-		new_action.sa_handler = SIG_IGN;
-		new_action.sa_mask = mask;
-		new_action.sa_flags = 0;
-		if (-1 == ::sigaction(sig, &new_action, &old_action))
-			throw std::runtime_error(::strerror(errno));
-	}
-	
-	
-	void signal_monitor::unlisten(int sig)
-	{
-		auto it(m_actions.find(sig));
-		libbio_assert_neq(it, m_actions.end());
-		
-		if (-1 == ::sigaction(sig, &it->second, nullptr))
-			throw std::runtime_error(::strerror(errno));
-		
-		m_actions.erase(it);
-	}
-	
 	
 	void manager::setup()
 	{
@@ -276,8 +244,6 @@ namespace panvc3::dispatch::events::platform::kqueue {
 				std::forward_as_tuple(std::move(ptr))
 			));
 			
-			m_signal_monitor.listen(sig);
-			
 			return retval;
 		}());
 		
@@ -356,12 +322,10 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		
 		{
 			auto const res(remove_event_source(es, key));
-			m_signal_monitor.unlisten(key.value);
-			should_remove_listener = res.second;
+			libbio_assert(res.second);
 		}
 		
 		// es no longer valid.
-		if (should_remove_listener)
-			remove_listener(m_kqueue_handle.fd, key.value, EVFILT_SIGNAL);
+		remove_listener(m_kqueue_handle.fd, key.value, EVFILT_SIGNAL);
 	}
 }
