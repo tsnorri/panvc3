@@ -488,7 +488,7 @@ namespace rc {
 }
 
 
-TEST_CASE("indel_run_checker can process an arbitrary runs of CIGAR operations", "[indel_run_checker]")
+TEST_CASE("indel_run_checker can process an arbitrary runs of CIGAR operations", "[indel_run_checker][arbitrary]")
 {
 	// FIXME: check the unaligned positions, too?
 	rc::prop(

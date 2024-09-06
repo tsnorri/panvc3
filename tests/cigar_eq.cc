@@ -519,7 +519,7 @@ SCENARIO("cigar_eq() can handle padding", "[cigar_eq]")
 }
 
 
-TEST_CASE("cigar_eq() can compare arbitrary matching sequences", "[cigar_eq]")
+TEST_CASE("cigar_eq() can compare arbitrary matching sequences", "[cigar_eq][arbitrary]")
 {
 	rc::prop(
 		"cigar_eq() works as expected",

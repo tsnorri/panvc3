@@ -1038,7 +1038,7 @@ namespace rc {
 }
 
 
-TEST_CASE("rewrite_cigar() can process an arbitrary MSA", "[rewrite_cigar]")
+TEST_CASE("rewrite_cigar() can process an arbitrary MSA", "[rewrite_cigar][arbitrary]")
 {
 	rc::prop(
 		"rewrite_cigar() works as expected",
