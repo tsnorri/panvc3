@@ -56,7 +56,28 @@ struct std::hash <panvc3::dispatch::events::platform::linux::source_key>
 namespace panvc3::dispatch::events::platform::linux {
 
 	typedef events::detail::file_handle	file_handle;
+	
+	
+	class signal_mask
+	{
+		sigset_t	m_mask{};
 
+	private:
+		bool remove_all_();
+
+	public:
+		signal_mask()
+		{
+			sigemptyset(&m_mask);
+		}
+	
+		~signal_mask() { remove_all_(); }
+	
+		void add(int sig);
+		void remove(int sig);
+		void remove_all();
+	};
+	
 	
 	struct fd_counter
 	{
@@ -79,15 +100,13 @@ namespace panvc3::dispatch::events::platform::linux {
 
 	class signal_monitor
 	{
-		file_handle m_handle;
-		sigset_t m_mask{};
-		sigset_t m_original_mask{};
+		file_handle									m_handle;
+		sigset_t									m_mask{};
 		
 	public:
 		signal_monitor()
 		{
-			::sigemptyset(&m_mask);
-			::sigemptyset(&m_original_mask);
+			sigemptyset(&m_mask);
 		}
 		
 		int file_descriptor() const { return m_handle.fd; }
@@ -143,8 +162,8 @@ namespace panvc3::dispatch::events::platform::linux {
 		std::mutex								m_mutex{};
 		
 	public:
+		~manager() { stop_and_wait(); } // Calls a virtual member function.
 		void setup() override;
-		void run() override;
 		void trigger_event(event_type const evt) override { m_event_monitor.post(evt); }
 		
 		file_descriptor_source &add_file_descriptor_read_event_source(
@@ -174,6 +193,7 @@ namespace panvc3::dispatch::events::platform::linux {
 		) override;									// Thread-safe.
 		
 	private:
+		void run_() override;
 		void listen_for_fd_events(int fd, bool for_read, bool for_write);
 		inline void listen_for_fd_events(file_descriptor_source const &source);
 		void schedule_kernel_timer(duration_type const dur);

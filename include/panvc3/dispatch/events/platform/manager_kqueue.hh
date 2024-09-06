@@ -7,7 +7,6 @@
 #define PANVC3_DISPATCH_EVENTS_PLATFORM_MANAGER_KQUEUE_HH
 
 #include <panvc3/dispatch/events/manager.hh>
-#include <signal.h>								// ::sigemptyset
 
 
 namespace panvc3::dispatch::events::platform::kqueue {
@@ -48,25 +47,30 @@ struct std::hash <panvc3::dispatch::events::platform::kqueue::source_key>
 
 
 namespace panvc3::dispatch::events::platform::kqueue {
-
-	class signal_monitor
+	
+	class signal_mask
 	{
-		sigset_t	m_mask{};
-		sigset_t	m_original_mask{};
-		bool		m_is_empty{true};
-		
+		std::unordered_map <
+			int,
+			struct sigaction
+		>						m_old_actions;
+
+	private:
+		void remove_all_();
+
 	public:
-		signal_monitor()
+		signal_mask()
 		{
-			sigemptyset(&m_mask);
-			sigemptyset(&m_original_mask);
 		}
-		
-		void listen(int sig);
-		void unlisten(int sig); // Returns the old file descriptor.
+	
+		~signal_mask() { remove_all_(); }
+	
+		void add(int sig);
+		void remove(int sig);
+		void remove_all();
 	};
-
-
+	
+	
 	class manager final : public events::manager_base
 	{
 		typedef events::detail::file_handle		file_handle;
@@ -81,16 +85,14 @@ namespace panvc3::dispatch::events::platform::kqueue {
 			bool
 		>										remove_event_source_return_type;
 		
-		
 		file_handle								m_kqueue_handle;
 		source_map								m_sources;
-		signal_monitor							m_signal_monitor;
 		
 		std::mutex								m_mutex{};
 		
 	public:
+		~manager() { stop_and_wait(); } // Calls a virtual member function.
 		void setup() override;
-		void run() override;
 		void trigger_event(event_type const evt) override;
 		
 		file_descriptor_source &add_file_descriptor_read_event_source(
@@ -120,6 +122,7 @@ namespace panvc3::dispatch::events::platform::kqueue {
 		) override;									// Thread-safe.
 		
 	private:
+		void run_() override;
 		remove_event_source_return_type remove_event_source(source &es, source_key const key);
 	};
 }

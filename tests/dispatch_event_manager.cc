@@ -4,11 +4,11 @@
  */
 
 #include <catch2/catch.hpp>
-#include <cstdio>					// ::strerror
+#include <cstdio>						// ::strerror
 #include <panvc3/dispatch.hh>
 #include <panvc3/dispatch/event.hh>
-#include <signal.h>					// ::kill
-#include <unistd.h>					// ::getpid
+#include <signal.h>						// ::kill
+#include <unistd.h>						// ::getpid
 #include "atomic_variable.hh"
 
 namespace dispatch	= panvc3::dispatch;
@@ -47,11 +47,13 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 		WHEN("dispatch::events::manager monitors the write end")
 		{
 			tests::atomic_bool status{};
-			auto &queue(dispatch::parallel_queue::shared_queue());
+			dispatch::thread_pool thread_pool;
+			dispatch::parallel_queue queue(thread_pool);
+			std::jthread manager_thread;
 			events::manager event_manager;
 			
 			event_manager.setup();
-			auto manager_thread(event_manager.start_thread_and_run());
+			event_manager.start_thread_and_run(manager_thread);
 			event_manager.add_file_descriptor_write_event_source(pipe.fds[1], queue, [&](events::file_descriptor_source &){
 				status.assign(true);
 			});
@@ -61,8 +63,6 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 				auto const lock(status.wait_and_lock());
 				CHECK(true == status.value());
 			}
-			
-			event_manager.stop();
 		}
 	}
 }
@@ -78,11 +78,13 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 		WHEN("dispatch::events::manager monitors the read end")
 		{
 			tests::atomic_bool status{};
-			auto &queue(dispatch::parallel_queue::shared_queue());
+			dispatch::thread_pool thread_pool;
+			dispatch::parallel_queue queue(thread_pool);
+			std::jthread manager_thread;
 			events::manager event_manager;
 			
 			event_manager.setup();
-			auto manager_thread(event_manager.start_thread_and_run());
+			event_manager.start_thread_and_run(manager_thread);
 			event_manager.add_file_descriptor_read_event_source(pipe.fds[0], queue, [&](events::file_descriptor_source &){
 				status.assign(true);
 			});
@@ -101,8 +103,6 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 					CHECK(true == status.value());
 				}
 			}
-			
-			event_manager.stop();
 		}
 	}
 }
@@ -110,30 +110,36 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 
 SCENARIO("dispatch::events::manager can detect that a signal has been received", "[dispatch_event_manager]")
 {
-	WHEN("dispatch::events::manager monitors a signal")
+	WHEN("A signal is blocked")
 	{
-		tests::atomic_bool status{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
-		events::manager event_manager;
+		events::signal_mask mask;
+		mask.add(SIGUSR1);
 		
-		event_manager.setup();
-		auto manager_thread(event_manager.start_thread_and_run());
-		event_manager.add_signal_event_source(SIGUSR1, queue, [&](events::signal_source &){
-			status.assign(true);
-		});
-		
-		AND_WHEN("a signal is received")
+		AND_WHEN("dispatch::events::manager monitors the signal")
 		{
-			::kill(::getpid(), SIGUSR1);
-			
-			THEN("an event is received")
+			tests::atomic_bool status{};
+			dispatch::thread_pool thread_pool;
+			dispatch::parallel_queue queue(thread_pool);
+			std::jthread manager_thread;
+			events::manager event_manager;
+		
+			event_manager.setup();
+			event_manager.start_thread_and_run(manager_thread);
+			event_manager.add_signal_event_source(SIGUSR1, queue, [&](events::signal_source &){
+				status.assign(true);
+			});
+		
+			AND_WHEN("a signal is received")
 			{
-				auto const lock(status.wait_and_lock());
-				CHECK(true == status.value());
+				::kill(::getpid(), SIGUSR1);
+			
+				THEN("an event is received")
+				{
+					auto const lock(status.wait_and_lock());
+					CHECK(true == status.value());
+				}
 			}
 		}
-		
-		event_manager.stop();
 	}
 }
 
@@ -143,11 +149,13 @@ SCENARIO("dispatch::events::manager can report non-repeating timer events", "[di
 	WHEN("dispatch::events::manager monitors a timer")
 	{
 		tests::atomic_uint32_t counter{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
+		dispatch::thread_pool thread_pool;
+		dispatch::parallel_queue queue(thread_pool);
+		std::jthread manager_thread;
 		events::manager event_manager;
 		
 		event_manager.setup();
-		auto manager_thread(event_manager.start_thread_and_run());
+		event_manager.start_thread_and_run(manager_thread);
 		event_manager.schedule_timer(std::chrono::milliseconds(100), false, queue, [&](events::timer &){
 			auto const lock(counter.lock());
 			++counter.value();
@@ -158,8 +166,6 @@ SCENARIO("dispatch::events::manager can report non-repeating timer events", "[di
 			auto const lock(counter.wait_and_lock());
 			CHECK(1 == counter.value());
 		}
-		
-		event_manager.stop();
 	}
 }
 
@@ -169,11 +175,13 @@ SCENARIO("dispatch::events::manager can report repeating timer events", "[dispat
 	WHEN("dispatch::events::manager monitors a timer")
 	{
 		tests::atomic_uint32_t counter{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
+		dispatch::thread_pool thread_pool;
+		dispatch::parallel_queue queue(thread_pool);
+		std::jthread manager_thread;
 		events::manager event_manager;
 		
 		event_manager.setup();
-		auto manager_thread(event_manager.start_thread_and_run());
+		event_manager.start_thread_and_run(manager_thread);
 		auto const interval(std::chrono::milliseconds(100));
 		INFO("Firing interval: " << interval);
 		event_manager.schedule_timer(interval, true, queue, [&](events::timer &){
@@ -187,8 +195,6 @@ SCENARIO("dispatch::events::manager can report repeating timer events", "[dispat
 			INFO("counter.value(): " << counter.value());
 			CHECK(2 <= counter.value());
 		}
-		
-		event_manager.stop();
 	}
 }
 
@@ -198,11 +204,13 @@ SCENARIO("dispatch::events::manager can report repeating timer events for multip
 	WHEN("dispatch::events::manager monitors a pair of timers")
 	{
 		tests::atomic_uint32_t c1{}, c2{};
-		auto &queue(dispatch::parallel_queue::shared_queue());
+		dispatch::thread_pool thread_pool;
+		dispatch::parallel_queue queue(thread_pool);
+		std::jthread manager_thread;
 		events::manager event_manager;
 		
 		event_manager.setup();
-		auto manager_thread(event_manager.start_thread_and_run());
+		event_manager.start_thread_and_run(manager_thread);
 		auto const i1(std::chrono::milliseconds(200));
 		auto const i2(std::chrono::milliseconds(150));
 		INFO("Firing intervals: " << i1 << ", " << i2);
@@ -228,7 +236,5 @@ SCENARIO("dispatch::events::manager can report repeating timer events for multip
 			CHECK(2 <= c2.value());
 			CHECK(c1.value() <= c2.value());
 		}
-		
-		event_manager.stop();
 	}
 }

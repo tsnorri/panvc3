@@ -7,6 +7,7 @@
 #include <panvc3/dispatch/events/platform/manager_linux.hh>
 #include <panvc3/dispatch/task_def.hh>
 #include <range/v3/view/take_exactly.hpp>
+#include <signal.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/timerfd.h>
@@ -38,6 +39,39 @@ namespace {
 
 namespace panvc3::dispatch::events::platform::linux {
 	
+	void signal_mask::add(int const sig)
+	{
+		sigaddset(&m_mask, sig);
+		if (-1 == ::pthread_sigmask(SIG_BLOCK, &m_mask, nullptr))
+			throw std::runtime_error(::strerror(errno));
+	}
+	
+	
+	void signal_mask::remove(int sig)
+	{
+		sigdelset(&m_mask, sig);
+		
+		sigset_t mask{};
+		sigemptyset(&mask);
+		sigaddset(&mask, sig);
+		if (-1 == ::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr))
+			throw std::runtime_error(::strerror(errno));
+	}
+	
+	
+	bool signal_mask::remove_all_()
+	{
+		return (-1 != ::pthread_sigmask(SIG_UNBLOCK, &m_mask, nullptr));
+	}
+	
+	
+	void signal_mask::remove_all()
+	{
+		if (!remove_all_())
+			throw std::runtime_error(::strerror(errno));
+	}
+	
+	
 	void manager::setup()
 	{
 		libbio_assert(!m_epoll_handle);
@@ -56,7 +90,7 @@ namespace panvc3::dispatch::events::platform::linux {
 	}
 	
 	
-	void manager::run()
+	void manager::run_()
 	{
 		std::array <struct epoll_event, 16> events;
 		while (true)
@@ -352,11 +386,7 @@ namespace panvc3::dispatch::events::platform::linux {
 	
 	bool signal_monitor::listen(int const sig)
 	{
-		::sigaddset(&m_mask, sig);
-		
-		if (-1 == ::sigprocmask(SIG_BLOCK, &m_mask, m_handle ? nullptr : &m_original_mask))
-			throw std::runtime_error(::strerror(errno));
-		
+		sigaddset(&m_mask, sig);
 		auto const res(::signalfd(m_handle.fd, &m_mask, SFD_NONBLOCK | SFD_CLOEXEC));
 		if (-1 == res)
 			throw std::runtime_error(::strerror(errno));
@@ -374,13 +404,10 @@ namespace panvc3::dispatch::events::platform::linux {
 	int signal_monitor::unlisten(int sig)
 	{
 		int retval{-1};
-		sigset_t mask{};
-		::sigemptyset(&mask);
-		::sigaddset(&mask, sig);
-		::sigdelset(&m_mask, sig);
 		
 		// Check if we still have signals to monitor.
-		if (::sigisemptyset(&m_mask))
+		sigdelset(&m_mask, sig);
+		if (sigisemptyset(&m_mask))
 		{
 			retval = m_handle.fd;
 			m_handle.release();
@@ -390,9 +417,6 @@ namespace panvc3::dispatch::events::platform::linux {
 			throw std::runtime_error(::strerror(errno));
 		}
 		
-		if (!::sigismember(&m_original_mask, sig) && -1 == ::sigprocmask(SIG_UNBLOCK, &mask, nullptr))
-			throw std::runtime_error(::strerror(errno));
-		
 		return retval;
 	}
 	
@@ -400,8 +424,7 @@ namespace panvc3::dispatch::events::platform::linux {
 	void signal_monitor::release()
 	{
 		m_handle.release();
-		if (-1 == ::sigprocmask(SIG_SETMASK, &m_original_mask, nullptr))
-			throw std::runtime_error(::strerror(errno));
+		sigemptyset(&m_mask);
 	}
 
 
@@ -409,10 +432,13 @@ namespace panvc3::dispatch::events::platform::linux {
 	{
 		if (-1 == ::read(m_handle.fd, &buffer, sizeof(struct signalfd_siginfo)))
 		{
-			if (EAGAIN == errno)
-				return false;
-
-			throw std::runtime_error(::strerror(errno));
+			switch (errno)
+			{
+				case EAGAIN:
+					return false;
+				default:
+					throw std::runtime_error(::strerror(errno));
+			}
 		}
 
 		return true;
@@ -453,10 +479,8 @@ namespace panvc3::dispatch::events::platform::linux {
 						}
 
 						default:
-							break;
+							throw std::runtime_error(::strerror(errno));
 					}
-
-					throw std::runtime_error(::strerror(errno));
 				}
 
 				default:

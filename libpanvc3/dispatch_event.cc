@@ -13,6 +13,26 @@ namespace chrono	= std::chrono;
 
 namespace panvc3::dispatch::events
 {
+	void manager_base::stop_and_wait()
+	{
+		stop();
+		
+		// Wait until m_is_running_worker is false.
+		// (Spurious unblocks are guaranteed to be handled.)
+		m_is_running_worker.wait(true, std::memory_order_acquire);
+	}
+	
+	
+	void manager_base::run()
+	{
+		run_();
+		
+		// It does not matter even if we are not in a worker thread.
+		m_is_running_worker.store(false, std::memory_order_release);
+		m_is_running_worker.notify_all();
+	}
+	
+	
 	auto manager_base::check_timers() -> duration_type
 	{
 		duration_type next_firing_time{timer::DURATION_MAX};
@@ -88,6 +108,14 @@ namespace panvc3::dispatch::events
 	
 		trigger_event(event_type::wake_up);
 		return retval;
+	}
+	
+	
+	void manager_base::start_thread_and_run(std::jthread &thread)
+	{
+		auto const res(m_is_running_worker.exchange(true, std::memory_order_acq_rel));
+		libbio_assert(!res);
+		thread = std::jthread([this]{ run(); });
 	}
 
 
