@@ -21,6 +21,12 @@ namespace panvc3::dispatch {
 	}
 	
 	
+	void parallel_queue::clear()
+	{
+		m_task_queue.clear();
+	}
+	
+	
 	void parallel_queue::enqueue(queue_item &&item)
 	{
 		m_task_queue.enqueue(std::move(item));

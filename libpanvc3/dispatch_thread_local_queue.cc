@@ -12,7 +12,7 @@ namespace panvc3::dispatch {
 	{
 		{
 			std::lock_guard lock(m_mutex);
-			m_task_queue.emplace(std::move(tt), nullptr);
+			m_task_queue.emplace_back(std::move(tt), nullptr);
 		}
 
 		m_cv.notify_one();
@@ -25,10 +25,17 @@ namespace panvc3::dispatch {
 
 		{
 			std::lock_guard lock(m_mutex);
-			m_task_queue.emplace(std::move(tt), &gg);
+			m_task_queue.emplace_back(std::move(tt), &gg);
 		}
 
 		m_cv.notify_one();
+	}
+	
+	
+	void thread_local_queue::clear()
+	{
+		std::lock_guard lock(m_mutex);
+		m_task_queue.clear();
 	}
 	
 	
@@ -66,7 +73,7 @@ namespace panvc3::dispatch {
 				{
 					using std::swap;
 					swap(item, m_task_queue.front());
-					m_task_queue.pop();
+					m_task_queue.pop_front();
 				}
 				
 				lock.unlock();

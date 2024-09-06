@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -25,23 +25,32 @@ namespace panvc3::dispatch::detail {
 	class blocking_queue
 	{
 	private:
-		typedef std::queue <t_item, std::list <t_item>>	queue_type;
+		typedef std::list <t_item>	queue_type;
 		
 	private:
 		queue_type	m_queue;
 		std::mutex	m_mutex;
 		
 	public:
+		inline void clear();
 		inline void enqueue(t_item &&item);
 		inline bool try_dequeue(t_item &item);
 	};
 	
 	
 	template <typename t_item>
+	void blocking_queue <t_item>::clear()
+	{
+		std::lock_guard lock(m_mutex);
+		m_queue.clear();
+	}
+	
+	
+	template <typename t_item>
 	void blocking_queue <t_item>::enqueue(t_item &&item)
 	{
 		std::lock_guard lock(m_mutex);
-		m_queue.emplace(std::move(item));
+		m_queue.emplace_back(std::move(item));
 	}
 	
 	
@@ -55,12 +64,13 @@ namespace panvc3::dispatch::detail {
 		
 		using std::swap;
 		swap(m_queue.front(), item);
-		m_queue.pop();
+		m_queue.pop_front();
 		return true;
 	}
 	
 	
 #if DISPATCH_USE_CONCURRENT_TASK_QUEUE
+#	error clear() not implemented.
 	template <typename t_item>
 	using queue_t = moodycamel::ConcurrentQueue <t_item>;
 #else

@@ -20,6 +20,7 @@ namespace panvc3::dispatch {
 	struct queue
 	{
 		virtual ~queue() {}
+		virtual void clear() = 0;
 		virtual void async(task tt) = 0;
 		virtual void group_async(group &gg, task tt) = 0;
 		
@@ -75,6 +76,8 @@ namespace panvc3::dispatch {
 		parallel_queue &operator=(parallel_queue const &) = delete;
 		parallel_queue &operator=(parallel_queue &&) = delete;
 		
+		void clear() override;
+			
 		void async(task tt) override;
 		void group_async(group &gg, task tt) override;
 		
@@ -103,13 +106,14 @@ namespace panvc3::dispatch {
 		};
 		
 	private:
-		typedef std::queue <queue_item> queue_type;
+		typedef std::deque <queue_item> queue_type;
 		
 	private:
-		parallel_queue	*m_parent_queue{};
-		queue_type		m_task_queue;
-		std::mutex		m_mutex;
-		bool			m_has_thread{};
+		parallel_queue			*m_parent_queue{};
+		queue_type				m_task_queue;
+		std::condition_variable	m_cv;				// For waiting for the serial_queue_executor_callable to finish.
+		std::mutex				m_mutex;
+		bool					m_has_thread{};
 		
 	public:
 		serial_queue(parallel_queue &parent_queue):
@@ -117,6 +121,10 @@ namespace panvc3::dispatch {
 		{
 		}
 		
+		~serial_queue();
+		
+		void clear() override;
+
 		void async(task tt) override { async_(std::move(tt)); }
 		void group_async(group &gg, task tt) override;
 		
@@ -141,7 +149,7 @@ namespace panvc3::dispatch {
 		};
 		
 	private:
-		typedef std::queue <queue_item> queue_type;
+		typedef std::deque <queue_item> queue_type;
 		
 	private:
 		queue_type				m_task_queue;
@@ -153,6 +161,8 @@ namespace panvc3::dispatch {
 		void async_(task &&tt);
 		
 	public:
+		void clear() override;
+		
 		void async(task tt) override { async_(std::move(tt)); }
 		void group_async(group &gg, task tt) override;
 		
