@@ -129,7 +129,7 @@ SCENARIO("dispatch::events::manager can detect that a signal has been received",
 				status.assign(true);
 			});
 		
-			AND_WHEN("a signal is received")
+			AND_WHEN("the signal is received")
 			{
 				::kill(::getpid(), SIGUSR1);
 			
