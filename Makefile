@@ -4,7 +4,7 @@ include  $(PANVC3_PROJECT_DIR)/make/os-name.mk
 include  $(PANVC3_PROJECT_DIR)/make/common.mk
 
 DEPENDENCIES =	$(LIBBIO_LIB) \
-				lib/rapidcheck/build/librapidcheck.a
+				lib/libbio/lib/rapidcheck/build/librapidcheck.a
 
 BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
 					convert-bed-positions/convert_bed_positions \
@@ -23,8 +23,6 @@ VERSION = $(subst $() $(),-,$(shell tools/git_version.sh))
 DIST_TARGET_DIR = panvc3-$(VERSION)
 DIST_NAME_SUFFIX = $(if $(TARGET_TYPE),-$(TARGET_TYPE),)
 DIST_TAR_GZ = panvc3-$(VERSION)-$(OS_NAME)$(DIST_NAME_SUFFIX).tar.gz
-
-CATCH2_HEADERS	= $(shell find lib/libbio/lib/Catch2/include)
 
 
 .PHONY: all clean-all clean clean-dependencies dependencies libbio-tests
@@ -52,6 +50,7 @@ clean:
 clean-dependencies:
 	$(MAKE) -C lib/libbio clean
 	$(MAKE) -f make/librapidcheck.mk clean
+	$(MAKE) -f make/libcatch2.mk clean
 
 clean-dist:
 	$(RM) -rf $(DIST_TARGET_DIR)
@@ -60,7 +59,7 @@ dependencies: $(DEPENDENCIES)
 
 dist: $(DIST_TAR_GZ)
 
-tests: lib/rapidcheck/build/librapidcheck.a $(LIBBIO_LIB) libpanvc3/libpanvc3.a lib/Catch2/single_include/catch2/catch.hpp
+tests: lib/libbio/lib/rapidcheck/build/librapidcheck.a lib/libbio/lib/Catch2/build/src/libCatch2.a $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C tests
 
 libbio-tests: lib/libbio/tests/tests
@@ -121,8 +120,8 @@ $(LIBBIO_LIB): lib/libbio/local.mk
 lib/libbio/tests/tests: lib/libbio/local.mk
 	$(MAKE) -C lib/libbio tests
 
-lib/rapidcheck/build/librapidcheck.a:
+lib/libbio/lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
 
-lib/Catch2/single_include/catch2/catch.hpp: $(CATCH2_HEADERS)
-	cd lib/libbio/lib/Catch2 && $(PYTHON) scripts/generateSingleHeader.py
+lib/libbio/lib/Catch2/build/src/libCatch2.a:
+	$(MAKE) -f make/libcatch2.mk

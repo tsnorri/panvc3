@@ -2,16 +2,16 @@ MAKE_SCRIPT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 include  $(MAKE_SCRIPT_DIR)/common.mk
 
 
-all: lib/libbio/lib/rapidcheck/build/librapidcheck.a
+all: lib/libbio/lib/Catch2/build/src/libCatch2.a
 
 
 clean:
-	$(RM) -rf lib/libbio/lib/rapidcheck/build
+	$(RM) -rf lib/libbio/lib/Catch2/build
 
 
-lib/libbio/lib/rapidcheck/build/librapidcheck.a:
-	$(RM) -rf lib/libbio/lib/rapidcheck/build && \
-	cd lib/libbio/lib/rapidcheck && \
+lib/libbio/lib/Catch2/build/src/libCatch2.a:
+	$(RM) -rf lib/libbio/lib/Catch2/build && \
+	cd lib/libbio/lib/Catch2 && \
 	$(MKDIR) build && \
 	cd build && \
 	$(CMAKE) \
