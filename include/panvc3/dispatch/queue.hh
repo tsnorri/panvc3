@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -65,6 +65,8 @@ namespace panvc3::dispatch {
 		{
 			m_thread_pool->add_queue(*this);
 		}
+		
+		~parallel_queue();
 		
 		static parallel_queue &shared_queue();
 		

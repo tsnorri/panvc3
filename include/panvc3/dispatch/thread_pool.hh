@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <mutex>
 #include <panvc3/dispatch/fwd.hh>
+#include <shared_mutex>
 #include <vector>
 
 
@@ -34,7 +35,8 @@ namespace panvc3::dispatch {
 		duration_type					m_max_idle_time{default_max_idle_time};
 		thread_count_type				m_max_workers{default_max_worker_threads};
 		std::condition_variable			m_cv{};										// For stopping the workers.
-		std::mutex						m_mutex{};
+		std::shared_mutex				m_queue_mutex{};							// Protects m_queues
+		std::mutex						m_should_continue_mutex{};					// Protects m_should_continue
 		std::atomic <thread_count_type>	m_workers{};
 		std::atomic <thread_count_type>	m_sleeping_workers{};
 		bool							m_should_continue{true};
@@ -44,11 +46,13 @@ namespace panvc3::dispatch {
 		
 	public:
 		static inline thread_pool &shared_pool();
-		void add_queue(parallel_queue &queue) { m_queues.push_back(&queue); }	// Not thread-safe.
+		void add_queue(parallel_queue &queue);			// Thread-safe.
+		void remove_queue(parallel_queue const &queue);	// Thread-safe.
+		void stop(bool should_wait = true);				// Thread-safe.
+		
 		void start_workers_if_needed();
-		void stop(bool should_wait = true);
 		void wait();
-		~thread_pool() { stop(); }
+		~thread_pool() { stop(); } // parallel_queue expects its thread_pool to persist until the queue has been deallocated.
 	};
 	
 	

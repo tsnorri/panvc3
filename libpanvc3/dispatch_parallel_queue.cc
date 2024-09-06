@@ -15,6 +15,12 @@ namespace panvc3::dispatch {
 	}
 	
 	
+	parallel_queue::~parallel_queue()
+	{
+		m_thread_pool->remove_queue(*this);
+	}
+	
+	
 	void parallel_queue::enqueue(queue_item &&item)
 	{
 		m_task_queue.enqueue(std::move(item));
