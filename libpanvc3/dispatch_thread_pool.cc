@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -9,30 +9,6 @@
 #include <thread>
 
 namespace chrono	= std::chrono;
-
-
-namespace panvc3::dispatch::detail {
-	
-	struct serial_queue_executor_callable : public callable <>
-	{
-		friend class dispatch::serial_queue;
-	
-	private:
-		serial_queue	*queue{};
-		
-	private:
-		serial_queue_executor_callable(serial_queue &queue_):
-			queue(&queue_)
-		{
-		}
-	
-	public:
-		serial_queue_executor_callable() = delete;
-		void execute() override;
-		void move_to(std::byte *buffer) override { new(buffer) serial_queue_executor_callable{*queue}; }
-		inline void enqueue_transient_async(struct queue &qq) override;
-	};
-}
 
 
 namespace panvc3::dispatch {
@@ -79,7 +55,7 @@ namespace panvc3::dispatch {
 			while (true)
 			{
 				auto const prev_executed_queue_items(executed_queue_items);
-				for (auto queue : pool.m_queues) // Does not modify m_queues, hence thread-safe.
+				for (auto queue : pool.m_queues) // Does not modify m_queues, hence thread-safe (as long as the queues have been pre-added).
 				{
 					if (queue->m_task_queue.try_dequeue(item))
 					{
@@ -165,7 +141,7 @@ namespace panvc3::dispatch {
 			
 			// Critical section.
 			lock.lock();
-			// See the note about m_mutex in the beginning of this loop.
+			// See the note about m_mutex after the switch statement.
 			pool.m_sleeping_workers.fetch_add(1, std::memory_order_relaxed);
 			
 			switch (pool.m_cv.wait_until(lock, last_wake_up_time + m_max_idle_time))
@@ -230,6 +206,7 @@ namespace panvc3::dispatch {
 			wait();
 	}
 	
+	
 	void thread_pool::wait()
 	{
 		// FIXME: Not particularly efficient.
@@ -240,259 +217,5 @@ namespace panvc3::dispatch {
 				break;
 			m_workers.wait(count, std::memory_order_acquire); // Wait until the value is no longer count.
 		}
-	}
-	
-	
-	void group::wait()
-	{
-		exit();
-		
-		std::unique_lock lock(m_mutex);
-		m_cv.wait(lock, [this]{ return m_should_stop_waiting; });
-		m_should_stop_waiting = false;
-		m_count.fetch_add(1, std::memory_order_relaxed); // Restore the group’s initial state.
-	}
-	
-	
-	void group::notify(struct queue &queue, task tt)
-	{
-		m_queue = &queue;
-		m_task = std::move(tt);
-		// Relaxed should be enough b.c. exit() uses std::memory_order_acq_rel.
-		m_count.fetch_or(NOTIFY_MASK, std::memory_order_relaxed);
-		
-		exit();
-	}
-	
-	
-	void group::exit()
-	{
-		auto const res(m_count.fetch_sub(1, std::memory_order_acq_rel));
-		libbio_assert_neq(0, ~NOTIFY_MASK & res);
-		if ((NOTIFY_MASK | 1) == res)
-		{
-			m_queue->async(std::move(m_task));
-			m_queue = nullptr;
-			m_task = task{};
-			m_count.fetch_add(1, std::memory_order_relaxed); // Restore the group’s initial state.
-		}
-		else if (1 == res)
-		{
-			{
-				std::lock_guard lock(m_mutex);
-				m_should_stop_waiting = true;
-			}
-			
-			m_cv.notify_all();
-		}
-	}
-	
-	
-	void detail::serial_queue_executor_callable::enqueue_transient_async(struct queue &qq)
-	{
-		// For the sake of completeness; just copy *this.
-		qq.async(detail::serial_queue_executor_callable{*queue});
-	}
-	
-	
-	void detail::serial_queue_executor_callable::execute()
-	{
-		libbio_assert(queue);
-		
-		serial_queue::queue_item item;
-		while (queue->fetch_next_task(item))
-		{
-			item.task_();
-			if (item.group_)
-				item.group_->exit();
-		}
-	}
-	
-	
-	parallel_queue &parallel_queue::shared_queue()
-	{
-		static parallel_queue queue;
-		return queue;
-	}
-	
-	
-	void parallel_queue::enqueue(queue_item &&item)
-	{
-		m_task_queue.enqueue(std::move(item));
-		m_thread_pool->start_workers_if_needed();
-	}
-	
-	
-	void parallel_queue::async(task tt)
-	{
-		enqueue(queue_item{
-			std::move(tt),
-			nullptr
-#if PANVC3_ENABLE_DISPATCH_BARRIER
-			, current_barrier()
-#endif
-		});
-	}
-	
-	
-	void parallel_queue::group_async(group &gg, task tt)
-	{
-		gg.enter();
-		enqueue(queue_item{
-			std::move(tt),
-			&gg
-#if PANVC3_ENABLE_DISPATCH_BARRIER
-			, current_barrier()
-#endif
-		});
-	}
-	
-	
-#if PANVC3_ENABLE_DISPATCH_BARRIER
-	void parallel_queue::barrier(task tt)
-	{
-		// Prepare the barrier.
-		auto bb(std::make_shared <class barrier>(std::move(tt)));
-	
-		// Store the barrier and set up the linked list.
-		{
-			auto old_barrier(m_current_barrier.exchange(bb, std::memory_order_acq_rel)); // Returns std::shared_ptr
-			old_barrier->m_next.store(bb, std::memory_order_release); // Safe b.c. m_next is atomic and this is the only place where it is modified.
-			// old_barrier (the std::shared_ptr) is now deallocated, and the object it points to may be too.
-		}
-		
-		// Make sure the barrier’s task gets executed at some point by adding an empty task.
-		enqueue(queue_item{
-			task{},
-			nullptr,
-			std::move(bb)
-		});
-	}
-#endif
-	
-	
-	void serial_queue::enqueue(queue_item &&item)
-	{
-		bool has_thread{};
-		
-		{
-			std::lock_guard lock(m_mutex);
-			m_task_queue.emplace(std::move(item));
-			has_thread = m_has_thread;
-			m_has_thread = true;
-		}
-		
-		if (!has_thread)
-			m_parent_queue->async(detail::serial_queue_executor_callable{*this});
-	}
-	
-	
-	void serial_queue::async_(task &&tt)
-	{
-		enqueue(queue_item{std::move(tt), nullptr});
-	}
-	
-	
-	void serial_queue::group_async(group &gg, task tt)
-	{
-		gg.enter();
-		enqueue(queue_item{std::move(tt), &gg});
-	}
-	
-	
-	bool serial_queue::fetch_next_task(queue_item &item)
-	{
-		std::lock_guard lock(m_mutex);
-		
-		if (m_task_queue.empty())
-		{
-			m_has_thread = false;
-			return false;
-		}
-		
-		item = std::move(m_task_queue.front());
-		m_task_queue.pop();
-		return true;
-	}
-	
-	
-	void thread_local_queue::async_(task &&tt)
-	{
-		{
-			std::lock_guard lock(m_mutex);
-			m_task_queue.emplace(std::move(tt), nullptr);
-		}
-
-		m_cv.notify_one();
-	}
-	
-	
-	void thread_local_queue::group_async(group &gg, task tt)
-	{
-		gg.enter();
-
-		{
-			std::lock_guard lock(m_mutex);
-			m_task_queue.emplace(std::move(tt), &gg);
-		}
-
-		m_cv.notify_one();
-	}
-	
-	
-	void thread_local_queue::stop()
-	{
-		{
-			std::lock_guard lock(m_mutex);
-			m_should_continue = false;
-		}
-		
-		m_cv.notify_one();
-	}
-	
-	
-	bool thread_local_queue::run()
-	{
-		std::unique_lock lock(m_mutex);
-		while (true)
-		{
-			// Critical section; we now have the lock.
-			if (!m_should_continue)
-				return m_task_queue.empty(); // std::unique_lock unlocks automatically.
-			
-			if (m_task_queue.empty())
-			{
-				// Task queue is empty and we still hold the lock.
-				m_cv.wait(lock); // Unlocks, waits, locks again.
-				continue;
-			}
-
-			{
-				// Get the next item from the queue.
-				queue_item item;
-				
-				{
-					using std::swap;
-					swap(item, m_task_queue.front());
-					m_task_queue.pop();
-				}
-				
-				lock.unlock();
-				
-				// Non-critical section; execute the task.
-				item.task_();
-				if (item.group_)
-					item.group_->exit();
-				
-				lock.lock();
-			}
-		}
-	}
-	
-	
-	thread_local_queue &main_queue()
-	{
-		static thread_local_queue main_queue;
-		return main_queue;
 	}
 }
