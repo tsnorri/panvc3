@@ -38,7 +38,26 @@ namespace panvc3::dispatch {
 		
 		void run();
 		void operator()() { run(); }
+		
+		void remove_from_pool(std::int64_t const executed_tasks);
+		void begin_idle(std::int64_t const executed_tasks);
 	};
+	
+	
+	void worker_thread_runner::remove_from_pool(std::int64_t const executed_tasks)
+	{
+		auto &pool(*m_thread_pool);
+		pool.m_waiting_tasks -= executed_tasks;
+		pool.remove_worker();
+	}
+	
+	
+	void worker_thread_runner::begin_idle(std::int64_t const executed_tasks)
+	{
+		auto &pool(*m_thread_pool);
+		pool.m_waiting_tasks -= executed_tasks;
+		++pool.m_idle_workers;
+	}
 	
 	
 	void worker_thread_runner::run()
@@ -50,25 +69,25 @@ namespace panvc3::dispatch {
 		parallel_queue::queue_item queue_item{}; // Initialise just once to save a bit of time.
 		
 		{
-			std::unique_lock lock(pool.m_should_continue_mutex, std::defer_lock_t{});
+			std::unique_lock lock(pool.m_mutex, std::defer_lock_t{});
 			while (true)
 			{
-				std::uint64_t executed_queue_items{}; // Total over the iterations of the loop below (but not the enclosing loop).
+				std::int64_t executed_tasks{}; // Total over the iterations of the loop below (but not the enclosing loop).
 			
 				{
 					// Critical section 1.
 					// We need the queues to persist while tasks are being executed.
 					// Acquiring m_queue_mutex is sufficient b.c. the queue will not get deallocated before
 					// it has been removed from the thread pool.
-					std::shared_lock const lock{pool.m_queue_mutex};
+					std::shared_lock const queue_lock{pool.m_queue_mutex};
 					while (true)
 					{
-						auto const prev_executed_queue_items(executed_queue_items);
+						auto const prev_executed_tasks(executed_tasks);
 						for (auto queue : pool.m_queues)
 						{
 							if (queue->m_task_queue.try_dequeue(queue_item))
 							{
-								++executed_queue_items;
+								++executed_tasks;
 						
 #if PANVC3_ENABLE_DISPATCH_BARRIER
 								{
@@ -83,9 +102,16 @@ namespace panvc3::dispatch {
 										bb.m_task();
 										bb.m_task = task{}; // Deallocate memory.
 								
-										// Not in critical section but no atomicity required b.c. m_task (that potentially calls m_pool.stop())
-										// is executed in the same thread. (Otherwise it cannot be expected that the pending tasks would not continue.)
-										if (pool.m_should_continue)
+										bool should_continue{};
+										
+										{
+											std::lock_guard const lock_{lock};
+											should_continue = pool.m_should_continue;
+											if (!should_continue)
+												remove_from_pool(executed_tasks);
+										}
+								
+										if (should_continue)
 										{
 											bb.m_state.store(barrier::DONE, std::memory_order_release);
 											bb.m_state.notify_all();
@@ -107,7 +133,11 @@ namespace panvc3::dispatch {
 												bb.m_state.wait(barrier::EXECUTING, std::memory_order::acquire);
 												// The acquire operation above should make the modification visible here.
 												if (barrier::DO_STOP == bb.m_state.load(std::memory_order_relaxed))
+												{
+													std::lock_guard const lock_{lock};
+													remove_from_pool(executed_tasks);
 													return;
+												}
 										
 												break;
 											}
@@ -117,7 +147,11 @@ namespace panvc3::dispatch {
 									
 											// Stop if the barrier’s task called m_pool.stop().
 											case barrier::DO_STOP:
+											{
+												std::lock_guard const lock_{lock};
+												remove_from_pool(executed_tasks);
 												return;
+											}
 										
 											case barrier::NOT_EXECUTED:
 												// Unexpected.
@@ -130,53 +164,55 @@ namespace panvc3::dispatch {
 								queue_item.task_();
 								if (queue_item.group_)
 									queue_item.group_->exit(); // Important to do only after executing the task, since it can add new tasks to the group.
-								break;
 							}
-						}
+						} // Queue loop
 					
-						if (executed_queue_items == prev_executed_queue_items)
+						if (executed_tasks == prev_executed_tasks)
 							break;
-					}
-				}
+					} // Inner while (true)
+				} // Critical section 1
 			
 				{
 					// Check the last wake-up time.
 					auto const now{clock_type::now()};
 					auto const diff(now - last_wake_up_time);
-					if (0 == executed_queue_items && m_max_idle_time <= diff)
-						break;
+					if (0 == executed_tasks && m_max_idle_time <= diff)
+					{
+						// Critical section 2.
+						lock.lock();
+						remove_from_pool(executed_tasks); // zero but does not matter.
+						return;
+					}
 				
 					last_wake_up_time = now;
 				}
 			
 				// Critical section 2.
-				lock.lock();
-				// See the note about m_should_continue_mutex after the switch statement.
-				pool.m_sleeping_workers.fetch_add(1, std::memory_order_relaxed);
-			
-				switch (pool.m_cv.wait_until(lock, last_wake_up_time + m_max_idle_time))
 				{
-					case std::cv_status::no_timeout:
-						break;
+					lock.lock();
+					begin_idle(executed_tasks);
+				
+					// m_mutex is locked when wait_until() returns.
+					switch (pool.m_cv.wait_for(lock, m_max_idle_time))
+					{
+						case std::cv_status::no_timeout:
+							break;
 					
-					case std::cv_status::timeout:
-						goto end_worker_loop;
+						case std::cv_status::timeout:
+							pool.remove_idle_worker();
+							return;
+					}
+				
+					if (!pool.m_should_continue)
+					{
+						pool.remove_idle_worker();
+						return;
+					}
+				
+					lock.unlock();
 				}
-			
-				// Critical section 2.
-				// wait_until() locks m_should_continue_mutex, which is an acquire operation and hence the modification
-				// to pool.m_should_continue done in the critical section in stop() is visible here. Similarly the
-				// unlock is a release operation and makes the fetch_sub operation below visible elsewhere.
-				if (!pool.m_should_continue)
-					goto end_worker_loop;
-			
-				lock.unlock();
-			}
+			} // Outer while (true)
 		}
-		
-	end_worker_loop:
-		pool.m_workers.fetch_sub(1, std::memory_order_release);
-		pool.m_workers.notify_one();
 	}
 	
 	
@@ -198,34 +234,63 @@ namespace panvc3::dispatch {
 	}
 	
 	
-	void thread_pool::start_worker()
+	void thread_pool::start_worker_()
 	{
-		m_workers.fetch_add(1, std::memory_order_relaxed);
+		++m_current_workers;
 		std::thread thread(worker_thread_runner{*this, m_max_idle_time});
 		thread.detach();
 	}
 	
 	
-	void thread_pool::start_workers_if_needed()
+	void thread_pool::remove_worker()
 	{
-		auto const prev_sleeping_threads(m_sleeping_workers.fetch_sub(1, std::memory_order_acquire));
-		if (0 < prev_sleeping_threads)
+		libbio_assert_lt(0, m_current_workers);
+		--m_current_workers;
+		m_stop_cv.notify_one();
+	}
+	
+	
+	void thread_pool::remove_idle_worker()
+	{
+		libbio_assert_lt(0, m_current_workers);
+		libbio_assert_lt(0, m_idle_workers);
+		--m_current_workers;
+		--m_idle_workers;
+		m_stop_cv.notify_one();
+	}
+	
+	
+	void thread_pool::start_worker()
+	{
+		std::lock_guard const lock{m_mutex};
+		start_worker_();
+	}
+	
+	
+	void thread_pool::notify()
+	{
 		{
-			m_cv.notify_one();
-			return;
+			std::lock_guard const lock{m_mutex};
+			++m_waiting_tasks;
+			if (m_idle_workers)
+				goto do_notify;
+			
+			if (m_max_workers <= m_current_workers)
+				return;
+			
+			// Can start a new thread.
+			start_worker_();
 		}
 		
-		m_sleeping_workers.fetch_add(1, std::memory_order_release);
-		auto const workers(m_workers.load(std::memory_order_relaxed));
-		if (workers < m_max_workers)
-			start_worker();
+	do_notify:
+		m_cv.notify_one();
 	}
 	
 	
 	void thread_pool::stop(bool should_wait)
 	{
 		{
-			std::lock_guard lock(m_should_continue_mutex);
+			std::lock_guard lock(m_mutex);
 			m_should_continue = false;
 		}
 		
@@ -238,13 +303,8 @@ namespace panvc3::dispatch {
 	
 	void thread_pool::wait()
 	{
-		// FIXME: Not particularly efficient.
-		while (true)
-		{
-			auto const count(m_workers.load(std::memory_order_acquire));
-			if (0 == count)
-				break;
-			m_workers.wait(count, std::memory_order_acquire); // Wait until the value is no longer count.
-		}
+		std::unique_lock lock{m_mutex};
+		if (0 < m_current_workers)
+			m_stop_cv.wait(lock, [this]{ return 0 == m_current_workers; });
 	}
 }

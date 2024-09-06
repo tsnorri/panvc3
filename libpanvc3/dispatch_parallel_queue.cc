@@ -30,7 +30,7 @@ namespace panvc3::dispatch {
 	void parallel_queue::enqueue(queue_item &&item)
 	{
 		m_task_queue.enqueue(std::move(item));
-		m_thread_pool->start_workers_if_needed();
+		m_thread_pool->notify();
 	}
 	
 	

@@ -32,17 +32,21 @@ namespace panvc3::dispatch {
 		
 	private:
 		std::vector <parallel_queue *>	m_queues;									// Non-owning.
+		std::int64_t					m_waiting_tasks{};
 		duration_type					m_max_idle_time{default_max_idle_time};
 		thread_count_type				m_max_workers{default_max_worker_threads};
-		std::condition_variable			m_cv{};										// For stopping the workers.
+		thread_count_type				m_current_workers{};
+		thread_count_type				m_idle_workers{};
+		std::condition_variable			m_cv{};										// For pausing the workers.
+		std::condition_variable			m_stop_cv{};								// For stopping the thread pool.
 		std::shared_mutex				m_queue_mutex{};							// Protects m_queues
-		std::mutex						m_should_continue_mutex{};					// Protects m_should_continue
-		std::atomic <thread_count_type>	m_workers{};
-		std::atomic <thread_count_type>	m_sleeping_workers{};
+		std::mutex						m_mutex{};									// Protects m_waiting_tasks, m_current_workers, m_idle_workers, m_should_continue.
 		bool							m_should_continue{true};
 		
 	private:
-		void start_worker();
+		void start_worker_();
+		void remove_worker();
+		void remove_idle_worker();
 		
 	public:
 		static inline thread_pool &shared_pool();
@@ -50,8 +54,9 @@ namespace panvc3::dispatch {
 		void remove_queue(parallel_queue const &queue);	// Thread-safe.
 		void stop(bool should_wait = true);				// Thread-safe.
 		
-		void start_workers_if_needed();
+		void notify();									// Task was added to an observed queue. Thread-safe.
 		void wait();
+		void start_worker();							// Thread-safe.
 		~thread_pool() { stop(); } // parallel_queue expects its thread_pool to persist until the queue has been deallocated.
 	};
 	

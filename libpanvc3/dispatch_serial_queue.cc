@@ -64,7 +64,7 @@ namespace panvc3::dispatch {
 		if (m_has_thread)
 		{
 			m_task_queue.clear();
-			m_cv.wait(lock, [this](){ return !m_has_thread; });
+			m_cv.wait(lock, [this]{ return !m_has_thread; });
 		}
 	}
 	
