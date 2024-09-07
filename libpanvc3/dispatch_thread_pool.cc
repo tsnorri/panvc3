@@ -256,8 +256,8 @@ namespace panvc3::dispatch {
 	void thread_pool::remove_worker()
 	{
 		libbio_assert_lt(0, m_current_workers);
-		--m_current_workers;
-		m_stop_cv.notify_one();
+		if (0 == --m_current_workers)
+			m_stop_cv.notify_one();
 	}
 	
 	
@@ -265,8 +265,8 @@ namespace panvc3::dispatch {
 	{
 		// Worker still marked idle.
 		libbio_assert_lt(0, m_current_workers);
-		--m_current_workers;
-		m_stop_cv.notify_one();
+		if (0 == --m_current_workers)
+			m_stop_cv.notify_one();
 	}
 	
 	
