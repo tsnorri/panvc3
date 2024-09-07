@@ -113,7 +113,7 @@ SCENARIO("dispatch::events::manager can detect that a signal has been received",
 	WHEN("A signal is blocked")
 	{
 		events::signal_mask mask;
-		mask.add(SIGUSR1);
+		mask.add(SIGQUIT);
 		
 		AND_WHEN("dispatch::events::manager monitors the signal")
 		{
@@ -125,13 +125,13 @@ SCENARIO("dispatch::events::manager can detect that a signal has been received",
 		
 			event_manager.setup();
 			event_manager.start_thread_and_run(manager_thread);
-			event_manager.add_signal_event_source(SIGUSR1, queue, [&](events::signal_source &){
+			event_manager.add_signal_event_source(SIGQUIT, queue, [&](events::signal_source &){
 				status.assign(true);
 			});
 		
 			AND_WHEN("the signal is received")
 			{
-				::kill(::getpid(), SIGUSR1);
+				::kill(::getpid(), SIGQUIT);
 			
 				THEN("an event is received")
 				{
