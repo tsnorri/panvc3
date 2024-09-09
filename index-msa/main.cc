@@ -261,6 +261,9 @@ int main(int argc, char **argv)
 		std::cerr << "ERROR: FASTA line width must be non-negative.\n";
 		std::exit(EXIT_FAILURE);
 	}
+
+	events::signal_mask mask;
+	mask.add(SIGCHLD);
 	
 	std::jthread manager_thread;
 	events::manager event_manager;
