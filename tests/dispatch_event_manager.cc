@@ -34,6 +34,20 @@ namespace {
 				FAIL(::strerror(errno));
 		}
 	};
+
+
+	void signal_handler(int sig, siginfo_t * info, void *)
+	{
+		sigset_t mask{};
+		if (-1 == sigemptyset(&mask))
+			std::abort();
+
+		if (-1 == ::pthread_sigmask(SIG_BLOCK, nullptr, &mask))
+			std::abort();
+
+		bool const is_member(sigismember(&mask, sig));
+		std::abort();
+	}
 }
 
 
@@ -110,6 +124,18 @@ SCENARIO("dispatch::events::manager can detect that a file descriptor is ready f
 
 SCENARIO("dispatch::events::manager can detect that a signal has been received", "[dispatch_event_manager]")
 {
+	// For debugging; should not be needed since the signal is blocked anyway.
+	{
+		struct sigaction act{};
+		act.sa_sigaction = &signal_handler;
+		act.sa_flags = SA_SIGINFO;
+		if (-1 == sigemptyset(&act.sa_mask))
+			std::abort();
+
+		if (-1 == ::sigaction(SIGQUIT, &act, nullptr))
+			std::abort();
+	}
+
 	WHEN("A signal is blocked")
 	{
 		events::signal_mask mask;
@@ -131,8 +157,8 @@ SCENARIO("dispatch::events::manager can detect that a signal has been received",
 		
 			AND_WHEN("the signal is received")
 			{
-				::kill(::getpid(), SIGQUIT);
-			
+				REQUIRE(0 == ::kill(::getpid(), SIGQUIT));
+				
 				THEN("an event is received")
 				{
 					auto const lock(status.wait_and_lock());
