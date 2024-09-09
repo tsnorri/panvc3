@@ -16,6 +16,9 @@
 
 
 namespace panvc3::dispatch {
+
+	void block_signals();
+
 	
 	class thread_pool
 	{

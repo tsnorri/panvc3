@@ -16,6 +16,17 @@ namespace panvc3::dispatch {
 	thread_pool::thread_count_type const thread_pool::default_max_worker_threads = thread_pool::thread_count_type(
 		std::floor(1.5 * std::thread::hardware_concurrency())
 	);
+
+
+	void block_signals()
+	{
+		// Block all signals.
+		sigset_t mask{};
+		if (-1 == sigfillset(&mask))
+			throw std::runtime_error(::strerror(errno));
+		if (-1 == ::pthread_sigmask(SIG_SETMASK, &mask, nullptr))
+			throw std::runtime_error(::strerror(errno));
+	}
 	
 	
 	class worker_thread_runner
@@ -62,6 +73,8 @@ namespace panvc3::dispatch {
 	
 	void worker_thread_runner::run()
 	{
+		block_signals();
+
 		libbio_assert(m_thread_pool);
 		auto &pool(*m_thread_pool);
 		
