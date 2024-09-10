@@ -17,6 +17,7 @@ lib/rapidcheck/build/librapidcheck.a:
 	$(CMAKE) \
 		-DCMAKE_C_COMPILER="$(CC)" \
 		-DCMAKE_CXX_COMPILER="$(CXX)" \
+		-DCMAKE_CXX_FLAGS="$(CXXFLAGS)" \
 		-DBUILD_SHARED_LIBS=OFF \
 		.. && \
-	$(MAKE)
+	VERBOSE=1 $(MAKE)
