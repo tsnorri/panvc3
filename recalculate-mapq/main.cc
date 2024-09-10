@@ -967,15 +967,13 @@ namespace {
 				m_statistics.unpaired_alignments += (!has_mate);
 				
 				auto const score((*m_aln_scorer)(aln_rec, m_sam_tags));
+				position const pos{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag};
+				libbio_assert((INVALID_POSITION != pos) ^ (ALIGNMENT_SCORE_MIN == score)); // Min. score only allowed for records with invalid position.
 				
 				scored_rec.record = &aln_rec;
 				scored_rec.alignment_score = score;
 				
-				m_segment_descriptions_by_original_position.emplace_back(
-					position{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag},
-					score,
-					aln_rec.seq.size()
-				);
+				m_segment_descriptions_by_original_position.emplace_back(pos, score, aln_rec.seq.size());
 			}
 			catch (input_error const &exc)
 			{
