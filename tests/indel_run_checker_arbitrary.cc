@@ -1,9 +1,9 @@
 /*
- * Copyright (c) 2022-2023 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <libbio/markov_chain.hh>
 #include <libbio/markov_chain_rapidcheck.hh>
 #include <libbio/utility/is_equal.hh>

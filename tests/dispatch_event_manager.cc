@@ -3,7 +3,7 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <cstdio>						// ::strerror
 #include <panvc3/dispatch.hh>
 #include <panvc3/dispatch/event.hh>

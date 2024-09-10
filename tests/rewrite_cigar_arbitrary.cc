@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2022-2023 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
 #include <algorithm>								// std::iter_swap
 #include <boost/pfr/core.hpp>						// boost::pfr::structure_to_tuple
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <libbio/assert.hh>
 #include <libbio/fmap.hh>
 #include <panvc3/cigar_eq.hh>
