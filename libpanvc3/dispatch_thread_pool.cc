@@ -16,6 +16,17 @@ namespace panvc3::dispatch {
 	thread_pool::thread_count_type const thread_pool::default_max_worker_threads = thread_pool::thread_count_type(
 		std::floor(1.5 * std::thread::hardware_concurrency())
 	);
+
+
+	void block_signals()
+	{
+		// Block all signals.
+		sigset_t mask{};
+		if (-1 == sigfillset(&mask))
+			throw std::runtime_error(::strerror(errno));
+		if (-1 == ::pthread_sigmask(SIG_SETMASK, &mask, nullptr))
+			throw std::runtime_error(::strerror(errno));
+	}
 	
 	
 	class worker_thread_runner
@@ -62,6 +73,8 @@ namespace panvc3::dispatch {
 	
 	void worker_thread_runner::run()
 	{
+		block_signals();
+
 		libbio_assert(m_thread_pool);
 		auto &pool(*m_thread_pool);
 		
@@ -192,23 +205,34 @@ namespace panvc3::dispatch {
 					lock.lock();
 					begin_idle(executed_tasks);
 				
-					// m_mutex is locked when wait_until() returns.
-					switch (pool.m_cv.wait_for(lock, m_max_idle_time))
+					// Handle spurious wake-ups by repeatedly calling wait_for().
+					while (true)
 					{
-						case std::cv_status::no_timeout:
-							break;
+						// m_mutex is locked when wait_until() returns.
+						switch (pool.m_cv.wait_for(lock, m_max_idle_time))
+						{
+							case std::cv_status::no_timeout:
+								break;
 					
-						case std::cv_status::timeout:
+							case std::cv_status::timeout:
+								// Still marked idle.
+								pool.remove_idle_worker();
+								return;
+						}
+						
+						if (!pool.m_should_continue)
+						{
 							pool.remove_idle_worker();
 							return;
+						}
+						
+						if (pool.m_notified_workers)
+						{
+							--pool.m_notified_workers;
+							break;
+						}
 					}
-				
-					if (!pool.m_should_continue)
-					{
-						pool.remove_idle_worker();
-						return;
-					}
-				
+					
 					lock.unlock();
 				}
 			} // Outer while (true)
@@ -245,18 +269,17 @@ namespace panvc3::dispatch {
 	void thread_pool::remove_worker()
 	{
 		libbio_assert_lt(0, m_current_workers);
-		--m_current_workers;
-		m_stop_cv.notify_one();
+		if (0 == --m_current_workers)
+			m_stop_cv.notify_one();
 	}
 	
 	
 	void thread_pool::remove_idle_worker()
 	{
+		// Worker still marked idle.
 		libbio_assert_lt(0, m_current_workers);
-		libbio_assert_lt(0, m_idle_workers);
-		--m_current_workers;
-		--m_idle_workers;
-		m_stop_cv.notify_one();
+		if (0 == --m_current_workers)
+			m_stop_cv.notify_one();
 	}
 	
 	
@@ -273,7 +296,11 @@ namespace panvc3::dispatch {
 			std::lock_guard const lock{m_mutex};
 			++m_waiting_tasks;
 			if (m_idle_workers)
+			{
+				--m_idle_workers;
+				++m_notified_workers;
 				goto do_notify;
+			}
 			
 			if (m_max_workers <= m_current_workers)
 				return;

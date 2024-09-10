@@ -4,7 +4,7 @@ include  $(PANVC3_PROJECT_DIR)/make/os-name.mk
 include  $(PANVC3_PROJECT_DIR)/make/common.mk
 
 DEPENDENCIES =	$(LIBBIO_LIB) \
-				lib/rapidcheck/build/librapidcheck.a
+				lib/libbio/lib/rapidcheck/build/librapidcheck.a
 
 BUILD_PRODUCTS	=	alignment-statistics/alignment_statistics \
 					convert-bed-positions/convert_bed_positions \
@@ -59,7 +59,7 @@ dependencies: $(DEPENDENCIES)
 
 dist: $(DIST_TAR_GZ)
 
-tests: lib/rapidcheck/build/librapidcheck.a $(LIBBIO_LIB) libpanvc3/libpanvc3.a lib/libbio/lib/Catch2/build/src/libCatch2.a
+tests: lib/libbio/lib/rapidcheck/build/librapidcheck.a lib/libbio/lib/Catch2/build/src/libCatch2.a $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C tests
 
 libbio-tests: lib/libbio/tests/tests
@@ -120,7 +120,7 @@ $(LIBBIO_LIB): lib/libbio/local.mk
 lib/libbio/tests/tests: lib/libbio/local.mk
 	$(MAKE) -C lib/libbio tests
 
-lib/rapidcheck/build/librapidcheck.a:
+lib/libbio/lib/rapidcheck/build/librapidcheck.a:
 	$(MAKE) -f make/librapidcheck.mk
 
 lib/libbio/lib/Catch2/build/src/libCatch2.a:

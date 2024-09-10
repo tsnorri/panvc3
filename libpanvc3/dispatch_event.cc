@@ -115,7 +115,10 @@ namespace panvc3::dispatch::events
 	{
 		auto const res(m_is_running_worker.exchange(true, std::memory_order_acq_rel));
 		libbio_assert(!res);
-		thread = std::jthread([this]{ run(); });
+		thread = std::jthread([this]{
+			block_signals();
+			run();
+		});
 	}
 
 

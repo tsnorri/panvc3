@@ -2,16 +2,16 @@ MAKE_SCRIPT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 include  $(MAKE_SCRIPT_DIR)/common.mk
 
 
-all: lib/rapidcheck/build/librapidcheck.a
+all: lib/libbio/lib/rapidcheck/build/librapidcheck.a
 
 
 clean:
-	$(RM) -rf lib/rapidcheck/build
+	$(RM) -rf lib/libbio/lib/rapidcheck/build
 
 
-lib/rapidcheck/build/librapidcheck.a:
-	$(RM) -rf lib/rapidcheck/build && \
-	cd lib/rapidcheck && \
+lib/libbio/lib/rapidcheck/build/librapidcheck.a:
+	$(RM) -rf lib/libbio/lib/rapidcheck/build && \
+	cd lib/libbio/lib/rapidcheck && \
 	$(MKDIR) build && \
 	cd build && \
 	$(CMAKE) \

@@ -261,10 +261,14 @@ int main(int argc, char **argv)
 		std::cerr << "ERROR: FASTA line width must be non-negative.\n";
 		std::exit(EXIT_FAILURE);
 	}
+
+	events::signal_mask mask;
+	mask.add(SIGCHLD);
 	
+	std::jthread manager_thread;
 	events::manager event_manager;
 	event_manager.setup();
-	auto manager_thread(event_manager.start_thread_and_run());
+	event_manager.start_thread_and_run(manager_thread);
 	
 	install_sigchld_handler(event_manager);
 	process(args_info);

@@ -43,8 +43,6 @@ CPPFLAGS		+=	-DHAVE_CONFIG_H \
 					-I../lib/libbio/include \
 					-I../lib/libbio/lib/GSL/include \
 					-I../lib/libbio/lib/range-v3/include \
-					-I../lib/rapidcheck/include \
-					-I../lib/rapidcheck/extras/catch/include \
 					-I../lib/sdsl-lite/include \
 					-I../lib/seqan3/include \
 					$(BOOST_INCLUDE)

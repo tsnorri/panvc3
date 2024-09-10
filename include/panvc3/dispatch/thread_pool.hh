@@ -16,6 +16,9 @@
 
 
 namespace panvc3::dispatch {
+
+	void block_signals();
+
 	
 	class thread_pool
 	{
@@ -37,6 +40,7 @@ namespace panvc3::dispatch {
 		thread_count_type				m_max_workers{default_max_worker_threads};
 		thread_count_type				m_current_workers{};
 		thread_count_type				m_idle_workers{};
+		thread_count_type				m_notified_workers{};						// For detecting spurious wake-ups.
 		std::condition_variable			m_cv{};										// For pausing the workers.
 		std::condition_variable			m_stop_cv{};								// For stopping the thread pool.
 		std::shared_mutex				m_queue_mutex{};							// Protects m_queues
