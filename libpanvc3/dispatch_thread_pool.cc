@@ -6,6 +6,7 @@
 #include <cmath>				// std::floor
 #include <libbio/assert.hh>
 #include <panvc3/dispatch.hh>
+#include <signal.h>				// sigfillset, ::pthread_sigmask
 #include <thread>
 
 namespace chrono	= std::chrono;
