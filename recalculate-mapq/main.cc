@@ -1300,7 +1300,7 @@ namespace {
 			
 			if (! (std::isalnum(tag[0]) && std::isalnum(tag[1]) && '\0' != tag[2]))
 			{
-				std::cerr << "ERROR: SAM tags must consist of two characters, got “" << tag << "”.";
+				std::cerr << "ERROR: SAM tags must consist of two characters, got “" << tag << "”.\n";
 				std::exit(EXIT_FAILURE);
 			}
 			
