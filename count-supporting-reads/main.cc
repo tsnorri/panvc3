@@ -523,6 +523,9 @@ namespace {
 						m_target_contigs[idx] = true;
 				}
 			}
+
+			// Read the SAM header.
+			m_alignment_input.read_header();
 		}
 		
 		record_set const &candidate_records() const { return m_candidate_records; }
@@ -755,7 +758,7 @@ namespace {
 		vcf::add_reserved_info_keys(vcf_reader.info_fields());
 		vcf::add_reserved_genotype_keys(vcf_reader.genotype_fields());
 		
-		// Read the headers.
+		// Read the VCF headers.
 		vcf_reader.set_variant_format(new variant_format());
 		vcf_reader.read_header();
 		
