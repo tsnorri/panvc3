@@ -230,7 +230,10 @@ namespace {
 		
 		// Open the output files.
 		for (auto const &ref_entry : aln_output_header.reference_sequences)
-			aln_outputs.emplace_back(alignment_output_path(basename, ref_entry.name));
+		{
+			auto &output(aln_outputs.emplace_back(alignment_output_path(basename, ref_entry.name)));
+			output.stream << aln_input_header;
+		}
 		
 		// Process the records.
 		lb::log_time(std::cerr) << "Processing the alignment records…\n";
