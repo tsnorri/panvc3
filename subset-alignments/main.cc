@@ -267,6 +267,7 @@ namespace {
 	{
 		// Open the SAM input and output.
 		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
+		aln_input.read_header();
 		
 		auto const mc([&](){
 			auto aln_output_fh{[&] -> lb::file_handle {
