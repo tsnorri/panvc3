@@ -968,8 +968,17 @@ namespace {
 				
 				auto const score((*m_aln_scorer)(aln_rec, m_sam_tags));
 				position const pos{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag};
-				// FIXME: output error message instead, remind about the AS tag.
-				libbio_assert((INVALID_POSITION != pos) ^ (ALIGNMENT_SCORE_MIN == score)); // Min. score only allowed for records with invalid position.
+
+				// Min. score only allowed for records with invalid position.
+				if (! ((INVALID_POSITION != pos) ^ (ALIGNMENT_SCORE_MIN == score)))
+				{
+					std::cerr << "ERROR: Record ‘" << aln_rec.qname << "’ ";
+					if (INVALID_POSITION == pos)
+						std::cerr << "was not mapped but was scored.\n";
+					else
+						std::cerr << "was mapped but had minimum alignment score. Please check that the AS tag has been set in aligned records.\n";
+					std::exit(EXIT_FAILURE);
+				}
 				
 				scored_rec.record = &aln_rec;
 				scored_rec.alignment_score = score;
