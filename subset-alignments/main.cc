@@ -68,6 +68,7 @@ namespace {
 			if (aln_rec.mapq == best_mapq && aln_rec.rname_id == mate_ref_id && aln_rec.pos == mate_pos)
 			{
 				sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
+				os << '\n';
 				return;
 			}
 		}
@@ -101,6 +102,7 @@ namespace {
 			if (aln_rec.mapq == best_mapq)
 			{
 				sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
+				os << '\n';
 				
 				auto const mate_ref_id(aln_rec.rnext_id);
 				auto const mate_pos(aln_rec.pnext);
@@ -115,6 +117,7 @@ namespace {
 		// Output the first by default.
 		auto &aln_rec(alignments.front());
 		sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
+		os << '\n';
 		
 		auto const mate_ref_id(aln_rec.rnext_id);
 		auto const mate_pos(aln_rec.pnext);
@@ -239,6 +242,7 @@ namespace {
 				else
 				{
 					sam::output_record_in_parsed_order(os, aln_input.header, aln_rec, buffer);
+					os << '\n';
 				}
 			}
 		);
