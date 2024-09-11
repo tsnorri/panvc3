@@ -351,6 +351,7 @@ namespace {
 				++rec_idx;
 				rewrite_cigar_alignment_match(aln_rec.cigar, cigar_buffer);
 				sam::output_record(os, aln_input.header, aln_rec);
+				os << '\n';
 			}
 		);
 		
@@ -406,6 +407,7 @@ namespace {
 				{
 					++statistics.flags_not_matched;
 					sam::output_record(os, aln_input.header, aln_rec);
+					os << '\n';
 					return;
 				}
 				
@@ -413,6 +415,7 @@ namespace {
 				{
 					++statistics.seq_missing;
 					sam::output_record(os, aln_input.header, aln_rec);
+					os << '\n';
 					return;
 				}
 				
@@ -421,6 +424,7 @@ namespace {
 				{
 					++statistics.flags_not_matched;
 					sam::output_record(os, aln_input.header, aln_rec);
+					os << '\n';
 					return;
 				}
 				
@@ -429,6 +433,7 @@ namespace {
 				{
 					++statistics.ref_id_missing;
 					sam::output_record(os, aln_input.header, aln_rec);
+					os << '\n';
 					return;
 				}
 				
@@ -458,6 +463,7 @@ namespace {
 				}
 			
 				sam::output_record(os, aln_input.header, aln_rec);
+				os << '\n';
 			}
 		);
 		
@@ -515,6 +521,7 @@ namespace {
 		auto &header(aln_input.header);
 		auto const &input_ref_ids(header.reference_sequences);
 		append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
+		os << header;
 		
 		if (args_info.output_sequence_match_ops_given)
 			process_alignments_sequence_match(aln_input, os, args_info.reference_arg, ref_n_positions_tag, args_info.status_output_interval_arg);
