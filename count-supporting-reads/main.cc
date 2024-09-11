@@ -507,7 +507,7 @@ namespace {
 			bool const requires_same_contig_prefix_in_next
 		):
 			m_alignment_input(std::move(aln_input)),
-			m_target_contigs(aln_input.header.reference_sequences.size()),
+			m_target_contigs(m_alignment_input.header.reference_sequences.size()),
 			m_should_consider_primary_alignments_only(should_consider_primary_alignments_only),
 			m_requires_same_contig_prefix_in_next(requires_same_contig_prefix_in_next),
 			m_can_continue(m_record_reader.prepare_one(m_alignment_input.header, m_alignment_input.input_range))
@@ -516,16 +516,13 @@ namespace {
 				m_target_contigs.flip(); // Allow all.
 			else
 			{
-				for (auto const &[idx, ref] : rsv::enumerate(aln_input.header.reference_sequences))
+				for (auto const &[idx, ref] : rsv::enumerate(m_alignment_input.header.reference_sequences))
 				{
 					auto const &rname(ref.name);
 					if (should_treat_contig_as_prefix ? rname.starts_with(contig) : rname == contig)
 						m_target_contigs[idx] = true;
 				}
 			}
-
-			// Read the SAM header.
-			m_alignment_input.read_header();
 		}
 		
 		record_set const &candidate_records() const { return m_candidate_records; }
@@ -742,8 +739,10 @@ namespace {
 		bool const should_anchor_reads_left_only(args_info.anchor_left_flag);
 		
 		// Open the alignment file.
+		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
+		aln_input.read_header();
 		alignment_reader aln_reader(
-			panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg),
+			std::move(aln_input),
 			args_info.contig_arg,
 			should_treat_contig_as_prefix,
 			should_consider_primary_alignments_only,
