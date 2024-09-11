@@ -968,6 +968,7 @@ namespace {
 				
 				auto const score((*m_aln_scorer)(aln_rec, m_sam_tags));
 				position const pos{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag};
+				// FIXME: output error message instead, remind about the AS tag.
 				libbio_assert((INVALID_POSITION != pos) ^ (ALIGNMENT_SCORE_MIN == score)); // Min. score only allowed for records with invalid position.
 				
 				scored_rec.record = &aln_rec;
@@ -1128,6 +1129,7 @@ namespace {
 
 			output_record:
 				sam::output_record(os, header, aln_rec);
+				os << '\n';
 			}
 			catch (...)
 			{
@@ -1292,6 +1294,7 @@ namespace {
 		
 		auto &header(aln_input.header);
 		append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
+		os << header;
 		
 		auto const make_sam_tag([](char const *tag) -> sam::tag_type {
 			if (!tag)
