@@ -472,8 +472,8 @@ namespace {
 	class alignment_reader
 	{
 	public:
-		typedef sam::record_reader <record>					record_reader_type;
-		typedef std::set <record, reference_position_cmp>	record_set;
+		typedef sam::record_reader <record>						record_reader_type;
+		typedef std::multiset <record, reference_position_cmp>	record_set;
 		
 		struct alignment_statistics
 		{
@@ -639,8 +639,7 @@ namespace {
 				// but having a separate variable is safer w.r.t. potential bugs.
 				++m_statistics.matched_reads;
 				aln_rec.rec_length = rec_lengths;
-				auto const res(m_candidate_records.emplace(aln_rec));
-				libbio_assert(res.second);
+				m_candidate_records.emplace(aln_rec);
 			} while (m_record_reader.prepare_one(m_alignment_input.header, m_alignment_input.input_range));
 			
 			// Reached iff. prepare_one() above returns false.
