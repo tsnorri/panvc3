@@ -1357,6 +1357,12 @@ namespace {
 			return args_info.threads_arg;
 		});
 
+		// Since the number of worker threads is limited ultimately by the semaphore in the spsc_queue whose
+		// size is determined from thread_count(), there should be no need to limit the number of workers
+		// in the thread pool.
+		auto const thread_count_(thread_count());
+		dispatch::thread_pool::shared_pool().set_max_workers(2 * thread_count_ + 2);
+
 		// Open the SAM input.
 		auto aln_input{[&] -> alignment_input {
 			if (args_info.alignments_arg)
@@ -1486,7 +1492,7 @@ namespace {
 			tag_identifiers,
 			args_info.gap_opening_cost_arg,
 			args_info.gap_extension_cost_arg,
-			thread_count(),
+			thread_count_,
 			args_info.status_output_interval_arg,
 			args_info.verbose_status_output_flag,
 			false, // args_info.primary_only_flag,
