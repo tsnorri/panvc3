@@ -350,6 +350,7 @@ int main(int argc, char **argv)
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 
 	auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
+	aln_input.read_header();
 	
 	if (args_info.read_reference_names_given)
 		read_reference_names(aln_input, args_info.only_used_given);
