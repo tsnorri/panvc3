@@ -57,6 +57,8 @@ namespace panvc3::dispatch {
 		void add_queue(parallel_queue &queue);			// Thread-safe.
 		void remove_queue(parallel_queue const &queue);	// Thread-safe.
 		void stop(bool should_wait = true);				// Thread-safe.
+
+		void set_max_workers(thread_count_type const count) { m_max_workers = count; }
 		
 		void notify();									// Task was added to an observed queue. Thread-safe.
 		void wait();
