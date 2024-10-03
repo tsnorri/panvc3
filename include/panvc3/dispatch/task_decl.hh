@@ -252,6 +252,14 @@ namespace panvc3::dispatch::detail {
 	};
 	
 	
+	// Require that the lambda fits into the buffer.
+	template <typename t_fn, typename... t_args>
+	static lambda_callable <t_fn, t_args...> make_lambda_callable_(t_fn &&fn)
+	requires (sizeof(lambda_callable <t_fn, t_args...>) <= TASK_BUFFER_SIZE)
+	{
+		return lambda_callable <t_fn, t_args...>{std::forward <t_fn>(fn)};
+	}
+	
 	template <typename t_fn, typename... t_args>
 	static lambda_callable <t_fn, t_args...> make_lambda_callable(t_fn &&fn)
 	requires (sizeof(lambda_callable <t_fn, t_args...>) <= TASK_BUFFER_SIZE)
