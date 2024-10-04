@@ -96,6 +96,7 @@ namespace panvc3 {
 		value_type &operator[](size_type const idx) { libbio_assert_lt(idx, m_values.size()); return m_values[idx]; }
 		
 		size_type pop_index();
+		value_type &pop() { return m_values[pop_index()]; }
 		void push(value_type &value);
 	};
 	
