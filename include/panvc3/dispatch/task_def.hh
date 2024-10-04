@@ -17,6 +17,30 @@ namespace panvc3::dispatch::detail {
 	using add_pointer_to_const_t = std::add_pointer_t <std::add_const_t <t_type>>;
 	
 	
+	template <typename>
+	struct is_const_member_function_ {};
+	
+	template <typename t_return, typename t_class, typename... t_args>
+	struct is_const_member_function_ <t_return (t_class::*)(t_args...) const> : std::true_type {};
+	
+	template <typename t_return, typename t_class, typename... t_args>
+	struct is_const_member_function_ <t_return (t_class::*)(t_args...)> : std::false_type {};
+	
+	template <auto t_fn>
+	using is_const_member_function = is_const_member_function_ <decltype(t_fn)>;
+	
+	template <auto t_fn>
+	constexpr static inline auto const is_const_member_function_v{is_const_member_function <t_fn>::value};
+	
+	
+	template <typename t_fn>
+	using lambda_target_t = std::conditional_t <
+		is_const_member_function_v <&t_fn::operator()>,
+		add_pointer_to_const_t <t_fn>,
+		std::add_pointer_t <t_fn>
+	>;
+	
+	
 	template <typename ... t_args>
 	void empty_callable <t_args...>::enqueue_transient_async(queue &qq)
 	{
@@ -46,9 +70,8 @@ namespace panvc3::dispatch::detail {
 	template <typename t_fn, typename ... t_args>
 	void lambda_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
 	{
-		// FIXME: Detect whether the lambda has a non-const operator(), i.e. declared mutable.
 		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <add_pointer_to_const_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(&fn));
+			qq.async(indirect_member_callable <lambda_target_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(&fn));
 		else
 			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
 	}
@@ -57,9 +80,8 @@ namespace panvc3::dispatch::detail {
 	template <typename t_fn, typename ... t_args>
 	void lambda_ptr_callable <t_fn, t_args...>::enqueue_transient_async(queue &qq)
 	{
-		// FIXME: Detect whether the lambda has a non-const operator(), i.e. declared mutable.
 		if constexpr (0 == sizeof...(t_args))
-			qq.async(indirect_member_callable <add_pointer_to_const_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(fn.get()));
+			qq.async(indirect_member_callable <lambda_target_t <t_fn>, std::tuple <t_args...>, &t_fn::operator()>(fn.get()));
 		else
 			throw std::logic_error{"enqueue_transient_async() called for callable with parameters"};
 	}
