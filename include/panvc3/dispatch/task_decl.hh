@@ -125,6 +125,7 @@ namespace panvc3::dispatch::detail {
 	template <typename t_target, typename... t_args>
 	struct indirect_member_callable_fn
 	{
+		// FIXME: The following requires that t_target is a pointer; not sure if this is intentional.
 		typedef ptr_value_type_t <t_target>										value_type;
 		typedef member_callable_target_t <std::remove_reference_t <value_type>>	target_type;
 		typedef std::conditional_t <
@@ -332,6 +333,9 @@ namespace panvc3::dispatch::detail {
 		template <typename t_fn>
 		static auto make_lambda_callable(t_fn &&fn) { return detail::make_lambda_callable <t_fn, t_args...>(std::forward <t_fn>(fn)); }
 		
+		template <typename t_fn>
+		static auto make_lambda_callable_(t_fn &&fn) { return detail::make_lambda_callable_ <t_fn, t_args...>(std::forward <t_fn>(fn)); }
+		
 	private:
 		std::byte m_buffer[BUFFER_SIZE];
 		
@@ -382,6 +386,9 @@ namespace panvc3::dispatch::detail {
 		template <Invocable <t_args...> t_fn>
 		static task from_lambda(t_fn &&fn) { return make_lambda_callable(std::forward <t_fn>(fn)); }
 		
+		template <Invocable <t_args...> t_fn>
+		static task from_lambda_(t_fn &&fn) { return make_lambda_callable_(std::forward <t_fn>(fn)); }
+		
 		// Move constructor and assignment.
 		task(task &&other) { other.get_callable().move_to(m_buffer); }
 		inline task &operator=(task &&other) &;
@@ -401,6 +408,7 @@ namespace panvc3::dispatch::detail {
 	
 	
 	// Convenience function for making a task from a member function (pointer).
+	// FIXME: from_member_fn requires that the target is a pointer but perhaps this should be reconsidered.
 	template <typename t_arg_tuple, auto t_fn, typename t_target>
 	auto task_from_member_fn(t_target &&target)
 	{
