@@ -121,6 +121,11 @@ namespace panvc3::dispatch {
 		{
 		}
 		
+		serial_queue():
+			serial_queue(parallel_queue::shared_queue())
+		{
+		}
+		
 		~serial_queue();
 		
 		void clear() override;
