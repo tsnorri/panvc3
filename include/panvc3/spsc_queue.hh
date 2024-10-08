@@ -75,21 +75,21 @@ namespace panvc3 {
 #endif
 		
 	protected:
-		value_array														m_values;
-		index_array														m_indices;
-		size_type														m_index_mask{};
-		semaphore_type													m_semaphore;
 		size_type alignas(std::hardware_destructive_interference_size)	m_read_idx{};		// Used by thread 1.
 		size_type alignas(std::hardware_destructive_interference_size)	m_write_idx{};		// Used by thread 2.
+		semaphore_type													m_semaphore;
+		index_array														m_indices;
+		value_array														m_values;
+		size_type														m_index_mask{};
 		
 	private:
 		static inline std::size_t queue_size(size_type const size_);
 
 	public:
 		spsc_queue(size_type const size_, size_type const queue_size_):
-			m_values(queue_size_),
-			m_indices(queue_size_),
 			m_semaphore(queue_size_),
+			m_indices(queue_size_),
+			m_values(queue_size_),
 			m_index_mask(queue_size_ - 1)
 		{
 			libbio_assert_lt(0, size());
