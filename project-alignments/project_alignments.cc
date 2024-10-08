@@ -779,7 +779,7 @@ namespace {
 				gap_opening_cost,
 				gap_extension_cost
 			));
-			libbio_always_assert_lte_(dst_pos, std::numeric_limits <sam::position_type_>::max());
+			libbio_always_assert_lte_(dst_pos, std::numeric_limits <sam::position_type>::max());
 
 			// Copy the realigned ranges.
 			auto const &realn_ranges(m_alignment_projector.realigned_reference_ranges());
@@ -888,11 +888,11 @@ namespace {
 			
 			// Original reference ID.
 			if (tag_identifiers.original_rname)
-				aln_rec.optional_fields.template obtain <sam::reference_id_type_>(tag_identifiers.original_rname) = ref_id;
+				aln_rec.optional_fields.template obtain <sam::reference_id_type>(tag_identifiers.original_rname) = ref_id;
 			
 			// Original position.
 			if (tag_identifiers.original_pos)
-				aln_rec.optional_fields.template obtain <sam::position_type_>(tag_identifiers.original_pos) = src_pos;
+				aln_rec.optional_fields.template obtain <sam::position_type>(tag_identifiers.original_pos) = src_pos;
 			
 			auto const rnext_id(aln_rec.rnext_id);
 			if (sam::INVALID_REFERENCE_ID != rnext_id)
@@ -902,7 +902,7 @@ namespace {
 				aln_rec.rnext_id = dst_rnext_id;
 				
 				if (tag_identifiers.original_rnext)
-					aln_rec.optional_fields.template obtain <sam::reference_id_type_>(tag_identifiers.original_rnext) = rnext_id;
+					aln_rec.optional_fields.template obtain <sam::reference_id_type>(tag_identifiers.original_rnext) = rnext_id;
 				
 				// Mate position.
 				auto const pnext(aln_rec.pnext);
@@ -915,7 +915,7 @@ namespace {
 					aln_rec.pnext = dst_pnext;
 					
 					if (tag_identifiers.original_pnext)
-						aln_rec.optional_fields.template obtain <sam::position_type_>(tag_identifiers.original_pnext) = pnext;
+						aln_rec.optional_fields.template obtain <sam::position_type>(tag_identifiers.original_pnext) = pnext;
 				}
 			}
 			else
