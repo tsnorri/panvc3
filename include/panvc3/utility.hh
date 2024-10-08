@@ -11,27 +11,15 @@
 #include <libbio/sam/header.hh>
 #include <mutex>
 #include <ostream>
-#include <seqan3/utility/type_list/type_list.hpp>
 #include <tuple>
+
+#if defined(PANVC3_USE_SEQAN3) && PANVC3_USE_SEQAN3
+#include <seqan3/utility/type_list/type_list.hpp>
+#endif
+
 
 namespace panvc3 {
 
-	// I’m not sure how to get the types from seqan3::type_list, so here is a helper for that.
-	// (Also I don’t know if there is syntax for generalising this for any template that takes a parameter pack.)
-	
-	template <typename t_type>
-	struct type_list_to_tuple {};
-	
-	template <typename... t_types>
-	struct type_list_to_tuple <seqan3::type_list <t_types...>>
-	{
-		typedef std::tuple <t_types...> type;
-	};
-	
-	template <typename t_type>
-	using type_list_to_tuple_t = typename type_list_to_tuple <t_type>::type;
-
-	
 	// FIXME: Move to libbio?
 	template <typename t_type, typename t_proj, typename t_cmp = std::less <>>
 	struct cmp_proj
@@ -81,13 +69,6 @@ namespace panvc3 {
 	}
 	
 	
-	template <typename t_value>
-	constexpr bool is_power_of_2(t_value const val)
-	{
-		return 0 < val && !(val & (val - 1));
-	}
-	
-	
 	std::uint32_t check_sam_program_id_index(std::string_view const id_prefix, std::string_view const id);
 	
 	std::string command_line_call(
@@ -104,48 +85,13 @@ namespace panvc3 {
 		libbio::sam::program_entry_vector &dst
 	);
 
-	// SeqAn 3's program_info_t currently depends on a template parameter, so we need to have a function template for modifying it.
-	template <typename t_program_info>
-	void append_sam_program_info_seqan3(
-		std::string_view const id_prefix,
-		std::string_view const name,
-		int const argc,
-		char const * const * const argv,
-		char const * const version,
-		std::vector <t_program_info> &dst
-	)
-	{
-		// Identifier
-		std::uint32_t idx{};
-		for (auto const &pginfo : dst)
-			idx = std::max(idx, check_program_id_index(id_prefix, pginfo.id));
-
-		++idx;
-		std::string id(id_prefix);
-		id += std::to_string(idx);
-
-		// Build the record.
-		t_program_info rec{
-			.id{std::move(id)},
-			.command_line_call{command_line_call(argc, argv)},
-			.version{version}
-		};
-
-		rec.name = name;
-
-		if (!dst.empty())
-			rec.previous = dst.back().id;
-
-		dst.emplace_back(std::move(rec));
-	}
-
 
 	template <typename t_duration>
 	std::ostream &log_duration(std::ostream &os, t_duration dur)
 	{
 		namespace chrono = std::chrono;
 
-	    typedef chrono::duration <std::uint64_t, std::ratio <3600 * 24>> day_type;
+		typedef chrono::duration <std::uint64_t, std::ratio <3600 * 24>> day_type;
 		auto const dd{chrono::duration_cast <day_type>(dur)};
 		auto const hh{chrono::duration_cast <chrono::hours>(dur -= dd)};
 		auto const mm{chrono::duration_cast <chrono::minutes>(dur -= hh)};
@@ -214,5 +160,61 @@ namespace panvc3 {
 		return !m_cv.wait_for(lock, duration, [this](){ return m_should_stop; });
 	}
 }
+
+#if defined(PANVC3_USE_SEQAN3) && PANVC3_USE_SEQAN3
+namespace panvc3 {
+	
+	// I’m not sure how to get the types from seqan3::type_list, so here is a helper for that.
+	// (Also I don’t know if there is syntax for generalising this for any template that takes a parameter pack.)
+	
+	template <typename t_type>
+	struct type_list_to_tuple {};
+	
+	template <typename... t_types>
+	struct type_list_to_tuple <seqan3::type_list <t_types...>>
+	{
+		typedef std::tuple <t_types...> type;
+	};
+	
+	template <typename t_type>
+	using type_list_to_tuple_t = typename type_list_to_tuple <t_type>::type;
+	
+	
+	// SeqAn 3's program_info_t currently depends on a template parameter, so we need to have a function template for modifying it.
+	template <typename t_program_info>
+	void append_sam_program_info_seqan3(
+		std::string_view const id_prefix,
+		std::string_view const name,
+		int const argc,
+		char const * const * const argv,
+		char const * const version,
+		std::vector <t_program_info> &dst
+	)
+	{
+		// Identifier
+		std::uint32_t idx{};
+		for (auto const &pginfo : dst)
+			idx = std::max(idx, check_program_id_index(id_prefix, pginfo.id));
+
+		++idx;
+		std::string id(id_prefix);
+		id += std::to_string(idx);
+
+		// Build the record.
+		t_program_info rec{
+			.id{std::move(id)},
+			.command_line_call{command_line_call(argc, argv)},
+			.version{version}
+		};
+
+		rec.name = name;
+
+		if (!dst.empty())
+			rec.previous = dst.back().id;
+
+		dst.emplace_back(std::move(rec));
+	}
+}
+#endif
 
 #endif

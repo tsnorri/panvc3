@@ -14,7 +14,6 @@ namespace panvc3 {
 	
 	// Combine adjacent matching CIGAR operations.
 	void collapse_cigar_operations(/* inout */ cigar_adapter_libbio::vector_type &ops);
-	void collapse_cigar_operations(/* inout */ cigar_adapter_seqan3::vector_type &ops);
 	
 	
 	template <typename t_adapter>
@@ -42,7 +41,6 @@ namespace panvc3 {
 	};
 	
 	typedef cigar_buffer_tpl <cigar_adapter_libbio> cigar_buffer_libbio;
-	typedef cigar_buffer_tpl <cigar_adapter_seqan3> cigar_buffer_seqan3;
 	
 	
 	template <typename t_adapter>
@@ -89,5 +87,13 @@ namespace panvc3 {
 			m_operations.emplace_back(m_current_op);
 	}
 }
+
+
+#if defined(PANVC3_USE_SEQAN3) && PANVC3_USE_SEQAN3
+namespace panvc3 {
+	void collapse_cigar_operations(/* inout */ cigar_adapter_seqan3::vector_type &ops);
+	typedef cigar_buffer_tpl <cigar_adapter_seqan3> cigar_buffer_seqan3;
+}
+#endif
 
 #endif

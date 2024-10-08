@@ -8,9 +8,11 @@
 
 #include <libbio/sam/cigar.hh>
 #include <panvc3/utility.hh>				// type_list_to_tuple_t
-#include <seqan3/alphabet/cigar/cigar.hpp>
 #include <vector>
 
+
+#if defined(PANVC3_USE_SEQAN3) && PANVC3_USE_SEQAN3
+#include <seqan3/alphabet/cigar/cigar.hpp>
 
 namespace panvc3::cigar_adapters::seqan3::detail {
 	
@@ -29,6 +31,8 @@ namespace panvc3::cigar_adapters::seqan3::detail {
 		constexpr static inline auto const sequence_mismatch_op{'X'_cigar_operation};
 	};
 }
+
+#endif
 
 
 namespace panvc3 {
@@ -60,6 +64,7 @@ namespace panvc3 {
 	};
 	
 	
+#if defined(PANVC3_USE_SEQAN3) && PANVC3_USE_SEQAN3
 	struct cigar_adapter_seqan3 : public cigar_adapters::seqan3::detail::cigar_operations
 	{
 		typedef seqan3::cigar											run_type;
@@ -77,6 +82,7 @@ namespace panvc3 {
 		constexpr auto assign(run_type &ci, operation_type const op) const { ci = op; }
 		constexpr auto assign(run_type &ci, count_type const count) const { ci = count; }
 	};
+#endif
 }
 
 #endif

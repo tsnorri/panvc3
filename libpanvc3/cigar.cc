@@ -59,8 +59,10 @@ namespace panvc3 {
 	}
 	
 	
+#if defined(PANVC3_USE_SEQAN3) && PANVC3_USE_SEQAN3
 	void collapse_cigar_operations(/* inout */ cigar_adapter_seqan3::vector_type &ops)
 	{
 		collapse_cigar_operations_(ops, cigar_adapter_seqan3{});
 	}
+#endif
 }
