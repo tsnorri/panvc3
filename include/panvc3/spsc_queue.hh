@@ -83,7 +83,7 @@ namespace panvc3 {
 		size_type				m_write_idx{};		// Used by thread 2.
 		
 	private:
-		inline std::size_t queue_size(size_type const size_);
+		static inline std::size_t queue_size(size_type const size_);
 
 	public:
 		spsc_queue(size_type const size_, size_type const queue_size_):
@@ -113,7 +113,7 @@ namespace panvc3 {
 	
 	
 	template <typename t_value>
-	inline std::size_t spsc_queue <t_value>::queue_size(size_type const size_)
+	std::size_t spsc_queue <t_value>::queue_size(size_type const size_)
 	{
 		auto const power(libbio::bits::gte_power_of_2(std::size_t(size_)));
 		if (!power)
