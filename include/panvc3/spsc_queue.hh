@@ -7,6 +7,7 @@
 #define PANVC3_SPSC_QUEUE_HH
 
 #include <atomic>
+#include <libbio/bits.hh>					// libbio::bits::gte_power_of_2
 #include <limits>							// std::numeric_limits
 #include <numeric>							// std::iota
 #include <vector>
@@ -52,10 +53,10 @@ namespace panvc3 {
 		constexpr static size_type const MAX_SIZE{std::numeric_limits <size_type>::max()};
 		
 	protected:
-		class index
+		class alignas(std::hardware_destructive_interference_size) index
 		{
 		private:
-			alignas(std::hardware_destructive_interference_size) std::atomic <size_type> m_value{}; // Not sure if the alignment is needed.
+			std::atomic <size_type> m_value{};
 
 		public:
 			// Assignment operator.
@@ -77,17 +78,27 @@ namespace panvc3 {
 		value_array				m_values;
 		index_array				m_indices;
 		semaphore_type			m_semaphore;
+		size_type				m_index_mask{};
 		size_type				m_read_idx{};		// Used by thread 1.
 		size_type				m_write_idx{};		// Used by thread 2.
 		
+	private:
+		inline std::size_t queue_size(size_type const size_);
+
 	public:
-		explicit spsc_queue(size_type const size_):
-			m_values(size_),
-			m_indices(size_),
-			m_semaphore(size_)
+		spsc_queue(size_type const size_, size_type const queue_size_):
+			m_values(queue_size_),
+			m_indices(queue_size_),
+			m_semaphore(queue_size_),
+			m_index_mask(queue_size_ - 1)
 		{
 			libbio_assert_lt(0, size());
 			std::iota(m_indices.begin(), m_indices.end(), 0);
+		}
+		
+		explicit spsc_queue(size_type const size_):
+			spsc_queue(size_, queue_size(size_))
+		{
 		}
 
 		constexpr size_type size() const { return m_values.size(); }
@@ -102,6 +113,21 @@ namespace panvc3 {
 	
 	
 	template <typename t_value>
+	inline std::size_t spsc_queue <t_value>::queue_size(size_type const size_)
+	{
+		auto const power(libbio::bits::gte_power_of_2(std::size_t(size_)));
+		if (!power)
+			throw std::range_error("Unable to construct a queue of the given size");
+		
+		auto const retval(*power);
+		if (std::numeric_limits <size_type>::max() < retval - 1)
+			throw std::range_error("Unable to construct a queue of the given size");
+		
+		return retval;
+	}
+	
+	
+	template <typename t_value>
 	auto spsc_queue <t_value>::pop_index() -> size_type
 	{
 		// Called from thread 1.
@@ -110,7 +136,7 @@ namespace panvc3 {
 		libbio_assert_lt(m_read_idx, m_indices.size());
 		size_type const val_idx(m_indices[m_read_idx]);
 		++m_read_idx;
-		m_read_idx %= size();
+		m_read_idx &= m_index_mask;
 		
 		return val_idx;
 	}
@@ -124,7 +150,7 @@ namespace panvc3 {
 		libbio_assert_lt(m_write_idx, m_indices.size());
 		m_indices[m_write_idx] = val_idx;
 		++m_write_idx;
-		m_write_idx %= size();
+		m_write_idx &= m_index_mask;
 
 		m_semaphore.release();
 	}
