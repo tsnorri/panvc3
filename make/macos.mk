@@ -10,4 +10,4 @@ LDFLAGS				?= -mmacosx-version-min=$(MACOS_VERSION_MIN) -L$(GCC_ROOT)/lib -Wl,-r
 WARNING_FLAGS_		+= -Wno-deprecated-builtins
 WARNING_CXXFLAGS_	+= -Wno-interference-size
 
-BOOST_LIBS			?= -L$(BOOST_LIBDIR) -lboost_iostreams
+BOOST_LIBS			?= -lboost_iostreams
