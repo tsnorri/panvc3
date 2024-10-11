@@ -3,13 +3,6 @@ include  $(MAKEFILE_DIR)/../make/common.mk
 
 OBJECTS		=	alignment_input.o \
 				cigar.o \
-				compressed_fasta_reader.o \
-				dispatch_event.o \
-				dispatch_group.o \
-				dispatch_parallel_queue.o \
-				dispatch_serial_queue.o \
-				dispatch_thread_local_queue.o \
-				dispatch_thread_pool.o \
 				sequence_buffer_store.o \
 				utility.o
 
