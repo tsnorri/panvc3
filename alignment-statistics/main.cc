@@ -549,19 +549,34 @@ int main(int argc, char **argv)
 	{
 		if (!args_info.rname_given)
 		{
-			std::cerr << "ERROR: --same-ref requires --rname." << std::endl;
+			std::cerr << "ERROR: --same-ref requires --rname.\n";
 			return EXIT_FAILURE;
 		}
 		
 		if (!args_info.primary_only_flag)
 		{
-			std::cerr << "ERROR: --same-ref currently requires --primary-only." << std::endl;
+			std::cerr << "ERROR: --same-ref currently requires --primary-only.\n";
 			return EXIT_FAILURE;
 		}
 	}
 	
 	dispatch::thread_pool thread_pool;
 	thread_pool.set_min_workers(3); // Needed for the BAM reader.
+	
+	if (args_info.threads_arg < 0)
+	{
+		std::cerr << "ERROR: Number of threads must be non-negative.\n";
+		return EXIT_FAILURE;
+	}
+	else if (args_info.threads_arg < 4)
+	{
+		std::cerr << "INFO: Using four threads.\n";
+	}
+	else
+	{
+		thread_pool.set_max_workers(args_info.threads_arg - 1);
+	}
+	
 	dispatch::parallel_queue parallel_queue(thread_pool);
 	
 	dispatch::group group;

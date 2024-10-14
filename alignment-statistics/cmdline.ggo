@@ -7,25 +7,28 @@ purpose		"Calculate statistics from the given alignments"
 usage		"alignment_statistics --alignments=alignments.bam [ ... ] --coverage|--count-alignments > summary.tsv"
 description	"Currently coverage per position and the number of alignments for each contig are reported."
 
+section "Processing options"
+option		"threads"			t	"Number of threads used by BAM reader (min. 4, 0 to determine automatically)"	long	default = "0"							optional
+
 section "Input options"
-option		"alignments"		a	"Alignment file path"														string	typestr = "filename"					optional
+option		"alignments"		a	"Alignment file path"															string	typestr = "filename"					optional
 
 section "Alignment options"
-option		"rname"				r	"Filter alignments by the given RNAME"										string											optional	multiple
-option		"rname-prefix"		p	"Treat RNAMEs as prefixes"													flag	off
-option		"primary-only"		m	"Consider primary alignments only"											flag	off
-option		"same-ref"			s	"Consider alignments with the same contig prefix only"						flag	off
-option		"include-clipping"	l	"Include soft clipping"														flag	off
+option		"rname"				r	"Filter alignments by the given RNAME"											string											optional	multiple
+option		"rname-prefix"		p	"Treat RNAMEs as prefixes"														flag	off
+option		"primary-only"		m	"Consider primary alignments only"												flag	off
+option		"same-ref"			s	"Consider alignments with the same contig prefix only"							flag	off
+option		"include-clipping"	l	"Include soft clipping"															flag	off
 
 defmode		"Coverage"			modedesc = "Calculate coverage per position"
-modeoption	"coverage"			C	"Calculate coverage per position"											mode = "Coverage"								required
+modeoption	"coverage"			C	"Calculate coverage per position"												mode = "Coverage"								required
 
 defmode		"Count alignments"	modedesc = "Count the alignments by reference"
-modeoption	"count-alignments"	O	"Count the alignments by reference"											mode = "Count alignments"						required
+modeoption	"count-alignments"	O	"Count the alignments by reference"												mode = "Count alignments"						required
 
 defmode		"MAPQ histogram"	modedesc = "Calculate the histogram of the MAPQ values"
-modeoption	"mapq-histogram"	M	"Calculate the histogram of the MAPQ values"								mode = "MAPQ histogram"
+modeoption	"mapq-histogram"	M	"Calculate the histogram of the MAPQ values"									mode = "MAPQ histogram"
 
 defmode		"MAPQ box plot"		modedesc = "Calculate the box plot parameters from the MAPQ values"
-modeoption	"mapq-box-plot"		B	"Calculate the box plot paramters from the MAPQ values"						mode = "MAPQ box plot"
-modeoption	"bin-width"			-	"Bin width"																	mode = "MAPQ box plot" long	default = "100000"	optional
+modeoption	"mapq-box-plot"		B	"Calculate the box plot paramters from the MAPQ values"							mode = "MAPQ box plot"
+modeoption	"bin-width"			-	"Bin width"																		mode = "MAPQ box plot" long	default = "100000"	optional
