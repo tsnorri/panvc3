@@ -15,7 +15,6 @@ TEST_DEPENDENCIES =	../libpanvc3/libpanvc3.a \
 
 OBJECTS	=	alignment_projector.o \
 			cigar_eq.o \
-			dispatch_event_manager.o \
 			indel_run_checker.o \
 			indel_run_checker_arbitrary.o \
 			rewrite_cigar.o \

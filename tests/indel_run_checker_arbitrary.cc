@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <libbio/markov_chain.hh>
-#include <libbio/markov_chain_rapidcheck.hh>
+#include <libbio/rapidcheck/markov_chain.hh>
 #include <libbio/utility/is_equal.hh>
 #include <libbio/utility/is_lt.hh>
 #include <panvc3/indel_run_checker.hh>
