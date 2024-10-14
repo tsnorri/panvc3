@@ -46,7 +46,7 @@ CPPFLAGS		+=	-DHAVE_CONFIG_H \
 					-I../lib/sdsl-lite/include \
 					-I../lib/seqan3/include \
 					$(BOOST_INCLUDE)
-LDFLAGS			:=	$(BOOST_LIBS) -lz $(LDFLAGS)
+LDFLAGS			:=	$(BOOST_LIBS) -ldeflate -lz $(LDFLAGS)
 
 # FIXME: the first two likely only work with Clang; I think GCC uses something else than -coverage.
 %.cov.o: %.c
