@@ -568,13 +568,12 @@ int main(int argc, char **argv)
 		std::cerr << "ERROR: Number of threads must be non-negative.\n";
 		return EXIT_FAILURE;
 	}
-	else if (args_info.threads_arg < 4)
+	else if (0 != args_info.threads_arg)
 	{
-		std::cerr << "INFO: Using four threads.\n";
-	}
-	else
-	{
-		thread_pool.set_max_workers(args_info.threads_arg - 1);
+		if (args_info.threads_arg < 4)
+			std::cerr << "INFO: Using four threads.\n";
+		else
+			thread_pool.set_max_workers(args_info.threads_arg - 1);
 	}
 	
 	dispatch::parallel_queue parallel_queue(thread_pool);
