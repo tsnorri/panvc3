@@ -25,7 +25,7 @@ DIST_NAME_SUFFIX = $(if $(TARGET_TYPE),-$(TARGET_TYPE),)
 DIST_TAR_GZ = panvc3-$(VERSION)-$(OS_NAME)$(DIST_NAME_SUFFIX).tar.gz
 
 
-.PHONY: all clean-all clean clean-dependencies dependencies libbio-tests
+.PHONY: all clean-all clean clean-dependencies clean-dist dependencies tests libpanvc3 libbio libbio-tests
 #.PRECIOUS: lib/libbio/lib/rapidcheck/build/librapidcheck.a
 
 
@@ -63,6 +63,10 @@ tests: lib/libbio/lib/rapidcheck/build/librapidcheck.a lib/libbio/lib/Catch2/bui
 	$(MAKE) -C tests
 
 libbio-tests: lib/libbio/tests/tests
+
+libbio: lib/libbio/src/libbio.a
+
+libpanvc3: libpanvc3/libpanvc3.a
 
 alignment-statistics/alignment_statistics: $(LIBBIO_LIB) libpanvc3/libpanvc3.a
 	$(MAKE) -C alignment-statistics
