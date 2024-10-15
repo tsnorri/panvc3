@@ -561,7 +561,7 @@ int main(int argc, char **argv)
 	}
 	
 	dispatch::thread_pool thread_pool;
-	thread_pool.set_min_workers(3); // Needed for the BAM reader.
+	thread_pool.set_min_workers(2); // Needed for the BAM reader.
 	
 	if (args_info.threads_arg < 0)
 	{
@@ -570,11 +570,21 @@ int main(int argc, char **argv)
 	}
 	else if (0 != args_info.threads_arg)
 	{
-		if (args_info.threads_arg < 4)
-			std::cerr << "INFO: Using four threads.\n";
+		std::size_t thread_pool_max_size{};
+		if (args_info.threads_arg < 3)
+		{
+			std::cerr << "INFO: Using three threads.\n";
+			thread_pool_max_size = 2;
+		}
 		else
-			thread_pool.set_max_workers(args_info.threads_arg - 1);
+		{
+			thread_pool_max_size = args_info.threads_arg;
+		}
+		
+		thread_pool.set_max_workers(thread_pool_max_size);
 	}
+	
+	auto const task_count(thread_pool.max_workers() - 1); // Reader needs one thread while reading.
 	
 	dispatch::parallel_queue parallel_queue(thread_pool);
 	
@@ -598,13 +608,14 @@ int main(int argc, char **argv)
 	
 	auto aln_input(panvc3::alignment_input::open_path_or_stdin(
 		args_info.alignments_arg,
+		task_count,
 		parallel_queue,
 		main_queue,
 		group,
 		*task
 	));
 	
-	main_queue.group_async(group, [&task, &aln_input]{
+	parallel_queue.group_async(group, [&task, &aln_input]{
 		task->run(aln_input); // Does not block.
 	});
 	
