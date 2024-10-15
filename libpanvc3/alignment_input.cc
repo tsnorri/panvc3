@@ -18,7 +18,8 @@ namespace panvc3 {
 	
 	alignment_input alignment_input::open_file_handle(
 		libbio::file_handle &&fh,
-		dispatch::queue &reading_queue, // for BAM
+		std::size_t task_count,								// for BAM
+		dispatch::queue &processing_queue,					// for BAM
 		dispatch::serial_queue_base &output_queue,
 		dispatch::group &group,
 		alignment_input_delegate &delegate,
@@ -26,7 +27,7 @@ namespace panvc3 {
 	)
 	{
 		if (input_is_bam)
-			return alignment_input{std::make_unique <detail::bam_in_order_alignment_input>(std::move(fh), reading_queue, output_queue, group, delegate)};
+			return alignment_input{std::make_unique <detail::bam_in_order_alignment_input>(std::move(fh), task_count, processing_queue, output_queue, group, delegate)};
 		else
 			return alignment_input{std::make_unique <detail::sam_alignment_input>(std::move(fh), output_queue, group, delegate)};
 	}
@@ -34,14 +35,15 @@ namespace panvc3 {
 	
 	alignment_input alignment_input::open_path_or_stdin(
 		char const *path,
-		dispatch::queue &reading_queue, // for BAM
+		std::size_t task_count,								// for BAM
+		dispatch::queue &processing_queue,					// for BAM
 		dispatch::serial_queue_base &output_queue,
 		dispatch::group &group,
 		alignment_input_delegate &delegate
 	)
 	{
 		if (!path)
-			return open_file_handle(lb::file_handle(STDIN_FILENO, false), reading_queue, output_queue, group, delegate, false);
+			return open_file_handle(lb::file_handle(STDIN_FILENO, false), task_count, processing_queue, output_queue, group, delegate, false);
 		
 		// Determine from the file name extension if the input is BAM.
 		lb::file_handle fh(lb::open_file_for_reading(path));
@@ -50,10 +52,10 @@ namespace panvc3 {
 		{
 			std::string_view const path_suffix(path + path_length - 4, 4);
 			if (boost::iequals(path_suffix, std::string_view{".bam"}))
-				return open_file_handle(std::move(fh), reading_queue, output_queue, group, delegate, true);
+				return open_file_handle(std::move(fh), task_count, processing_queue, output_queue, group, delegate, true);
 		}
 		
-		return open_file_handle(std::move(fh), reading_queue, output_queue, group, delegate, false);
+		return open_file_handle(std::move(fh), task_count, processing_queue, output_queue, group, delegate, false);
 	}
 }
 
@@ -72,7 +74,7 @@ namespace panvc3::detail {
 	
 	void bam_in_order_alignment_input::run()
 	{
-		m_bgzf_reader.run(*m_reading_queue);
+		m_bgzf_reader.run(*m_processing_queue);
 	}
 	
 	
@@ -94,5 +96,7 @@ namespace panvc3::detail {
 	{
 		for (auto &aln_rec : records)
 			m_delegate->handle_alignment(aln_rec);
+		
+		m_semaphore.release();
 	}
 }

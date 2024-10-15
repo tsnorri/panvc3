@@ -10,6 +10,7 @@
 #include <libbio/dispatch.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/sam.hh>
+#include <semaphore>
 #include <utility>					// std::forward
 
 namespace panvc3 {
@@ -65,8 +66,12 @@ namespace panvc3::detail {
 												public libbio::bam::in_order_streaming_reader_delegate
 	{
 	private:
+		typedef std::counting_semaphore <UINT16_MAX>	semaphore_type;
+
+	private:
+		semaphore_type							m_semaphore;
 		libbio::file_handle						m_input_handle;
-		libbio::dispatch::queue					*m_reading_queue{};
+		libbio::dispatch::queue					*m_processing_queue{};
 		libbio::dispatch::group					*m_group{};
 		alignment_input_delegate				*m_delegate{};
 		libbio::bam::in_order_streaming_reader	m_bam_reader;
@@ -76,17 +81,19 @@ namespace panvc3::detail {
 	public:
 		bam_in_order_alignment_input(
 			libbio::file_handle &&fh,
-			libbio::dispatch::queue &reading_queue,
+			std::size_t task_count,
+			libbio::dispatch::queue &processing_queue,
 			libbio::dispatch::serial_queue_base &output_queue,
 			libbio::dispatch::group &group,
 			alignment_input_delegate &delegate
 		):
+			m_semaphore(task_count),
 			m_input_handle(std::move(fh)),
-			m_reading_queue(&reading_queue),
+			m_processing_queue(&processing_queue),
 			m_group(&group),
 			m_delegate(&delegate),
-			m_bam_reader(output_queue, *m_group, *this),
-			m_bgzf_reader(m_input_handle, *m_group, m_bam_reader)
+			m_bam_reader(task_count, output_queue, *m_group, *this),
+			m_bgzf_reader(m_input_handle, task_count, *m_group, &m_semaphore, m_bam_reader)
 		{
 		}
 		
@@ -113,7 +120,8 @@ namespace panvc3 {
 	public:
 		static alignment_input open_file_handle(
 			libbio::file_handle &&fh,
-			libbio::dispatch::queue &reading_queue, // for BAM
+			std::size_t task_count,								// for BAM
+			libbio::dispatch::queue &reading_queue,				// for BAM
 			libbio::dispatch::serial_queue_base &output_queue,
 			libbio::dispatch::group &group,
 			alignment_input_delegate &delegate,
@@ -122,7 +130,8 @@ namespace panvc3 {
 		
 		static alignment_input open_path_or_stdin(
 			char const *path,
-			libbio::dispatch::queue &reading_queue, // for BAM
+			std::size_t task_count,								// for BAM
+			libbio::dispatch::queue &reading_queue,				// for BAM
 			libbio::dispatch::serial_queue_base &output_queue,
 			libbio::dispatch::group &group,
 			alignment_input_delegate &delegate
