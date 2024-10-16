@@ -561,29 +561,8 @@ int main(int argc, char **argv)
 	}
 	
 	dispatch::thread_pool thread_pool;
-	thread_pool.set_min_workers(2); // Needed for the BAM reader.
 	
-	if (args_info.threads_arg < 0)
-	{
-		std::cerr << "ERROR: Number of threads must be non-negative.\n";
-		return EXIT_FAILURE;
-	}
-	else if (0 != args_info.threads_arg)
-	{
-		std::size_t thread_pool_max_size{};
-		if (args_info.threads_arg < 3)
-		{
-			std::cerr << "INFO: Using three threads.\n";
-			thread_pool_max_size = 2;
-		}
-		else
-		{
-			thread_pool_max_size = args_info.threads_arg;
-		}
-		
-		thread_pool.set_max_workers(thread_pool_max_size);
-	}
-	
+	prepare_thread_pool_with_args(thread_pool, args_info.threads_arg);
 	auto const task_count(thread_pool.max_workers() - 1); // Reader needs one thread while reading.
 	
 	dispatch::parallel_queue parallel_queue(thread_pool);

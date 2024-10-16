@@ -1,12 +1,13 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
 #include <charconv>				// std::from_chars
 #include <panvc3/utility.hh>
 
-namespace sam	= libbio::sam;
+namespace dispatch	= libbio::dispatch;
+namespace sam		= libbio::sam;
 
 
 namespace panvc3 {
@@ -75,5 +76,32 @@ namespace panvc3 {
 			rec.prev_id = dst.back().id;
 
 		dst.emplace_back(std::move(rec));
+	}
+	
+	
+	void prepare_thread_pool_with_args(dispatch::thread_pool &thread_pool, long threads) // Type from gengetopt
+	{
+		thread_pool.set_min_workers(2); // Needed for the BAM reader.
+	
+		if (threads < 0)
+		{
+			std::cerr << "ERROR: Number of threads must be non-negative.\n";
+			std::exit(EXIT_FAILURE);
+		}
+		else if (0 != threads)
+		{
+			std::size_t thread_pool_max_size{};
+			if (threads < 3)
+			{
+				std::cerr << "INFO: Using three threads.\n";
+				thread_pool_max_size = 2;
+			}
+			else
+			{
+				thread_pool_max_size = threads;
+			}
+		
+			thread_pool.set_max_workers(thread_pool_max_size);
+		}
 	}
 }

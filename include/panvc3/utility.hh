@@ -84,8 +84,11 @@ namespace panvc3 {
 		char const * const version,
 		libbio::sam::program_entry_vector &dst
 	);
-
-
+	
+	
+	void prepare_thread_pool_with_args(libbio::dispatch::thread_pool &thread_pool, long threads); // Type from gengetopt
+	
+	
 	template <typename t_duration>
 	std::ostream &log_duration(std::ostream &os, t_duration dur)
 	{
