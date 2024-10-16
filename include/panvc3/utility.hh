@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <libbio/dispatch.hh>
 #include <libbio/sam/header.hh>
 #include <mutex>
 #include <ostream>
