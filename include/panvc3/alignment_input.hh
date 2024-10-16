@@ -97,7 +97,10 @@ namespace panvc3::detail {
 		{
 		}
 		
+		libbio::sam::header const &header() const { return m_header; }
+		
 		void run() override;
+		
 		void streaming_reader_did_parse_header(libbio::bam::in_order_streaming_reader &reader, libbio::bam::header &&hh, libbio::sam::header &&hh_) override;
 		void streaming_reader_did_parse_records(libbio::bam::in_order_streaming_reader &reader, libbio::bam::record_buffer &records) override;
 	};
