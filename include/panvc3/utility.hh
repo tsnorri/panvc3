@@ -80,6 +80,14 @@ namespace panvc3 {
 	void append_sam_program_info(
 		std::string_view const id_prefix,
 		std::string_view const name,
+		std::string call,
+		char const * const version,
+		libbio::sam::program_entry_vector &dst
+	);
+	
+	void append_sam_program_info(
+		std::string_view const id_prefix,
+		std::string_view const name,
 		int const argc,
 		char const * const * const argv,
 		char const * const version,

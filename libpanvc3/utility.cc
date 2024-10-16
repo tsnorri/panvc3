@@ -49,8 +49,7 @@ namespace panvc3 {
 	void append_sam_program_info(
 		std::string_view const id_prefix,
 		std::string_view const name,
-		int const argc,
-		char const * const * const argv,
+		std::string call,
 		char const * const version,
 		sam::program_entry_vector &dst
 	)
@@ -68,7 +67,7 @@ namespace panvc3 {
 		sam::program_entry rec{
 			.id{std::move(id)},
 			.name{std::string(name)},
-			.command_line{command_line_call(argc, argv)},
+			.command_line{std::move(call)},
 			.version{version}
 		};
 
@@ -76,6 +75,19 @@ namespace panvc3 {
 			rec.prev_id = dst.back().id;
 
 		dst.emplace_back(std::move(rec));
+	}
+	
+	
+	void append_sam_program_info(
+		std::string_view const id_prefix,
+		std::string_view const name,
+		int const argc,
+		char const * const * const argv,
+		char const * const version,
+		sam::program_entry_vector &dst
+	)
+	{
+		append_sam_program_info(id_prefix, name, command_line_call(argc, argv), version, dst);
 	}
 	
 	
