@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <libbio/dispatch.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/sam.hh>
@@ -17,6 +18,8 @@
 #include <range/v3/view/zip.hpp>
 #include <string>						// std::getline
 #include <string_view>
+#include <sstream>
+#include <type_traits>
 #include <utility>						// std::move
 #include <vector>
 #include "cmdline.h"
@@ -28,6 +31,18 @@ namespace sam		= libbio::sam;
 
 
 namespace {
+
+	void append_program_info(sam::header &output_header, std::string const &call)
+	{
+		panvc3::append_sam_program_info(
+			"panvc3.split-alignments-by-reference.",
+			"PanVC 3 split_alignments_by_reference",
+			call,
+			CMDLINE_PARSER_VERSION,
+			output_header.programs
+		);
+	}
+
 
 	struct alignment_output
 	{
@@ -192,6 +207,7 @@ namespace {
 		std::vector <alignment_output>					m_aln_outputs;
 		std::vector <std::size_t>						m_ref_mapping;
 		std::string										m_basename;
+		std::string										m_command_line_call;
 		std::uint64_t									m_rec_idx{};
 		std::uint64_t									m_ref_id_missing{};
 		std::uint64_t									m_no_ref_name_match{};
@@ -201,10 +217,12 @@ namespace {
 	public:
 		split_alignments_task(
 			std::optional <reference_name_record_vector> &&ref_names,
+			std::string &&command_line_call,
 			bool should_rewrite_reference_names,
 			bool should_treat_reference_names_as_prefixes
 		):
 			m_ref_names(std::move(ref_names)),
+			m_command_line_call(std::move(command_line_call)),
 			m_should_rewrite_reference_names(should_rewrite_reference_names),
 			m_should_treat_reference_names_as_prefixes(should_treat_reference_names_as_prefixes)
 		{
@@ -220,6 +238,8 @@ namespace {
 	void split_alignments_task::handle_header(sam::header &header)
 	{
 		m_aln_output_header = header; // Copy.
+		append_program_info(m_aln_output_header, m_command_line_call);
+
 
 		m_ref_mapping.clear();
 		m_ref_mapping.resize(header.reference_sequences.size(), SIZE_MAX);
@@ -394,6 +414,7 @@ int main(int argc, char **argv)
 
 	split_alignments_task task(
 		std::move(ref_names),
+		panvc3::command_line_call(argc, argv),
 		args_info.prefixes_flag,
 		args_info.rewrite_reference_names_flag
 	);
