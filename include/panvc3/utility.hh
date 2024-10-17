@@ -58,7 +58,7 @@ namespace panvc3 {
 			return cmp(lhs, proj(rhs));
 		}
 	};
-	
+
 
 	// FIXME: check that t_alphabet is one of SeqAn3’s alphabets.
 	template <typename t_alphabet>
@@ -68,15 +68,15 @@ namespace panvc3 {
 		retval.assign_rank(t_alphabet::alphabet_size - 1);
 		return retval;
 	}
-	
-	
+
+
 	std::uint32_t check_sam_program_id_index(std::string_view const id_prefix, std::string_view const id);
-	
+
 	std::string command_line_call(
 		int const argc,
 		char const * const * const argv
 	);
-	
+
 	void append_sam_program_info(
 		std::string_view const id_prefix,
 		std::string_view const name,
@@ -84,7 +84,7 @@ namespace panvc3 {
 		char const * const version,
 		libbio::sam::program_entry_vector &dst
 	);
-	
+
 	void append_sam_program_info(
 		std::string_view const id_prefix,
 		std::string_view const name,
@@ -93,11 +93,11 @@ namespace panvc3 {
 		char const * const version,
 		libbio::sam::program_entry_vector &dst
 	);
-	
-	
+
+
 	void prepare_thread_pool_with_args(libbio::dispatch::thread_pool &thread_pool, long threads); // Type from gengetopt
-	
-	
+
+
 	template <typename t_duration>
 	std::ostream &log_duration(std::ostream &os, t_duration dur)
 	{
@@ -140,8 +140,22 @@ namespace panvc3 {
 
 		return os;
 	}
-	
-	
+
+
+	template <typename t_type>
+	struct increment_guard
+	{
+		t_type &value;
+
+		increment_guard(t_type &value_):
+			value(value_)
+		{
+		}
+
+		~increment_guard() { ++value; }
+	};
+
+
 	struct timer
 	{
 	private:
@@ -175,23 +189,23 @@ namespace panvc3 {
 
 #if defined(PANVC3_USE_SEQAN3) && PANVC3_USE_SEQAN3
 namespace panvc3 {
-	
+
 	// I’m not sure how to get the types from seqan3::type_list, so here is a helper for that.
 	// (Also I don’t know if there is syntax for generalising this for any template that takes a parameter pack.)
-	
+
 	template <typename t_type>
 	struct type_list_to_tuple {};
-	
+
 	template <typename... t_types>
 	struct type_list_to_tuple <seqan3::type_list <t_types...>>
 	{
 		typedef std::tuple <t_types...> type;
 	};
-	
+
 	template <typename t_type>
 	using type_list_to_tuple_t = typename type_list_to_tuple <t_type>::type;
-	
-	
+
+
 	// SeqAn 3's program_info_t currently depends on a template parameter, so we need to have a function template for modifying it.
 	template <typename t_program_info>
 	void append_sam_program_info_seqan3(
