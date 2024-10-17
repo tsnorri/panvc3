@@ -67,14 +67,19 @@ namespace panvc3::detail {
 		m_output_queue->group_async(*m_group, [this](){
 			m_reader.read_header(m_header, m_input_range);
 			m_delegate->handle_header(m_header);
-			m_reader.read_records(m_header, m_input_range, [this](sam::record &aln_rec){ m_delegate->handle_alignment(aln_rec); });
+			
+			if (m_parses_alignments)
+				m_reader.read_records(m_header, m_input_range, [this](sam::record &aln_rec){ m_delegate->handle_alignment(aln_rec); });
 		});
 	}
 	
 	
 	void bam_in_order_alignment_input::run()
 	{
-		m_bgzf_reader.run(*m_processing_queue);
+		if (m_bam_reader.parses_alignments())
+			m_bgzf_reader.run(*m_processing_queue);
+		else
+			m_bgzf_reader.read_first_block(*m_processing_queue);
 	}
 	
 	

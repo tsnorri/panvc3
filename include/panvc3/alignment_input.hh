@@ -26,10 +26,13 @@ namespace panvc3 {
 
 namespace panvc3::detail {
 	
-	struct alignment_input
+	class alignment_input
 	{
+	public:
 		virtual ~alignment_input() {}
 		virtual void run() = 0;
+		
+		virtual void set_parses_alignments(bool flag) = 0;
 	};
 	
 	
@@ -42,6 +45,7 @@ namespace panvc3::detail {
 		libbio::dispatch::serial_queue_base		*m_output_queue{};
 		libbio::dispatch::group					*m_group{};
 		alignment_input_delegate				*m_delegate{};
+		bool									m_parses_alignments{true};
 		
 	public:
 		sam_alignment_input(
@@ -59,6 +63,7 @@ namespace panvc3::detail {
 		}
 		
 		void run() override;
+		void set_parses_alignments(bool flag) override { m_parses_alignments = flag; }
 	};
 	
 	
@@ -100,6 +105,7 @@ namespace panvc3::detail {
 		libbio::sam::header const &header() const { return m_header; }
 		
 		void run() override;
+		void set_parses_alignments(bool flag) override { m_bam_reader.set_parses_alignments(flag); }
 		
 		void streaming_reader_did_parse_header(libbio::bam::in_order_streaming_reader &reader, libbio::bam::header &&hh, libbio::sam::header &&hh_) override;
 		void streaming_reader_did_parse_records(libbio::bam::in_order_streaming_reader &reader, libbio::bam::record_buffer &records) override;
@@ -141,6 +147,7 @@ namespace panvc3 {
 		);
 			
 		void run() { m_input->run(); }
+		void set_parses_alignments(bool flag) { m_input->set_parses_alignments(flag); }
 	};
 }
 
