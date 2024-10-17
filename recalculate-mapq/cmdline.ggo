@@ -8,33 +8,36 @@ usage		"recalculate_mapq --alignments=alignments.bam > projected.sam"
 description	"Takes projected alignments sorted by QNAME as input, outputs the best representative in terms of AS value for each such group. The MAPQ value is calculated w.r.t. the alignment that has the best AS value but has different position. All alignments are marked primary in the output."
 text		"SAM tags need to match /[XYZ][A-Za-z0-9]/."
 
+section		"Processing options"
+option		"threads"						t	"Number of threads used by BAM reader (min. 3, 0 to determine automatically)"	long	default = "0"									optional
+
 section		"Input options"
-option		"alignments"					a	"Alignment file path"														string	typestr = "filename"							optional
+option		"alignments"					a	"Alignment file path"															string	typestr = "filename"							optional
 
 section		"Output options"
-option		"output-path"					o	"Output path (stdin by default)"											string	typestr = "path"								optional
-option		"status-output-interval"		-	"Status output interval in minutes, zero to disable"						short	default = "5"									optional
-option		"verbose"						-	"Enable verbose output"														flag	off
+option		"output-path"					o	"Output path (stdin by default)"												string	typestr = "path"								optional
+option		"status-output-interval"		-	"Status output interval in minutes, zero to disable"							short	default = "5"									optional
+option		"verbose"						-	"Enable verbose output"															flag	off
 
 section		"Scoring options"
-option		"rescore-alignments"			-	"Recalculate the alignment scores instead of using the AS tag value"		flag	off
-option		"min-mismatch-penalty"			-	"Minimum mismatch penalty"													long	default = "2"	dependon = "rescore-alignments"	optional
-option		"max-mismatch-penalty"			-	"Maximum mismatch penalty"													long	default = "6"	dependon = "rescore-alignments"	optional
-option		"n-penalty"						-	"N character penalty"														long	default = "1"	dependon = "rescore-alignments"	optional
-option		"gap-opening-penalty"			-	"Gap opening penalty"														long	default = "5"	dependon = "rescore-alignments"	optional
-option		"gap-extension-penalty"			-	"Gap extension penalty"														long	default = "3"	dependon = "rescore-alignments"	optional
-option		"ref-n-positions-tag"			-	"SAM tag for the N character positions in the reference"					string	default = "XN"	dependon = "rescore-alignments"	optional
+option		"rescore-alignments"			-	"Recalculate the alignment scores instead of using the AS tag value"			flag	off
+option		"min-mismatch-penalty"			-	"Minimum mismatch penalty"														long	default = "2"	dependon = "rescore-alignments"	optional
+option		"max-mismatch-penalty"			-	"Maximum mismatch penalty"														long	default = "6"	dependon = "rescore-alignments"	optional
+option		"n-penalty"						-	"N character penalty"															long	default = "1"	dependon = "rescore-alignments"	optional
+option		"gap-opening-penalty"			-	"Gap opening penalty"															long	default = "5"	dependon = "rescore-alignments"	optional
+option		"gap-extension-penalty"			-	"Gap extension penalty"															long	default = "3"	dependon = "rescore-alignments"	optional
+option		"ref-n-positions-tag"			-	"SAM tag for the N character positions in the reference"						string	default = "XN"	dependon = "rescore-alignments"	optional
 text		"For rescoring alignments, the CIGAR strings need to use ‘=’ and ‘X’ characters in place of ‘M’ characters."
 
 section		"Alignment record formatting"
-option		"original-rname-tag"			-	"SAM tag for the original value of the RNAME field (as numeric identifier)"	string	default = "XR"									optional
-option		"original-pos-tag"				-	"SAM tag for the original value of the POS field"							string	default = "XP"									optional
-option		"original-rnext-tag"			-	"SAM tag for the original value of the RNEXT field (as numeric identifier)"	string	default = "YR"									optional
-option		"original-pnext-tag"			-	"SAM tag for the original value of the PNEXT field"							string	default = "YP"									optional
-option		"original-alignment-score-tag"	-	"SAM tag for the original value of the AS field"							string	default = "XS"	dependon = "rescore-alignments"	optional
-option		"new-alignment-score-tag"		-	"SAM tag for the new alignment score as floating point"						string	default = "YS"	dependon = "rescore-alignments"	optional
+option		"original-rname-tag"			-	"SAM tag for the original value of the RNAME field (as numeric identifier)"		string	default = "XR"									optional
+option		"original-pos-tag"				-	"SAM tag for the original value of the POS field"								string	default = "XP"									optional
+option		"original-rnext-tag"			-	"SAM tag for the original value of the RNEXT field (as numeric identifier)"		string	default = "YR"									optional
+option		"original-pnext-tag"			-	"SAM tag for the original value of the PNEXT field"								string	default = "YP"									optional
+option		"original-alignment-score-tag"	-	"SAM tag for the original value of the AS field"								string	default = "XS"	dependon = "rescore-alignments"	optional
+option		"new-alignment-score-tag"		-	"SAM tag for the new alignment score as floating point"							string	default = "YS"	dependon = "rescore-alignments"	optional
 
 section		"Debugging options"
-option		"print-invocation"				-	"Output the invocation to stderr"											flag	off															hidden
-option		"print-pid"						-	"Output the PID to stderr"													flag	off															hidden
-option		"print-reference-names"			-	"Output the reference names to stderr"										flag	off															hidden
+option		"print-invocation"				-	"Output the invocation to stderr"												flag	off															hidden
+option		"print-pid"						-	"Output the PID to stderr"														flag	off															hidden
+option		"print-reference-names"			-	"Output the reference names to stderr"											flag	off															hidden

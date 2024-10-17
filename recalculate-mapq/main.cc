@@ -3,22 +3,27 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include "libbio/sam/header.hh"
 #include <array>
 #include <algorithm>
-#include <assert>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <cctype>
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <libbio/assert.hh>
+#include <libbio/dispatch.hh>
+#include <libbio/dispatch/event.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/sam.hh>
 #include <libbio/utility.hh> // lb::make_array
 #include <limits>
+#include <memory>
 #include <optional>
+#include <ostream>
 #include <panvc3/align.hh>
 #include <panvc3/alignment_input.hh>
 #include <panvc3/sam_tag.hh>
@@ -33,7 +38,11 @@
 #include <range/v3/view/enumerate.hpp>
 #include <range/v3/view/iota.hpp>
 #include <range/v3/view/reverse.hpp>
-#include <thread>
+#include <range/v3/view/subrange.hpp>
+#include <range/v3/view/zip.hpp>
+#include <string>
+#include <syncstream>
+#include <tuple>
 #include <type_traits>
 #include <unistd.h>
 #include <utility>
@@ -42,6 +51,8 @@
 #include "cmdline.h"
 
 namespace chrono	= std::chrono;
+namespace dispatch	= libbio::dispatch;
+namespace events	= libbio::dispatch::events;
 namespace lb		= libbio;
 namespace rsv		= ranges::views;
 namespace sam		= libbio::sam;
@@ -1160,222 +1171,129 @@ namespace {
 		}
 	}
 
-
-	void process_(
-		panvc3::alignment_input &aln_input,
-		std::ostream &os,
-		mapq_scorer &scorer,
-		std::uint16_t const status_output_interval,
-		bool const verbose_output_enabled
-	)
-	{
-		typedef chrono::steady_clock				clock_type;
-
-		std::vector <sam::record> rec_buffer;
-		std::uint64_t rec_idx{};
-
-		auto const start_time(clock_type::now());
-		panvc3::timer status_output_timer;
-		auto status_output_thread{[&]() -> std::jthread {
-			if (!status_output_interval)
-				return {};
-
-			return std::jthread{[&](){
-				while (status_output_timer.wait_for(chrono::minutes(status_output_interval)))
-				{
-					auto const pp(clock_type::now());
-					auto const running_time{pp - start_time};
-
-					std::osyncstream cerr(std::cerr);
-					lb::log_time(cerr) << "Time spent processing: ";
-					panvc3::log_duration(cerr, running_time);
-					cerr << "; processed " << (rec_idx - 1) << " records";
-
-					if (rec_idx)
-					{
-						double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
-						usecs_per_record /= rec_idx;
-						cerr << " (in " << usecs_per_record << " µs / record)";
-					}
-
-					cerr << ".\n" << std::flush;
-				}
-			}};
-		}()};
-
-		alignment_statistics statistics;
-		aln_input.read_records(
-			[
-				&aln_input,
-				&os,
-				&scorer,
-				&rec_buffer,
-				&rec_idx,
-				&statistics,
-				verbose_output_enabled
-			](sam::record &aln_rec){
-				++rec_idx;
-
-				// Ignore unmapped.
-				if (std::to_underlying(sam::flag::unmapped & aln_rec.flag))
-				{
-					++statistics.flags_not_matched;
-					return;
-				}
-
-				if (aln_rec.seq.empty())
-				{
-					++statistics.seq_missing;
-					return;
-				}
-
-				if (rec_buffer.empty())
-				{
-					rec_buffer.emplace_back(std::move(aln_rec));
-					return;
-				}
-
-				auto const &id(aln_rec.qname);
-				auto const &eq_class_id(rec_buffer.front().qname);
-				if (id != eq_class_id)
-				{
-					scorer.process_alignment_group(rec_buffer, aln_input.header, os, verbose_output_enabled);
-					rec_buffer.clear();
-				}
-
-				rec_buffer.emplace_back(std::move(aln_rec));
-			}
-		);
-
-		if (!rec_buffer.empty())
-			scorer.process_alignment_group(rec_buffer, aln_input.header, os, verbose_output_enabled);
-
-		status_output_timer.stop();
-		if (status_output_thread.joinable())
-			status_output_thread.join();
-
-		{
-			lb::log_time(std::cerr) << "Done.\n";
-			std::cerr << "\tFlags not matched:                 " << statistics.flags_not_matched << '\n';
-			std::cerr << "\tSequence missing:                  " << statistics.seq_missing << '\n';
-
-			auto const &statistics_(scorer.statistics());
-			std::cerr << "\tAlignments considered for scoring: " << statistics_.total_alignments << '\n';
-			std::cerr << "\tUnpaired alignments:               " << statistics_.unpaired_alignments << '\n';
-			std::cerr << "\tRecords with mate missing:         " << statistics_.mate_not_found << '\n';
-			std::cerr << "\tReads with and without a mate:     " << statistics_.reads_with_and_without_mate << '\n';
-			std::cerr << "\tReads without valid positions:     " << statistics_.reads_without_valid_position << '\n';
-			std::cerr << std::flush;
-		}
-	}
-
-
-	void append_program_info(sam::header &header, int const argc, char const * const * const argv)
+	void append_program_info(sam::header &output_header, std::string const &call)
 	{
 		panvc3::append_sam_program_info(
 			"panvc3.recalculate-mapq.",
 			"PanVC 3 recalculate_mapq",
-			argc,
-			argv,
+			call,
 			CMDLINE_PARSER_VERSION,
-			header.programs
+			output_header.programs
 		);
 	}
 
 
-	void process(gengetopt_args_info const &args_info, int const argc, char const * const * const argv)
+	class scoring_task : public panvc3::alignment_input_delegate
 	{
-		// Status output interval
-		if (args_info.status_output_interval_arg < 0)
+	private:
+		mapq_scorer					m_scorer;
+		alignment_statistics		m_statistics;
+		std::vector <sam::record>	m_rec_buffer;
+		std::string					m_command_line_call;
+		std::uint64_t				m_rec_idx{};
+		std::ostream				*m_os{};
+		sam::header					*m_header{};
+		bool						m_verbose_output_enabled{};
+		bool						m_should_print_reference_names{};
+
+	public:
+		scoring_task(
+			mapq_scorer &&scorer,
+			std::ostream &os,
+			std::string &&command_line_call,
+			bool is_verbose_output_enabled,
+			bool should_print_reference_names
+		):
+			m_scorer(std::move(scorer)),
+			m_command_line_call(std::move(command_line_call)),
+			m_os(&os),
+			m_verbose_output_enabled(is_verbose_output_enabled),
+			m_should_print_reference_names(should_print_reference_names)
 		{
-			std::cerr << "ERROR: Status output interval must be non-negative.\n";
-			std::exit(EXIT_FAILURE);
 		}
 
-		// Mismatch penalties.
-		if (args_info.min_mismatch_penalty_arg < 0)		{ std::cerr << "ERROR: Minimum mismatch penalty must be non-negative.\n";	std::exit(EXIT_FAILURE); }
-		if (args_info.max_mismatch_penalty_arg < 0)		{ std::cerr << "ERROR: Maximum mismatch penalty must be non-negative.\n";	std::exit(EXIT_FAILURE); }
-		if (args_info.n_penalty_arg < 0)				{ std::cerr << "ERROR: N character penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
-		if (args_info.gap_opening_penalty_arg < 0)		{ std::cerr << "ERROR: Gap opening penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
-		if (args_info.gap_extension_penalty_arg < 0)	{ std::cerr << "ERROR: Gap extension penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
+		std::uint64_t record_index() const { return m_rec_idx; }
 
-		// Open the SAM input and output.
-		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
-		aln_input.read_header();
+		void handle_header(sam::header &header) override;
+		void handle_alignment(sam::record &record) override;
+		void finish();
+	};
 
-		auto aln_output_fh{[&] -> lb::file_handle {
-			if (args_info.output_path_arg)
-				return lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE));
-			else
-				return lb::file_handle(STDOUT_FILENO, false);
-		}()};
 
-		lb::file_ostream os;
-		lb::open_stream_with_file_handle(os, aln_output_fh);
+	void scoring_task::handle_header(sam::header &header)
+	{
+		m_header = &header; // Owned by alignment_input.
+		append_program_info(header, m_command_line_call);
+		*m_os << header;
 
-		auto &header(aln_input.header);
-		append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
-		os << header;
-
-		auto const make_sam_tag([](char const *tag) -> sam::tag_type {
-			if (!tag)
-				return 0;
-
-			if (! (std::isalnum(tag[0]) && std::isalnum(tag[1]) && '\0' == tag[2]))
-			{
-				std::cerr << "ERROR: SAM tags must consist of two characters, got “" << tag << "”.\n";
-				std::exit(EXIT_FAILURE);
-			}
-
-			std::array <char, 2> buffer{tag[0], tag[1]};
-			return sam::to_tag(buffer);
-		});
-
-		sam_tag_specification const sam_tags{
-			.ref_n_positions_tag{make_sam_tag(args_info.ref_n_positions_tag_arg)},
-			.original_reference_tag{make_sam_tag(args_info.original_rname_tag_arg)},
-			.original_position_tag{make_sam_tag(args_info.original_pos_tag_arg)},
-			.original_rnext_tag{make_sam_tag(args_info.original_rnext_tag_arg)},
-			.original_pnext_tag{make_sam_tag(args_info.original_pnext_tag_arg)},
-			.original_alignment_score_tag{make_sam_tag(args_info.original_alignment_score_tag_arg)},
-			.new_alignment_score_tag{make_sam_tag(args_info.new_alignment_score_tag_arg)}
-		};
-
-		if (args_info.print_reference_names_flag)
+		if (m_should_print_reference_names)
 		{
-			auto const &ref_entries(aln_input.header.reference_sequences);
+			auto const &ref_entries(header.reference_sequences);
 			std::cerr << "Reference IDs:\n";
 			for (auto const &[idx, ref_entry] : rsv::enumerate(ref_entries))
 				std::cerr << idx << '\t' << ref_entry.name << '\n';
 		}
+	}
 
-		lb::log_time(std::cerr) << "Processing the alignments…\n";
-		bowtie2_v2_score_calculator score_calculator;
-		if (args_info.rescore_alignments_given)
+
+	void scoring_task::handle_alignment(sam::record &aln_rec)
+	{
+		panvc3::increment_guard const guard(m_rec_idx);
+
+		// Ignore unmapped.
+		if (std::to_underlying(sam::flag::unmapped & aln_rec.flag))
 		{
-			// FIXME: Check upper bound (INT32_MAX).
-			cigar_alignment_scorer aln_scorer(alignment_scoring{
-				.min_mismatch_penalty	= alignment_scoring::score_type(args_info.min_mismatch_penalty_arg),
-				.max_mismatch_penalty	= alignment_scoring::score_type(args_info.max_mismatch_penalty_arg),
-				.n_penalty				= alignment_scoring::score_type(args_info.n_penalty_arg),
-				.gap_opening_penalty	= alignment_scoring::score_type(args_info.gap_opening_penalty_arg),
-				.gap_extension_penalty	= alignment_scoring::score_type(args_info.gap_extension_penalty_arg)
-			}, sam_tags.ref_n_positions_tag);
-			mapq_scorer scorer(aln_scorer, score_calculator, sam_tags);
-			process_(aln_input, os, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
+			++m_statistics.flags_not_matched;
+			return;
 		}
-		else
+
+		if (aln_rec.seq.empty())
 		{
-			as_tag_alignment_scorer aln_scorer;
-			mapq_scorer scorer(aln_scorer, score_calculator, sam_tags);
-			process_(aln_input, os, scorer, args_info.status_output_interval_arg, args_info.verbose_flag);
+			++m_statistics.seq_missing;
+			return;
 		}
+
+		if (m_rec_buffer.empty())
+		{
+			m_rec_buffer.emplace_back(std::move(aln_rec));
+			return;
+		}
+
+		auto const &id(aln_rec.qname);
+		auto const &eq_class_id(m_rec_buffer.front().qname);
+		if (id != eq_class_id)
+		{
+			m_scorer.process_alignment_group(m_rec_buffer, *m_header, *m_os, m_verbose_output_enabled);
+			m_rec_buffer.clear();
+		}
+
+		m_rec_buffer.emplace_back(std::move(aln_rec));
+	}
+
+
+	void scoring_task::finish()
+	{
+		if (!m_rec_buffer.empty())
+			m_scorer.process_alignment_group(m_rec_buffer, *m_header, *m_os, m_verbose_output_enabled);
+
+		lb::log_time(std::cerr) << "Done.\n";
+		std::cerr << "\tFlags not matched:                 " << m_statistics.flags_not_matched << '\n';
+		std::cerr << "\tSequence missing:                  " << m_statistics.seq_missing << '\n';
+
+		auto const &statistics(m_scorer.statistics());
+		std::cerr << "\tAlignments considered for scoring: " << statistics.total_alignments << '\n';
+		std::cerr << "\tUnpaired alignments:               " << statistics.unpaired_alignments << '\n';
+		std::cerr << "\tRecords with mate missing:         " << statistics.mate_not_found << '\n';
+		std::cerr << "\tReads with and without a mate:     " << statistics.reads_with_and_without_mate << '\n';
+		std::cerr << "\tReads without valid positions:     " << statistics.reads_without_valid_position << '\n';
 	}
 }
 
 
 int main(int argc, char **argv)
 {
+	typedef chrono::steady_clock	clock_type;
+
 	gengetopt_args_info args_info;
 	if (0 != cmdline_parser(argc, argv, &args_info))
 		std::exit(EXIT_FAILURE);
@@ -1395,7 +1313,136 @@ int main(int argc, char **argv)
 	if (args_info.print_pid_given)
 		std::cerr << "PID: " << getpid() << '\n';
 
-	process(args_info, argc, argv);
+	// Status output interval
+	if (args_info.status_output_interval_arg < 0)
+	{
+		std::cerr << "ERROR: Status output interval must be non-negative.\n";
+		std::exit(EXIT_FAILURE);
+	}
 
+	// Mismatch penalties.
+	if (args_info.min_mismatch_penalty_arg < 0)		{ std::cerr << "ERROR: Minimum mismatch penalty must be non-negative.\n";	std::exit(EXIT_FAILURE); }
+	if (args_info.max_mismatch_penalty_arg < 0)		{ std::cerr << "ERROR: Maximum mismatch penalty must be non-negative.\n";	std::exit(EXIT_FAILURE); }
+	if (args_info.n_penalty_arg < 0)				{ std::cerr << "ERROR: N character penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
+	if (args_info.gap_opening_penalty_arg < 0)		{ std::cerr << "ERROR: Gap opening penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
+	if (args_info.gap_extension_penalty_arg < 0)	{ std::cerr << "ERROR: Gap extension penalty must be non-negative.\n";		std::exit(EXIT_FAILURE); }
+
+	// SAM tags
+	auto const make_sam_tag([](char const *tag) -> sam::tag_type {
+		if (!tag)
+			return 0;
+
+		if (! (std::isalnum(tag[0]) && std::isalnum(tag[1]) && '\0' == tag[2]))
+		{
+			std::cerr << "ERROR: SAM tags must consist of two characters, got “" << tag << "”.\n";
+			std::exit(EXIT_FAILURE);
+		}
+
+		std::array <char, 2> buffer{tag[0], tag[1]};
+		return sam::to_tag(buffer);
+	});
+
+	sam_tag_specification const sam_tags{
+		.ref_n_positions_tag{make_sam_tag(args_info.ref_n_positions_tag_arg)},
+		.original_reference_tag{make_sam_tag(args_info.original_rname_tag_arg)},
+		.original_position_tag{make_sam_tag(args_info.original_pos_tag_arg)},
+		.original_rnext_tag{make_sam_tag(args_info.original_rnext_tag_arg)},
+		.original_pnext_tag{make_sam_tag(args_info.original_pnext_tag_arg)},
+		.original_alignment_score_tag{make_sam_tag(args_info.original_alignment_score_tag_arg)},
+		.new_alignment_score_tag{make_sam_tag(args_info.new_alignment_score_tag_arg)}
+	};
+
+	// Scorers
+	std::unique_ptr <alignment_scorer> aln_scorer;
+	bowtie2_v2_score_calculator score_calculator;
+	if (args_info.rescore_alignments_given)
+	{
+		// FIXME: Check the upper bound (INT32_MAX).
+		aln_scorer = std::make_unique <cigar_alignment_scorer>(alignment_scoring{
+			.min_mismatch_penalty	= alignment_scoring::score_type(args_info.min_mismatch_penalty_arg),
+			.max_mismatch_penalty	= alignment_scoring::score_type(args_info.max_mismatch_penalty_arg),
+			.n_penalty				= alignment_scoring::score_type(args_info.n_penalty_arg),
+			.gap_opening_penalty	= alignment_scoring::score_type(args_info.gap_opening_penalty_arg),
+			.gap_extension_penalty	= alignment_scoring::score_type(args_info.gap_extension_penalty_arg)
+		}, sam_tags.ref_n_positions_tag);
+	}
+	else
+	{
+		aln_scorer = std::make_unique <as_tag_alignment_scorer>();
+	}
+	mapq_scorer scorer(*aln_scorer, score_calculator, sam_tags);
+
+	// Threads
+	dispatch::thread_pool thread_pool;
+
+	panvc3::prepare_thread_pool_with_args(thread_pool, args_info.threads_arg);
+	auto const task_count(thread_pool.max_workers() - 1); // Reader needs one thread while reading.
+
+	dispatch::parallel_queue parallel_queue(thread_pool);
+
+	dispatch::group group;
+	auto &main_queue(dispatch::main_queue());
+
+	auto aln_output_fh{[&] -> lb::file_handle {
+		if (args_info.output_path_arg)
+			return lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE));
+		else
+			return lb::file_handle(STDOUT_FILENO, false);
+	}()};
+
+	lb::file_ostream os;
+	lb::open_stream_with_file_handle(os, aln_output_fh);
+
+	scoring_task task(std::move(scorer), os, panvc3::command_line_call(argc, argv), args_info.verbose_flag, args_info.print_reference_names_flag);
+	auto aln_input(panvc3::alignment_input::open_path_or_stdin(
+		args_info.alignments_arg,
+		task_count,
+		parallel_queue,
+		main_queue,
+		group,
+		task
+	));
+
+	// Event manager
+	std::jthread manager_thread;
+	events::manager event_manager;
+	event_manager.schedule_timer(
+		chrono::minutes(args_info.status_output_interval_arg),
+		true,
+		main_queue,
+		[&task, start_time = clock_type::now()](events::timer &timer){
+			auto const now(clock_type::now());
+			auto const running_time(start_time - now);
+			auto const rec_idx(task.record_index());
+
+			lb::log_time(std::cerr) << "Time spent processing: ";
+			panvc3::log_duration(std::cerr, running_time);
+			std::cerr << "; processed " << rec_idx << " records";
+
+			if (rec_idx)
+			{
+				double usecs_per_record(chrono::duration_cast <chrono::microseconds>(running_time).count());
+				usecs_per_record /= rec_idx;
+				std::cerr << " (in " << usecs_per_record << " µs / record)";
+			}
+
+			std::cerr << ".\n";
+		}
+	);
+	event_manager.start_thread_and_run(manager_thread);
+
+	lb::log_time(std::cerr) << "Processing the alignment records…\n";
+	parallel_queue.group_async(group, [&aln_input]{
+		aln_input.run(); // Does not block.
+	});
+
+	group.notify(main_queue, [&task, &event_manager, &main_queue]{
+		lb::log_time(std::cerr) << "Done.\n";
+		task.finish();
+		event_manager.stop();
+		main_queue.stop();
+	});
+
+	main_queue.run();
 	return EXIT_SUCCESS;
 }
