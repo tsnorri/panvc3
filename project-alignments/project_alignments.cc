@@ -3,25 +3,41 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 #include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/count.hpp>
 #include <boost/accumulators/statistics/max.hpp>
 #include <boost/accumulators/statistics/mean.hpp>
 #include <boost/accumulators/statistics/median.hpp>
 #include <boost/accumulators/statistics/min.hpp>
 #include <boost/accumulators/statistics/stats.hpp>
 #include <boost/accumulators/statistics/sum.hpp>
+#include <boost/iostreams/device/file_descriptor.hpp>
+#include <cereal/archives/portable_binary.hpp>
 #include <chrono>
 #include <iostream>
+#include <iterator>
 #include <libbio/algorithm/sorted_set_union.hh>
+#include <libbio/assert.hh>
+#include <libbio/dispatch.hh>
 #include <libbio/fasta_reader.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/log_memory_usage.hh>
 #include <libbio/sam.hh>
 #include <libbio/utility.hh>
+#include <limits>
+#include <map>
+#include <memory>
 #include <panvc3/alignment_projector.hh>
 #include <panvc3/compressed_fasta_reader.hh>
-#include <panvc3/dispatch.hh>
+#include <panvc3/msa_index.hh>
+#include <panvc3/range.hh>
 #include <panvc3/sam_tag.hh>
 #include <panvc3/sequence_buffer_store.hh>
 #include <panvc3/spsc_queue.hh>
@@ -32,12 +48,21 @@
 #include <range/v3/view/single.hpp>
 #include <range/v3/view/take_exactly.hpp>
 #include <range/v3/view/transform.hpp>
+#include <regex>
+#include <sstream>
+#include <string>
+#include <string_view>
 #include <syncstream>
+#include <tuple>
+#include <unistd.h>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include "cmdline.h"
 
 namespace accs		= boost::accumulators;
 namespace chrono	= std::chrono;
-namespace dispatch	= panvc3::dispatch;
+namespace dispatch	= libbio::dispatch;
 namespace fs		= std::filesystem;
 namespace lb		= libbio;
 namespace ios		= boost::iostreams;
@@ -80,17 +105,17 @@ namespace {
 			"RX"_tag,	// Sequence bases of the (possibly corrected) unique molecular identifier
 			"TS"_tag	// Transcript strand
 		};
-		
+
 		// Make sure that the values are sorted.
 		std::sort(retval.begin(), retval.end());
-		
+
 		return retval;
 	}()};
-	
-	
+
+
 	typedef std::vector <panvc3::msa_index::sequence_entry const *>	sequence_entry_ptr_vector;
 
-	
+
 	struct sam_tag_specification
 	{
 		sam::tag_type	original_rname{};
@@ -116,16 +141,16 @@ namespace {
 
 		return it;
 	}
-	
-	
+
+
 	template <typename t_string>
 	panvc3::msa_index::chr_entry const &
 	find_chr_entry(panvc3::msa_index::chr_entry_vector const &entries, t_string const &chr_id)
 	{
 		return *find_chr_entry_(entries, chr_id);
 	}
-	
-	
+
+
 	template <typename t_string>
 	panvc3::msa_index::sequence_entry_vector::const_iterator
 	find_sequence_entry_(panvc3::msa_index::sequence_entry_vector const &entries, t_string const &seq_id)
@@ -137,11 +162,11 @@ namespace {
 			std::osyncstream(std::cerr) << "ERROR: Did not find an entry for sequence ID “" << seq_id << "” in the MSA index." << std::endl;
 			std::exit(EXIT_FAILURE);
 		}
-		
+
 		return it;
 	}
-	
-	
+
+
 	template <typename t_string>
 	panvc3::msa_index::sequence_entry const &
 	find_sequence_entry(panvc3::msa_index::sequence_entry_vector const &entries, t_string const &seq_id)
@@ -157,8 +182,8 @@ namespace {
 		std::size_t ref_id_missing{};
 		std::size_t matched_reads{};
 	};
-	
-	
+
+
 	struct realigned_range
 	{
 		std::string		qname{};
@@ -174,13 +199,13 @@ namespace {
 			range(range_)
 		{
 		}
-		
+
 		bool operator<(realigned_range const &other) const { return range.to_tuple() < other.range.to_tuple(); }
 		bool operator==(realigned_range const &other) const { return range.to_tuple() == other.range.to_tuple(); }
 	};
 
 	typedef std::vector <realigned_range>	realigned_range_vector;
-	
+
 	// Precondition: the given range is sorted by range.location.
 	realigned_range_vector::const_iterator find_first_overlapping(
 		realigned_range_vector::const_iterator it,
@@ -189,7 +214,7 @@ namespace {
 	{
 		if (it == end)
 			return end;
-		
+
 		auto it_(it);
 		++it;
 		for (; it != end; ++it)
@@ -200,7 +225,7 @@ namespace {
 			else if (range_end < it->range.location + it->range.length)
 				it_ = it;
 		}
-		
+
 		return end;
 	}
 
@@ -214,8 +239,8 @@ namespace {
 		processing,
 		finishing
 	};
-	
-	
+
+
 	lb::file_ostream open_stream_with_handle(lb::file_handle const &handle)
 	{
 		auto const fd(handle.get());
@@ -223,8 +248,8 @@ namespace {
 			return {};
 		return {fd, ios::never_close_handle};
 	}
-	
-	
+
+
 	// Declare some virtual functions in order to make assigning input_processor to a std::unique_ptr easier.
 	struct input_processor_base
 	{
@@ -232,74 +257,74 @@ namespace {
 		virtual void process_input() = 0;
 		virtual void output_status() const = 0;
 	};
-	
+
 	class input_processor;
-	
-	
+
+
 	struct alignment_input
 	{
 		sam::file_handle_input_range_	input_range;
 		sam::header						header;
 		sam::reader						reader;
-		
+
 		explicit alignment_input(lb::file_handle &&fh):
 			input_range(std::move(fh))
 		{
 			input_range.prepare();
 		}
-		
-		
+
+
 		template <typename t_cb>
 		void read_records(t_cb &&cb) { reader.read_records(header, input_range, std::forward <t_cb>(cb)); }
 	};
-	
-	
+
+
 	struct alignment_output
 	{
 		lb::file_handle					handle;
 		sam::header						header;
-		
+
 		explicit alignment_output(lb::file_handle &&fh):
 			handle(std::move(fh))
 		{
 		}
 	};
-	
-	
+
+
 	// lb::file_ostream is not movable and so we unfortunately need this.
 	struct alignment_output_ : public alignment_output
 	{
 		lb::file_ostream				stream{};
-		
+
 		explicit alignment_output_(alignment_output &&ao):
 			alignment_output(std::move(ao))
 		{
 			lb::open_stream_with_file_handle(stream, handle);
 		}
-		
+
 		void output_record(sam::record const &rec) { sam::output_record(stream, header, rec); stream << '\n'; }
 	};
-	
-	
-	
+
+
+
 	typedef std::map <sam::tag_type, std::size_t>	tag_count_map;
-	
-	
+
+
 	class project_task final : public panvc3::alignment_projector_delegate
 	{
 		friend class input_processor;
-		
+
 		typedef chrono::high_resolution_clock					clock_type;
 		typedef clock_type::time_point							time_point;
 		typedef panvc3::alignment_projector_libbio				alignment_projector_type;
-		
+
 	public:
 		struct realigned_range_stat
 		{
 			std::uint64_t	time{};		// Nanoseconds
 			std::uint32_t	length{};
 		};
-		
+
 		typedef std::vector <realigned_range_stat>				realigned_range_stat_vector;
 		typedef std::array <sam::record, CHUNK_SIZE>			record_array;
 
@@ -316,7 +341,7 @@ namespace {
 		std::uint64_t						m_execution_time{};
 		std::atomic <project_task_status>	m_status{}; // FIXME: make this conditional.
 		bool								m_should_store_realigned_range_qnames{};
-		
+
 	public:
 		project_task():
 			m_alignment_projector(*this)
@@ -328,48 +353,48 @@ namespace {
 		sam::record &next_record() { libbio_assert(project_task_status::inactive == m_status.load()); libbio_assert_lt(m_valid_records, m_records.size()); return m_records[m_valid_records++]; }
 		auto alignment_records() { auto const st(m_status.load()); libbio_assert(project_task_status::processing == st || project_task_status::finishing == st); return m_records | rsv::take_exactly(m_valid_records); }
 		auto alignment_records() const { auto const st(m_status.load()); libbio_assert(project_task_status::processing == st || project_task_status::finishing == st); return m_records | rsv::take_exactly(m_valid_records); }
-		
+
 		void process();
 		void output();
-		inline void reset(); 
+		inline void reset();
 
 		void alignment_projector_begin_realignment(panvc3::alignment_projector_base const &) override { m_realignment_start_time = clock_type::now(); }
 		void alignment_projector_end_realignment(panvc3::alignment_projector_base const &) override;
 	};
-	
-	
+
+
 	// FIXME: Now that we are not (indirectly) calling pthread_exit() in main(), we could store some of the instance variables on the stack instead.
 	class input_processor final : public input_processor_base
 	{
 		typedef chrono::steady_clock								clock_type; // For profiling.
 		typedef clock_type::time_point								time_point;
 		typedef clock_type::duration								duration_type;
-		
+
 		typedef accs::accumulator_set <double, accs::stats <
 			accs::tag::count,
 			accs::tag::mean,
 			accs::tag::median
 		>>															realignment_length_accumulator_type;
-		
+
 		typedef accs::accumulator_set <double, accs::stats <
 			accs::tag::sum,
 			accs::tag::mean,
 			accs::tag::median
 		>>															realignment_time_accumulator_type;
-		
+
 		typedef accs::accumulator_set <double, accs::stats <
 			accs::tag::mean,
 			accs::tag::median,
 			accs::tag::min,
 			accs::tag::max
 		>>															execution_time_accumulator_type;
-		
+
 	public:
 		typedef panvc3::spsc_queue <project_task>					queue_type;
 		typedef	void												(*exit_callback_type)(void);
 		typedef panvc3::compressed_fasta_reader						fasta_reader;
 		typedef fasta_reader::sequence_vector						sequence_vector;
-		
+
 	protected:
 		panvc3::msa_index				m_msa_index;
 		sequence_entry_ptr_vector		m_src_seq_entries;
@@ -381,20 +406,20 @@ namespace {
 
 		fasta_reader					m_fasta_reader;
 		panvc3::sequence_buffer_store	m_reference_buffer_store;
-		
+
 		dispatch::serial_queue			m_output_dispatch_queue;
 		dispatch::group					m_group;
 		exit_callback_type				m_exit_cb{};
-		
+
 		queue_type						m_task_queue;
 
 		time_point						m_start_time{};
 		time_point						m_prev_status_logging_time{};
-		
+
 		realignment_length_accumulator_type	m_realignment_length_acc;
 		realignment_time_accumulator_type	m_realignment_time_acc;
 		execution_time_accumulator_type		m_task_execution_time_acc;
-		
+
 		alignment_statistics			m_statistics;
 		tag_count_map					m_removed_tag_counts;
 		realigned_range_vector			m_realigned_ranges;
@@ -414,7 +439,7 @@ namespace {
 		bool							m_should_use_read_base_qualities{};
 		bool							m_should_keep_duplicate_realigned_ranges{};
 		bool							m_should_process_tasks_in_parallel{true};
-		
+
 	public:
 		template <
 			typename t_msa_ref_id,
@@ -476,7 +501,7 @@ namespace {
 				task.m_should_store_realigned_range_qnames = m_should_output_debugging_information;
 			}
 		}
-		
+
 		void process_input() override;
 		void finish_task(project_task &task);
 		void output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id = 0);
@@ -509,8 +534,8 @@ namespace {
 
 		dispatch::group &dispatch_group() { return m_group; }
 	};
-	
-	
+
+
 	void input_processor::output_status() const
 	{
 		auto const pp(clock_type::now());
@@ -527,7 +552,7 @@ namespace {
 			usecs_per_record /= m_record_count;
 			cerr << " (in " << usecs_per_record << " μs / record)";
 		}
-		
+
 		auto const realn_range_count(accs::count(m_realignment_length_acc));
 		cerr << "; realigned " << realn_range_count << " ranges";
 		if (realn_range_count)
@@ -575,15 +600,15 @@ namespace {
 				m_realn_range_output << "Location\tLength\n";
 			}
 		}
-		
+
 		// Output the header.
 		m_aln_output.stream << m_aln_output.header;
-		
+
 		auto &parallel_dispatch_queue(dispatch::parallel_queue::shared_queue());
-		
+
 		auto task_idx(m_task_queue.pop_index()); // Reserve one task.
 		std::size_t task_id{};
-		
+
 		m_aln_input.read_records(
 			[
 				this,
@@ -603,32 +628,32 @@ namespace {
 						++m_statistics.flags_not_matched;
 						return;
 					}
-			
+
 					// Ignore secondary and supplementary if requested.
 					if (m_should_consider_primary_alignments_only && lb::to_underlying(flags & sam::flag::secondary_alignment))
 					{
 						++m_statistics.flags_not_matched;
 						return;
 					}
-					
+
 					if (sam::INVALID_REFERENCE_ID == aln_rec.rname_id)
 					{
 						++m_statistics.ref_id_missing;
 						return;
 					}
-			
+
 					if (sam::INVALID_POSITION == aln_rec.pos)
 					{
 						++m_statistics.flags_not_matched;
 						return;
 					}
-					
+
 					if (aln_rec.seq.empty())
 					{
 						++m_statistics.seq_missing;
 						return;
 					}
-					
+
 					++m_statistics.matched_reads;
 
 					// Load the reference sequence if needed.
@@ -653,7 +678,7 @@ namespace {
 							lb::log_time(std::osyncstream(std::cerr)) << "Loading complete.\n" << std::flush;
 						}
 					}
-			
+
 					// Check if records can be added to the current task.
 					if (m_task_queue[task_idx].is_full())
 					{
@@ -670,16 +695,16 @@ namespace {
 							parallel_dispatch_queue.group_async(m_group, dispatch::task_from_member_fn <&project_task::process>(&current_task));
 						else
 							current_task.process();
-				
+
 						// Get an empty task.
 						task_idx = m_task_queue.pop_index();
 					}
-			
+
 					// Now there is guaranteed to be space in the current task.
 					{
 						auto &current_task(m_task_queue[task_idx]);
 						libbio_assert(project_task_status::inactive == current_task.m_status.load());
-				
+
 #if 1
 						using std::swap;
 						swap(aln_rec, current_task.next_record());
@@ -690,7 +715,7 @@ namespace {
 				}
 			}
 		);
-		
+
 		// Finish the last task if needed.
 		{
 			auto &last_task(m_task_queue[task_idx]);
@@ -705,7 +730,7 @@ namespace {
 					last_task.process();
 			}
 		}
-		
+
 		// When all the work in the group has been completed,
 		// the record output blocks have already been inserted to the serial queue.
 		if (m_should_process_tasks_in_parallel)
@@ -722,8 +747,8 @@ namespace {
 		m_realigned_ranges.clear();
 		m_realigned_range_stats.clear();
 	}
-	
-	
+
+
 	void project_task::process()
 	{
 		auto const start_time(clock_type::now()); // For profiling.
@@ -743,30 +768,30 @@ namespace {
 		auto const should_process_tasks_in_parallel(m_input_processor->should_process_tasks_in_parallel());
 
 		libbio_assert(m_realigned_range_stats.empty());
-		
+
 		// Process the records.
 		// Try to be efficient by caching the previous pointer.
 		std::stringstream oa_buffer;
 		for (auto &aln_rec : alignment_records())
 		{
 			libbio_assert(project_task_status::processing == m_status.load());
-			
+
 			auto const ref_id(aln_rec.rname_id);
 			libbio_assert_neq(sam::INVALID_REFERENCE_ID, ref_id);
 			auto const dst_ref_id(ref_id_mapping[ref_id]);
-			
+
 			libbio_assert_lt(ref_id, src_seq_entries.size());
 			libbio_assert_lt(dst_ref_id, dst_seq_entries.size());
 			auto const &src_seq_entry(*src_seq_entries[ref_id]);
 			auto const &dst_seq_entry(*dst_seq_entries[dst_ref_id]);
-			
+
 			// Rewrite the CIGAR and the position.
 			auto const src_pos(aln_rec.pos);
 			auto const &query_seq(aln_rec.seq);
 			auto const &cigar_seq(aln_rec.cigar);
 			auto const &ref_seq(m_input_processor->output_reference_sequence(dst_ref_id));
 			libbio_assert(!ref_seq.empty());
-			
+
 			m_alignment_projector.reset();
 			auto const dst_pos(m_alignment_projector.project_alignment(
 				src_pos,
@@ -798,7 +823,7 @@ namespace {
 					for (auto const &range : realn_ranges)
 						m_realigned_ranges.emplace_back(range);
 				}
-				
+
 				if (!should_keep_duplicate_realigned_ranges)
 				{
 					// Sort by the range and remove duplicates.
@@ -806,11 +831,11 @@ namespace {
 					m_realigned_ranges.erase(std::unique(m_realigned_ranges.begin(), m_realigned_ranges.end()), m_realigned_ranges.end());
 				}
 			}
-			
+
 			{
 				// Store the original NM value.
 				auto const original_nm(aln_rec.optional_fields.template get <"NM"_tag>());
-				
+
 				// Remove the non-preserved tags.
 				aln_rec.optional_fields.erase_if(
 					[&additional_preserved_tags](auto const tag_rank){
@@ -827,13 +852,13 @@ namespace {
 						}
 					}
 				);
-				
+
 				// Store the original alignment.
 				{
 					// Clear the buffer.
 					oa_buffer.str(std::string());
 					oa_buffer.clear();
-					
+
 					// RNAME
 					oa_buffer << ref_ids[ref_id].name << ',';
 
@@ -843,7 +868,7 @@ namespace {
 					// Strand
 					// FIXME: Some tools may determine from the minus sign that the sequence needs to be reverse-complemented, but this has already been taken into account?
 					oa_buffer << (std::to_underlying(sam::flag::reverse_complemented & aln_rec.flag) ? '-' : '+') << ',';
-					
+
 					// CIGAR
 					for (auto const cc : cigar_seq)
 					{
@@ -851,24 +876,24 @@ namespace {
 						oa_buffer << cc.operation();
 					}
 					oa_buffer << ',';
-					
+
 					// MAPQ
 					oa_buffer << +(aln_rec.mapq) << ',';
-					
+
 					// NM
 					// The preceding comma is required even if the value is empty.
 					if (original_nm)
 						oa_buffer << *original_nm;
-					
+
 					// Trailing semicolon.
 					oa_buffer << ';' << std::flush;
-					
+
 					// Copy to the end of OA.
 					auto &oa_tag(aln_rec.optional_fields.template obtain <"OA"_tag>());
 					oa_tag += oa_buffer.view();
 				}
 			}
-			
+
 			// Store the re-aligned ranges.
 			auto output_realn_ranges([realn_range_count, &aln_rec](auto const &ranges, auto const tag){
 				typedef std::vector <std::uint32_t> range_vector;
@@ -885,35 +910,35 @@ namespace {
 				output_realn_ranges(m_alignment_projector.realigned_query_ranges(), tag_identifiers.realn_query_ranges);
 			if (tag_identifiers.realn_ref_ranges && realn_range_count)
 				output_realn_ranges(m_alignment_projector.realigned_reference_ranges(), tag_identifiers.realn_ref_ranges);
-			
+
 			// Original reference ID.
 			if (tag_identifiers.original_rname)
 				aln_rec.optional_fields.template obtain <sam::reference_id_type>(tag_identifiers.original_rname) = ref_id;
-			
+
 			// Original position.
 			if (tag_identifiers.original_pos)
 				aln_rec.optional_fields.template obtain <sam::position_type>(tag_identifiers.original_pos) = src_pos;
-			
+
 			auto const rnext_id(aln_rec.rnext_id);
 			if (sam::INVALID_REFERENCE_ID != rnext_id)
 			{
 				libbio_assert_lt(rnext_id, ref_id_mapping.size());
 				auto const dst_rnext_id(ref_id_mapping[rnext_id]);
 				aln_rec.rnext_id = dst_rnext_id;
-				
+
 				if (tag_identifiers.original_rnext)
 					aln_rec.optional_fields.template obtain <sam::reference_id_type>(tag_identifiers.original_rnext) = rnext_id;
-				
+
 				// Mate position.
 				auto const pnext(aln_rec.pnext);
 				if (sam::INVALID_POSITION != pnext)
 				{
 					auto const &src_seq_entry_(*src_seq_entries[rnext_id]);
 					auto const &dst_seq_entry_(*dst_seq_entries[dst_rnext_id]);
-					
+
 					auto const dst_pnext(src_seq_entry_.project_position(pnext, dst_seq_entry_));
 					aln_rec.pnext = dst_pnext;
-					
+
 					if (tag_identifiers.original_pnext)
 						aln_rec.optional_fields.template obtain <sam::position_type>(tag_identifiers.original_pnext) = pnext;
 				}
@@ -923,7 +948,7 @@ namespace {
 				// For extra safety.
 				aln_rec.pnext = sam::INVALID_POSITION;
 			}
-			
+
 			// Finally (esp. after setting OA/OC) update the CIGAR, the positions, and RNAME.
 			aln_rec.pos = dst_pos;
 			aln_rec.cigar = m_alignment_projector.alignment();
@@ -935,7 +960,7 @@ namespace {
 			auto const diff(end_time - start_time);
 			m_execution_time = chrono::duration_cast <chrono::nanoseconds>(diff).count();
 		}
-		
+
 		// Continue in the output queue.
 		libbio_assert(project_task_status::processing == m_status.load());
 		m_status = project_task_status::finishing;
@@ -963,8 +988,8 @@ namespace {
 		auto const length(std::max(ref_range.length, query_range.length));
 		m_realigned_range_stats.emplace_back(chrono::duration_cast <chrono::nanoseconds>(diff).count(), length);
 	}
-	
-	
+
+
 	void project_task::output()
 	{
 		// Now we are in the correct thread and also able to pass parameters to functions
@@ -972,27 +997,27 @@ namespace {
 		libbio_assert(project_task_status::finishing == m_status.load());
 		m_input_processor->finish_task(*this);
 	}
-	
-	
+
+
 	void input_processor::finish_task(project_task &task)
 	{
 		// Not thread-safe; needs to be executed in a serial queue.
-		
+
 		libbio_assert(project_task_status::finishing == task.m_status.load());
-		
+
 		for (auto const &aln_rec : task.alignment_records())
 		{
 			libbio_assert(aln_rec.qual.empty() || aln_rec.seq.size() == aln_rec.qual.size());
 			m_reference_buffer_store.release_buffer(aln_rec.rname_id);
 			m_aln_output.output_record(aln_rec);
 		}
-		
+
 		// Update the removed tag counts.
 		// Could be done in O(m + n) time with a specialised merge instead of O(m log n) that we currently have.
 		// (I don't think this is significant in any way.)
 		for (auto const &kv : task.m_removed_tag_counts)
 			m_removed_tag_counts[kv.first] += kv.second;
-		
+
 		// Handle the realigned ranges.
 		auto const &task_realigned_ranges(task.m_realigned_ranges);
 		if (m_realn_range_output.is_open())
@@ -1005,7 +1030,7 @@ namespace {
 				m_realigned_range_buffer.clear();
 				m_realigned_range_buffer.reserve(m_realigned_ranges.size() + task_realigned_ranges.size());
 				lb::sorted_set_union(m_realigned_ranges, task_realigned_ranges, std::back_inserter(m_realigned_range_buffer));
-				
+
 				using std::swap;
 				swap(m_realigned_ranges, m_realigned_range_buffer);
 			}
@@ -1019,7 +1044,7 @@ namespace {
 			m_realignment_time_acc(stat.time);
 			m_realignment_length_acc(stat.length);
 		}
-		
+
 		// Output status if needed.
 		{
 			auto const pp(clock_type::now());
@@ -1029,14 +1054,14 @@ namespace {
 				output_status();
 			}
 		}
-		
+
 		// Clean up.
 		task.reset();
 		task.m_status = project_task_status::inactive;
 		m_task_queue.push(task);
 	}
-	
-	
+
+
 	void input_processor::output_realigned_ranges(realigned_range_vector const &ranges, std::size_t const task_id)
 	{
 		if (m_should_output_debugging_information)
@@ -1058,33 +1083,33 @@ namespace {
 				m_realn_range_output << rr.range.location << '\t' << rr.range.length << '\n';
 		}
 	}
-	
-	
+
+
 	void input_processor::finish()
 	{
 		m_aln_output.stream << std::flush;
 		std::cout << std::flush;
-		
+
 		// Output the sorted realigned ranges if needed.
 		if (m_realn_range_output.is_open())
 		{
 			if (!m_should_keep_duplicate_realigned_ranges)
 				output_realigned_ranges(m_realigned_ranges);
-			
+
 			m_realn_range_output << std::flush;
 		}
-		
+
 		lb::log_time(std::cerr) << "Done." << std::endl;
-		
+
 		// Output the statistics.
 		std::cerr << "\tMatched reads:     " << m_statistics.matched_reads << '\n';
 		std::cerr << "\tFlags not matched: " << m_statistics.flags_not_matched << '\n';
 		std::cerr << "\tSequence missing:  " << m_statistics.seq_missing << '\n';
 		std::cerr << "\tRef. ID missing:   " << m_statistics.ref_id_missing << '\n';
-		
+
 		if (m_realn_range_output.is_open() && !m_should_keep_duplicate_realigned_ranges)
 			std::cerr << "Re-aligned ranges: " << m_realigned_ranges.size() << '\n';
-		
+
 		if (m_removed_tag_counts.empty())
 			std::cerr << "No tags removed.\n";
 		else
@@ -1097,12 +1122,12 @@ namespace {
 				std::cerr << '\t' << buffer.data() << ": " << kv.second << '\n';
 			}
 		}
-		
+
 		// Clean up.
 		(*m_exit_cb)();
 	}
-	
-	
+
+
 	std::unique_ptr <input_processor_base> s_input_processor;
 
 
@@ -1129,10 +1154,10 @@ namespace {
 	)
 	{
 		aln_output_header = sam::header::copy_subset <~sam::header::copy_selection_type::reference_sequences>(aln_input_header);
-		
+
 		ref_id_mapping.clear();
 		ref_id_mapping.resize(aln_input_header.reference_sequences.size(), SIZE_MAX);
-		
+
 		// Parse the chromosome and sequence ids. (We need them in case the reference output order has been given.)
 		std::vector <std::tuple <std::string_view, std::string_view>> input_ref_chr_seq_ids;
 		input_ref_chr_seq_ids.reserve(aln_input_header.reference_sequences.size());
@@ -1145,19 +1170,19 @@ namespace {
 				std::cerr << "ERROR: Separator ‘" << ref_id_separator << "’ not found in reference ID ‘" << input_ref_id << "’.\n";
 				std::exit(EXIT_FAILURE);
 			}
-			
+
 			auto const chr_id(input_ref_id.substr(0, separator_pos));
 			auto const seq_id(input_ref_id.substr(1 + separator_pos));
 			input_ref_chr_seq_ids.emplace_back(chr_id, seq_id);
 		}
-		
+
 		{
 			struct ref_id_pair
 			{
 				std::size_t input_index{};
 				std::size_t output_index{};
 			};
-			
+
 			std::map <std::string, ref_id_pair, lb::compare_strings_transparent> unique_ref_ids;
 			typedef std::pair <std::size_t, bool> output_ref_name_value;
 			std::unordered_map <
@@ -1166,7 +1191,7 @@ namespace {
 				lb::string_hash_transparent,
 				lb::string_equal_to_transparent
 			> output_ref_name_order;
-			
+
 			if (ref_order_path)
 			{
 				// Get the distinct chromosome identifiers.
@@ -1177,7 +1202,7 @@ namespace {
 				// Read the reference names.
 				lb::file_istream stream;
 				std::string buffer;
-				
+
 				lb::open_file_for_reading(ref_order_path, stream);
 				std::size_t idx{};
 				while (std::getline(stream, buffer))
@@ -1201,7 +1226,7 @@ namespace {
 					++idx;
 				}
 			}
-			
+
 			// Determine the unique reference identifiers by splitting by the separator and taking the left parts,
 			// also number them.
 			{
@@ -1219,7 +1244,7 @@ namespace {
 						{
 							output_ref_idx = next_output_ref_idx;
 							++next_output_ref_idx;
-							
+
 							if (!output_ref_name_order.empty())
 								std::cerr << "WARNING: Output reference ID ‘" << chr_id << "’ not found in the output order, placing in the end.\n";
 						}
@@ -1229,7 +1254,7 @@ namespace {
 							output_ref_idx = val.first;
 							val.second = true; // Mark used.
 						}
-						
+
 						unique_ref_ids.emplace(chr_id, ref_id_pair{input_ref_idx, output_ref_idx});
 					}
 					else
@@ -1237,11 +1262,11 @@ namespace {
 						// chr_id already known.
 						output_ref_idx = it->second.output_index;
 					}
-					
+
 					ref_id_mapping[input_ref_idx] = output_ref_idx;
 				}
 			}
-			
+
 			// Copy the output reference identifiers to the header.
 			aln_output_header.reference_sequences.resize(unique_ref_ids.size());
 			for (auto &kv : unique_ref_ids)
@@ -1251,7 +1276,7 @@ namespace {
 				aln_output_header.reference_sequences[ref_id.output_index] = std::move(output_ref);
 			}
 			aln_output_header.assign_reference_sequence_identifiers();
-			
+
 			// Check if there were any identifiers in the input that were not used.
 			for (auto const &kv : output_ref_name_order)
 			{
@@ -1274,8 +1299,8 @@ namespace {
 			output_header.programs
 		);
 	}
-	
-	
+
+
 	void fill_sequence_entries(
 		panvc3::msa_index const &msa_index,
 		sam::reference_sequence_entry_vector const &input_ref_ids,
@@ -1291,7 +1316,7 @@ namespace {
 		dst_seq_entries.clear();
 		src_seq_entries.resize(input_ref_ids.size(), nullptr);
 		dst_seq_entries.resize(output_ref_ids.size(), nullptr);
-		
+
 		for (auto const &[input_ref_idx, ref] : rsv::enumerate(input_ref_ids))
 		{
 			std::string_view const ref_id(ref.name);
@@ -1301,20 +1326,20 @@ namespace {
 				std::osyncstream(std::cerr) << "ERROR: Unable to find the separator “" << ref_id_separator << "” in the RNAME “" << ref_id << "”." << std::endl;
 				std::exit(EXIT_FAILURE);
 			}
-			
+
 			auto const chr_id(ref_id.substr(0, pos));
 			auto const src_seq_id(ref_id.substr(1 + pos));
 			auto const output_ref_idx(ref_id_mapping[input_ref_idx]);
-			
+
 			auto const &chr_entry(find_chr_entry(msa_index.chr_entries, chr_id));
-			
+
 			libbio_assert_lt(output_ref_idx, dst_seq_entries.size());
 			if (!dst_seq_entries[output_ref_idx])
 			{
 				auto const &dst_seq_entry(find_sequence_entry(chr_entry.sequence_entries, reference_msa_id));
 				dst_seq_entries[output_ref_idx] = &dst_seq_entry;
 			}
-			
+
 			libbio_assert_lt(input_ref_idx, src_seq_entries.size());
 			libbio_assert_eq(src_seq_entries[input_ref_idx], nullptr);
 			auto const &src_seq_entry(find_sequence_entry(chr_entry.sequence_entries, src_seq_id));
@@ -1333,7 +1358,7 @@ namespace {
 			std::cerr << "ERROR: Number of worker threads must be non-negative.\n";
 			std::exit(EXIT_FAILURE);
 		}
-		
+
 		typedef input_processor::queue_type queue_type;
 		auto const thread_count([&]() -> queue_type::size_type {
 
@@ -1370,14 +1395,14 @@ namespace {
 			else
 				return alignment_input(lb::file_handle(STDIN_FILENO, false));
 		}()};
-		
+
 		auto aln_output{[&] -> alignment_output {
 			if (args_info.output_path_arg)
 				return alignment_output(lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE)));
 			else
 				return alignment_output(lb::file_handle(STDOUT_FILENO, false));
 		}()};
-		
+
 		std::regex const tag_regex{"^[XYZ][A-Za-z0-9]$"};
 		std::regex const any_tag_regex{"^[A-Za-z0-9]{2}$"};
 		auto const make_sam_tag([&tag_regex, &any_tag_regex](char const *tag, bool const should_allow_any = false) -> panvc3::seqan3_sam_tag_type {
@@ -1423,7 +1448,7 @@ namespace {
 			std::cerr << "ERROR: Status output interval must be non-negative.\n";
 			std::exit(EXIT_FAILURE);
 		}
-		
+
 		// Parse the SAM header.
 		aln_input.reader.read_header(aln_input.header, aln_input.input_range);
 
@@ -1437,14 +1462,14 @@ namespace {
 			aln_output.header,
 			ref_id_mapping
 		);
-		
+
 		append_program_info(aln_input.header, aln_output.header, argc, argv);
 
 		// Open the realigned range output file if needed.
 		lb::file_handle realigned_range_handle;
 		if (args_info.output_realigned_ranges_arg)
 			realigned_range_handle = lb::file_handle(lb::open_file_for_writing(args_info.output_realigned_ranges_arg, lb::writing_open_mode::CREATE));
-		
+
 		// Load the MSA index.
 		panvc3::msa_index msa_index;
 		lb::log_time(std::cerr) << "Loading the MSA index…\n";
@@ -1454,7 +1479,7 @@ namespace {
 			cereal::PortableBinaryInputArchive archive(stream);
 			archive(msa_index);
 		}
-		
+
 		// Fill the MSA index entry tables.
 		sequence_entry_ptr_vector src_seq_entries;
 		sequence_entry_ptr_vector dst_seq_entries;
@@ -1470,7 +1495,7 @@ namespace {
 		);
 		libbio_assert_eq(src_seq_entries.end(), std::find(src_seq_entries.begin(), src_seq_entries.end(), nullptr));
 		libbio_assert_eq(dst_seq_entries.end(), std::find(dst_seq_entries.begin(), dst_seq_entries.end(), nullptr));
-		
+
 		// Load the reference sequences.
 		lb::log_time(std::cerr) << "Loading the reference sequences…\n";
 		panvc3::compressed_fasta_reader fasta_reader;
@@ -1501,7 +1526,7 @@ namespace {
 			args_info.debugging_output_flag,
 			&do_exit_async
 		);
-		
+
 		lb::log_time(std::cerr) << "Processing the alignments…\n";
 		dispatch::main_queue().async(dispatch::task_from_member_fn <&input_processor_base::process_input>(s_input_processor.get()));
 	}
@@ -1513,7 +1538,7 @@ extern "C" void panvc3_project_alignments(int argc, char **argv)
 	gengetopt_args_info args_info;
 	if (0 != cmdline_parser(argc, argv, &args_info))
 		std::exit(EXIT_FAILURE);
-	
+
 	//lb::setup_allocated_memory_logging();
 
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
@@ -1528,8 +1553,8 @@ extern "C" void panvc3_project_alignments(int argc, char **argv)
 
 	if (args_info.print_pid_given)
 		std::cerr << "PID: " << getpid() << '\n';
-	
+
 	process(args_info, argc, argv);
-	
+
 	dispatch::main_queue().run();
 }
