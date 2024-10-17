@@ -393,6 +393,8 @@ namespace {
 	{
 		// FIXME: Handle long CIGAR strings.
 
+		panvc3::increment_guard guard(m_rec_idx);
+
 		// Ignore unmapped.
 		if (std::to_underlying(sam::flag::unmapped & aln_rec.flag))
 		{
@@ -456,8 +458,6 @@ namespace {
 
 		sam::output_record(*m_os, *m_header, aln_rec);
 		*m_os << '\n';
-
-		++m_rec_idx;
 	}
 
 
