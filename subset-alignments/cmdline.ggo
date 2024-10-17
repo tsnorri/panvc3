@@ -8,16 +8,19 @@ usage		"subset_alignments --alignments=alignments.bam [ ... ]"
 description	"The resulting alignments will be written to stdout."
 
 section		"Input options"
-option		"alignments"				a	"Alignment file path"													string	typestr = "filename"	optional
+option		"alignments"				a	"Alignment file path"															string	typestr = "filename"	optional
 
 section		"Subsetting options"
-option		"chr"						c	"Subset by chromosome"													string	typestr = "id"			optional
-option		"read-id"					r	"Subset by read ID, read from stdin"									flag	off
-option		"best-mapq"					q	"Subset by best mapping quality (requires input to be sorted by QNAME)"	flag	off
+option		"chr"						c	"Subset by chromosome"															string	typestr = "id"			optional
+option		"read-id"					r	"Subset by read ID, read from stdin"											flag	off
+option		"best-mapq"					q	"Subset by best mapping quality (requires input to be sorted by QNAME)"			flag	off
 
 section		"Output options"
-option		"output-path"				o	"Output path (stdin by default)"										string	typestr = "path"		optional
+option		"output-path"				o	"Output path (stdout by default)"												string	typestr = "path"		optional
+
+section		"Processing options"
+option		"threads"					t	"Number of threads used by BAM reader (min. 3, 0 to determine automatically)"	long	default = "0"			optional
 
 section		"Debugging options"
-option		"print-invocation"			-	"Output the invocation to stderr"										flag	off									hidden
-option		"print-pid"					-	"Output the PID to stderr"												flag	off									hidden
+option		"print-invocation"			-	"Output the invocation to stderr"												flag	off									hidden
+option		"print-pid"					-	"Output the PID to stderr"														flag	off									hidden

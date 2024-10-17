@@ -3,10 +3,8 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <algorithm>
-#include <boost/sort/sort.hpp>
-#include <chrono>
-#include <cstdlib>
+#include <algorithm>					// std::max
+#include <boost/sort/sort.hpp>			// boost::sort::block_indirect_sort
 #include <deque>
 #include <iostream>
 #include <libbio/file_handle.hh>
@@ -14,42 +12,113 @@
 #include <libbio/utility/misc.hh>
 #include <panvc3/alignment_input.hh>
 #include <panvc3/utility.hh>
-#include <range/v3/view/enumerate.hpp>
 #include <string>
+#include <vector>
 #include "cmdline.h"
 
-namespace lb	= libbio;
-namespace rsv	= ranges::views;
-namespace sam	= libbio::sam;
+namespace dispatch	= libbio::dispatch;
+namespace lb		= libbio;
+namespace sam		= libbio::sam;
 
 
 namespace {
 	
-	typedef std::uint8_t						mapping_quality_type;
-	
-	
-	struct match_count
+	void append_program_info(sam::header &output_header, std::string const &call)
 	{
-		std::size_t matches{};
-		std::size_t mismatches{};
+		panvc3::append_sam_program_info(
+			"panvc3.subset-alignments.",
+			"PanVC 3 subset_alignments",
+			call,
+			CMDLINE_PARSER_VERSION,
+			output_header.programs
+		);
+	}
+	
+	
+	class subset_task final : public panvc3::alignment_input_delegate
+	{
+	private:
+		typedef sam::mapping_quality_type						mapping_quality_type;
+		typedef sam::header::reference_sequence_identifier_type	reference_id_type;
+		
+	private:
+		std::deque <std::string>	m_read_names;
+		std::vector <sam::record>	m_rec_buffer;
+		std::vector <std::size_t>	m_sorting_buffer;
+		std::string					m_command_line_call;
+		sam::header					*m_header{};
+		std::ostream				*m_os{};
+		char const					*m_expected_contig{};
+		std::uint64_t				m_rec_idx{};
+		std::uint64_t				m_matches{};
+		std::uint64_t				m_mismatches{};
+		reference_id_type			m_expected_ref_id{};
+		bool						m_should_subset_by_read_id;
+		bool						m_should_subset_by_best_mapq;
+		
+	private:
+		void output_best_mate(
+			sam::reference_id_type const mate_ref_id, 
+			sam::position_type const mate_pos
+		);
+		
+		void process_alignment_group();
+		
+	public:
+		subset_task(std::ostream &os, gengetopt_args_info const &args_info, std::string &&command_line_call):
+			m_command_line_call(std::move(command_line_call)),
+			m_os(&os),
+			m_expected_contig(args_info.chr_arg),
+			m_should_subset_by_read_id(args_info.read_id_flag),
+			m_should_subset_by_best_mapq(args_info.best_mapq_flag)
+		{
+		}
+		
+		std::uint64_t matches() const { return m_matches; }
+		std::uint64_t mismatches() const { return m_mismatches; }
+		
+		void prepare();
+		void finish();
+		
+		void handle_header(sam::header &header) override;
+		void handle_alignment(sam::record &aln_rec) override;
 	};
 	
 	
-	void output_best_mate(
+	void subset_task::prepare()
+	{
+		// Read the read names.
+		if (m_should_subset_by_read_id)
+		{
+			lb::log_time(std::cerr) << "Reading the read names…\n";
+			std::string buffer;
+			std::size_t lineno{};
+			while (std::getline(std::cin, buffer))
+			{
+				++lineno;
+				m_read_names.emplace_back(buffer);
+				if (0 == lineno % 100'000'000)
+					lb::log_time(std::cerr) << "Handled " << lineno << " lines…\n";
+			}
+			
+			lb::log_time(std::cerr) << "Sorting…\n";
+			boost::sort::block_indirect_sort(m_read_names.begin(), m_read_names.end());
+			//std::sort(read_names.begin(), read_names.end());
+		}
+	}
+	
+	
+	void subset_task::output_best_mate(
 		sam::reference_id_type const mate_ref_id, 
-		sam::position_type const mate_pos,
-		std::vector <sam::record> &alignments,
-		std::ostream &os,
-		sam::header const &header,
-		std::vector <std::size_t> &buffer
+		sam::position_type const mate_pos
 	)
 	{
-		if (alignments.empty())
+		if (m_rec_buffer.empty())
 			return;
 		
 		// Determine again the best mapping quality.
 		mapping_quality_type best_mapq{};
-		for (auto const &aln_rec : alignments)
+		for (auto const &aln_rec : m_rec_buffer)
 		{
 			if (aln_rec.rname_id != mate_ref_id)
 				continue;
@@ -63,31 +132,26 @@ namespace {
 			best_mapq = std::max(mapq, best_mapq);
 		}
 		
-		for (auto &aln_rec : alignments)
+		for (auto &aln_rec : m_rec_buffer)
 		{
 			if (aln_rec.mapq == best_mapq && aln_rec.rname_id == mate_ref_id && aln_rec.pos == mate_pos)
 			{
-				sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
-				os << '\n';
+				sam::output_record_in_parsed_order(*m_os, *m_header, aln_rec, m_sorting_buffer);
+				(*m_os) << '\n';
 				return;
 			}
 		}
 	}
 	
-
-	void process_alignment_group(
-		std::vector <sam::record> &alignments,
-		std::ostream &os,
-		sam::header const &header,
-		std::vector <std::size_t> &buffer
-	)
+	
+	void subset_task::process_alignment_group()
 	{
-		if (alignments.empty())
+		if (m_rec_buffer.empty())
 			return;
 		
 		// Determine the best mapping quality.
 		mapping_quality_type best_mapq{};
-		for (auto const &aln_rec : alignments)
+		for (auto const &aln_rec : m_rec_buffer)
 		{
 			auto const mapq(aln_rec.mapq);
 			if (255 == mapq)
@@ -97,200 +161,110 @@ namespace {
 		}
 		
 		// Find again.
-		for (auto &aln_rec : alignments)
+		for (auto &aln_rec : m_rec_buffer)
 		{
 			if (aln_rec.mapq == best_mapq)
 			{
-				sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
-				os << '\n';
+				sam::output_record_in_parsed_order(*m_os, *m_header, aln_rec, m_sorting_buffer);
+				(*m_os) << '\n';
 				
 				auto const mate_ref_id(aln_rec.rnext_id);
 				auto const mate_pos(aln_rec.pnext);
 				if (sam::INVALID_REFERENCE_ID == mate_ref_id || sam::INVALID_POSITION == mate_pos)
 					return;
 				
-				output_best_mate(mate_ref_id, mate_pos, alignments, os, header, buffer);
+				output_best_mate(mate_ref_id, mate_pos);
 				return;
 			}
 		}
 		
 		// Output the first by default.
-		auto &aln_rec(alignments.front());
-		sam::output_record_in_parsed_order(os, header, aln_rec, buffer);
-		os << '\n';
+		auto &aln_rec(m_rec_buffer.front());
+		sam::output_record_in_parsed_order(*m_os, *m_header, aln_rec, m_sorting_buffer);
+		(*m_os) << '\n';
 		
 		auto const mate_ref_id(aln_rec.rnext_id);
 		auto const mate_pos(aln_rec.pnext);
 		if (sam::INVALID_REFERENCE_ID == mate_ref_id || sam::INVALID_POSITION == mate_pos)
 			return;
 		
-		output_best_mate(mate_ref_id, mate_pos, alignments, os, header, buffer);
+		output_best_mate(mate_ref_id, mate_pos);
 	}
 	
 	
-	match_count process_(panvc3::alignment_input &aln_input, std::ostream &os, gengetopt_args_info const &args_info)
+	void subset_task::handle_header(sam::header &header)
 	{
-		os << aln_input.header;
-		
-		bool const should_subset_by_read_id(args_info.read_id_flag);
-		bool const should_subset_by_best_mapq(args_info.best_mapq_flag);
-		match_count mc{};
-
-		std::deque <std::string> read_names;
-		
-		// Read the read names.
-		if (should_subset_by_read_id)
+		if (m_expected_contig)
 		{
-			lb::log_time(std::cerr) << "Reading the read names…\n";
-			std::string buffer;
-			std::size_t lineno{};
-			while (std::getline(std::cin, buffer))
+			m_expected_ref_id = m_header->find_reference(m_expected_contig);
+			if (sam::INVALID_REFERENCE_ID == m_expected_ref_id)
 			{
-				++lineno;
-				read_names.emplace_back(buffer);
-				if (0 == lineno % 100000000)
-					lb::log_time(std::cerr) << "Handled " << lineno << " lines…\n";
-			}
-			
-			lb::log_time(std::cerr) << "Sorting…\n";
-			boost::sort::block_indirect_sort(read_names.begin(), read_names.end());
-			//std::sort(read_names.begin(), read_names.end());
-		}
-		
-		// Process the records.
-		lb::log_time(std::cerr) << "Processing the alignment records…\n";
-		auto const &ref_seqs(aln_input.header.reference_sequences);
-		std::string prev_ref_id;
-		std::vector <sam::record> rec_buffer;
-		std::vector <std::size_t> buffer;
-		
-		auto const expected_ref_id([&](){
-			if (!args_info.chr_arg)
-				return sam::INVALID_REFERENCE_ID;
-			
-			auto const retval(aln_input.header.find_reference(args_info.chr_arg));
-			if (sam::INVALID_REFERENCE_ID == retval)
-			{
-				std::cerr << "ERROR: Reference ID " << args_info.chr_arg << " not found in SAM header.\n";
+				std::cerr << "ERROR: Reference ID ‘" << m_expected_contig << "’ not found in SAM header.\n";
 				std::exit(EXIT_FAILURE);
 			}
-			
-			return retval;
-		}());
+		}
+		else
+		{
+			m_expected_ref_id = sam::INVALID_REFERENCE_ID;
+		}
 		
-		std::size_t rec_idx{};
-		aln_input.read_records(
-			[
-				&aln_input,
-				&buffer,
-				&mc,
-				&os,
-				&read_names,
-				&rec_buffer,
-				&rec_idx,
-				expected_ref_id,
-				should_subset_by_best_mapq,
-				should_subset_by_read_id
-			](auto const &aln_rec){
-				if (rec_idx && 0 == rec_idx % 10'000'000)
-					lb::log_time(std::cerr) << "Processed " << rec_idx << " alignments…\n";
-				++rec_idx;
-				
-				if (sam::INVALID_REFERENCE_ID != expected_ref_id)
-				{
-					auto const ref_id(aln_rec.rname_id);
-					if (sam::INVALID_REFERENCE_ID == ref_id)
-					{
-						++mc.mismatches;
-						return;
-					}
-					
-					if (ref_id != expected_ref_id)
-					{
-						++mc.mismatches;
-						return;
-					}
-				}
-				
-				auto const &qname(aln_rec.qname);
-				
-				if (should_subset_by_read_id && !std::binary_search(read_names.begin(), read_names.end(), qname))
-				{
-					++mc.mismatches;
-					return;
-				}
-				
-				++mc.matches;
-				if (should_subset_by_best_mapq)
-				{
-					if (rec_buffer.empty())
-					{
-						rec_buffer.emplace_back(aln_rec);
-						return;
-					}
-					
-					auto const &eq_class_id(rec_buffer.front().qname);
-				
-					if (qname != eq_class_id)
-					{
-						process_alignment_group(rec_buffer, os, aln_input.header, buffer);
-						rec_buffer.clear();
-					}
-					
-					rec_buffer.emplace_back(aln_rec);
-				}
-				else
-				{
-					sam::output_record_in_parsed_order(os, aln_input.header, aln_rec, buffer);
-					os << '\n';
-				}
+		append_program_info(header, m_command_line_call);
+		(*m_os) << header;
+		m_header = &header;
+	}
+	
+	
+	void subset_task::handle_alignment(sam::record &aln_rec)
+	{
+		if (m_rec_idx && 0 == m_rec_idx % 10'000'000)
+			lb::log_time(std::cerr) << "Processed " << m_rec_idx << " alignments…\n";
+		++m_rec_idx;
+		
+		if (! (sam::INVALID_REFERENCE_ID == m_expected_ref_id || aln_rec.rname_id == m_expected_ref_id))
+		{
+			++m_mismatches;
+			return;
+		}
+		
+		auto const &qname(aln_rec.qname);
+		if (m_should_subset_by_read_id && !std::binary_search(m_read_names.begin(), m_read_names.end(), qname))
+		{
+			++m_mismatches;
+			return;
+		}
+		
+		++m_matches;
+		
+		if (m_should_subset_by_best_mapq)
+		{
+			if (m_rec_buffer.empty())
+			{
+				m_rec_buffer.emplace_back(std::move(aln_rec));
+				return;
 			}
-		);
-		
-		if (should_subset_by_best_mapq && !rec_buffer.empty())
-			process_alignment_group(rec_buffer, os, aln_input.header, buffer);
-		
-		return mc;
-	}
-	
-	
-	void append_program_info(sam::header &output_header, int const argc, char const * const * const argv)
-	{
-		panvc3::append_sam_program_info(
-			"panvc3.subset-alignments.",
-			"PanVC 3 subset_alignments",
-			argc,
-			argv,
-			CMDLINE_PARSER_VERSION,
-			output_header.programs
-		);
-	}
-	
-	
-	void process(gengetopt_args_info const &args_info, int const argc, char const * const * const argv)
-	{
-		// Open the SAM input and output.
-		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
-		aln_input.read_header();
-		
-		auto const mc([&](){
-			auto aln_output_fh{[&] -> lb::file_handle {
-				if (args_info.output_path_arg)
-					return lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE));
-				else
-					return lb::file_handle(STDOUT_FILENO, false);
-			}()};
 			
-			lb::file_ostream os;
-			lb::open_stream_with_file_handle(os, aln_output_fh);
-
-			auto &header(aln_input.header);
-			append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
+			auto const &eq_class_id(m_rec_buffer.front().qname);
 		
-			return process_(aln_input, os, args_info);
-		}());
-		
-		lb::log_time(std::cerr) << "Done. Matches: " << mc.matches << ", mismatches: " << mc.mismatches << ".\n";
+			if (qname != eq_class_id)
+			{
+				process_alignment_group();
+				m_rec_buffer.clear();
+			}
+			
+			m_rec_buffer.emplace_back(std::move(aln_rec));
+		}
+		else
+		{
+			sam::output_record_in_parsed_order(*m_os, *m_header, aln_rec, m_sorting_buffer);
+			(*m_os) << '\n';
+		}
+	}
+	
+	
+	void subset_task::finish()
+	{
+		if (m_should_subset_by_best_mapq && !m_rec_buffer.empty())
+			process_alignment_group();
 	}
 }
 
@@ -316,7 +290,49 @@ int main(int argc, char **argv)
 	if (args_info.print_pid_given)
 		std::cerr << "PID: " << getpid() << '\n';
 	
-	process(args_info, argc, argv);
+	dispatch::thread_pool thread_pool;
 	
+	panvc3::prepare_thread_pool_with_args(thread_pool, args_info.threads_arg);
+	auto const task_count(thread_pool.max_workers() - 1); // Reader needs one thread while reading.
+	
+	dispatch::parallel_queue parallel_queue(thread_pool);
+	
+	dispatch::group group;
+	auto &main_queue(dispatch::main_queue());
+	
+	auto aln_output_fh{[&] -> lb::file_handle {
+		if (args_info.output_path_arg)
+			return lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE));
+		else
+			return lb::file_handle(STDOUT_FILENO, false);
+	}()};
+	
+	lb::file_ostream os;
+	lb::open_stream_with_file_handle(os, aln_output_fh);
+	
+	subset_task task(os, args_info, panvc3::command_line_call(argc, argv));
+	auto aln_input(panvc3::alignment_input::open_path_or_stdin(
+		args_info.alignments_arg,
+		task_count,
+		parallel_queue,
+		main_queue,
+		group,
+		task
+	));
+	
+	lb::log_time(std::cerr) << "Processing the alignment records…\n";
+	parallel_queue.group_async(group, [&aln_input, &task]{
+		task.prepare();
+		aln_input.run(); // Does not block.
+	});
+	
+	group.notify(main_queue, [&task, &main_queue]{
+		task.finish();
+		lb::log_time(std::cerr) << "Done. Matches: " << task.matches() << ", mismatches: " << task.mismatches() << ".\n";
+		
+		main_queue.stop();
+	});
+	
+	main_queue.run();
 	return EXIT_SUCCESS;
 }
