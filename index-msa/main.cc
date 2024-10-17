@@ -1,33 +1,37 @@
 /*
- * Copyright (c) 2022-2023 Tuukka Norri
+ * Copyright (c) 2022-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
 #include <cereal/archives/portable_binary.hpp>
-#include <filesystem>
+#include <charconv>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <libbio/dispatch.hh>
+#include <libbio/dispatch/event.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/subprocess.hh>
-#include <panvc3/dispatch.hh>
-#include <panvc3/dispatch/event.hh>
+#include <libbio/utility.hh>
 #include <panvc3/msa_index.hh>
+#include <signal.h>
 #include <string>
-#include <string_view>
-#include <vector>
+#include <sys/types.h>
+#include <system_error>
+#include <thread>
 #include "cmdline.h"
 #include "index_handling.hh"
 #include "input_processor.hh"
 
 namespace lb		= libbio;
-namespace dispatch	= panvc3::dispatch;
-namespace events	= dispatch::events;
-namespace fs		= std::filesystem;
+namespace dispatch	= libbio::dispatch;
+namespace events	= libbio::dispatch::events;
 namespace mi		= panvc3::msa_indices;
 
 
 namespace {
-	
+
 	struct sigchld_handler final : public events::sigchld_handler
 	{
 		void child_did_exit_with_nonzero_status(pid_t const pid, int const exit_status, char const *reason) override
@@ -37,32 +41,32 @@ namespace {
 				std::cerr << " (" << reason << ')';
 			std::cerr << '.' << std::endl;
 		}
-		
+
 		void child_received_signal(pid_t const pid, int const signal_number) override
 		{
 			std::cerr << "ERROR: Child process " << pid << " received signal " << signal_number << '.' << std::endl;
 		}
-		
+
 		void finish_handling(bool const did_report_error) override
 		{
 			if (did_report_error)
 				std::exit(EXIT_FAILURE);
 		}
 	};
-	
-	
+
+
 	void install_sigchld_handler(events::manager &mgr)
 	{
 		static sigchld_handler handler;
 		events::install_sigchld_handler(mgr, dispatch::parallel_queue::shared_queue(), handler);
 	}
-	
-	
+
+
 	void list_index_contents(char const *path)
 	{
 		panvc3::msa_index msa_index;
 		mi::load_msa_index(path, msa_index);
-		
+
 		for (auto const &chr_entry : msa_index.chr_entries)
 		{
 			std::size_t seq_len{};
@@ -188,8 +192,8 @@ namespace {
 			}
 		}
 	}
-	
-	
+
+
 	extern void process(gengetopt_args_info &args_info)
 	{
 		if (args_info.list_contents_given)
@@ -209,7 +213,7 @@ namespace {
 				std::cerr << "ERROR: Either --sequence-inputs or --sequences has to be specified.\n";
 				std::exit(EXIT_FAILURE);
 			}
-			
+
 			if (args_info.sequence_inputs_given)
 			{
 				lb::log_time(std::cerr) << "Loading sequence list from " << args_info.sequence_inputs_arg << "…\n";
@@ -221,7 +225,7 @@ namespace {
 					args_info.output_fasta_flag,
 					args_info.fasta_line_width_arg
 				);
-				
+
 				dispatch::main_queue().async(&processor);
 			}
 			else if (args_info.sequences_given)
@@ -235,7 +239,7 @@ namespace {
 					args_info.output_fasta_flag,
 					args_info.fasta_line_width_arg
 				);
-				
+
 				dispatch::main_queue().async(&processor);
 			}
 		}
@@ -253,9 +257,9 @@ int main(int argc, char **argv)
 	gengetopt_args_info args_info;
 	if (0 != cmdline_parser(argc, argv, &args_info))
 		std::exit(EXIT_FAILURE);
-	
+
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
-	
+
 	if (args_info.fasta_line_width_arg < 0)
 	{
 		std::cerr << "ERROR: FASTA line width must be non-negative.\n";
@@ -264,17 +268,17 @@ int main(int argc, char **argv)
 
 	events::signal_mask mask;
 	mask.add(SIGCHLD);
-	
+
 	std::jthread manager_thread;
 	events::manager event_manager;
 	event_manager.setup();
 	event_manager.start_thread_and_run(manager_thread);
-	
+
 	install_sigchld_handler(event_manager);
 	process(args_info);
-	
+
 	dispatch::main_queue().run();
-	
+
 	event_manager.stop();
 	// manager_thread gets joined here.
 	return EXIT_SUCCESS;

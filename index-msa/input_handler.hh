@@ -6,6 +6,9 @@
 #ifndef PANVC3_MSA_INDICES_INPUT_HANDLER_HH
 #define PANVC3_MSA_INDICES_INPUT_HANDLER_HH
 
+#include <cstdlib>
+#include <functional>
+#include <iostream>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/subprocess.hh>
@@ -67,7 +70,7 @@ namespace panvc3::msa_indices {
 				cb(subprocess.stdout_handle());
 				return;
 			}
-			
+
 			status.output_status(std::cerr, true);
 			std::exit(EXIT_FAILURE);
 		}

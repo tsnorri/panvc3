@@ -1,21 +1,38 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <panvc3/dispatch.hh>
+#include <algorithm>
+#include <array>
+#include <cereal/archives/portable_binary.hpp>
+#include <cstddef>
+#include <cstdlib>
+#include <iostream>
+#include <libbio/dispatch.hh>
+#include <libbio/file_handle.hh>
+#include <libbio/file_handling.hh>
+#include <libbio/utility.hh>
+#include <mutex>
 #include <panvc3/msa_index.hh>
 #include <range/v3/view/zip.hpp>
+#include <sdsl/int_vector.hpp>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+#include "index_vector_builder.hh"
+#include "input_handler.hh"
 #include "index_handling.hh"
 #include "input_processor.hh"
 
-namespace dispatch	= panvc3::dispatch;
+namespace dispatch	= libbio::dispatch;
 namespace lb		= libbio;
 namespace rsv		= ranges::views;
 
 
 namespace {
-	
+
 	// Helpers for the sequence entry list input.
 	struct sequence_entry
 	{
@@ -28,30 +45,30 @@ namespace {
 		{
 		}
 	};
-	
-	
+
+
 	struct chr_entry
 	{
 		std::string						chr_id;
 		std::vector <sequence_entry>	sequence_entries;
-		
+
 		explicit chr_entry(std::string const &chr_id_):
 			chr_id(chr_id_)
 		{
 		}
-		
+
 		bool operator<(chr_entry const &other) const { return chr_id < other.chr_id; }
 	};
-	
+
 	typedef std::vector <chr_entry> chr_entry_vector;
-	
+
 	struct chr_entry_cmp
 	{
 		bool operator()(chr_entry const &lhs, std::string const &rhs) const { return lhs.chr_id < rhs; }
 		bool operator()(std::string const &lhs, chr_entry const &rhs) const { return lhs < rhs.chr_id; }
 	};
-	
-	
+
+
 	template <typename t_type, typename t_cmp>
 	t_type &find_or_insert(std::vector <t_type> &vec, std::string const &key, t_cmp const &cmp)
 	{
@@ -61,29 +78,29 @@ namespace {
 		else
 			return *rng.first;
 	}
-	
-	
+
+
 	panvc3::msa_index::chr_entry &find_msa_chr_entry(panvc3::msa_index &msa_index, std::string const &chr_id)
 	{
 		panvc3::msa_index::chr_entry_cmp cmp;
 		return find_or_insert(msa_index.chr_entries, chr_id, cmp);
 	}
-	
-	
+
+
 	chr_entry &find_chr_entry(chr_entry_vector &vec, std::string const &chr_id)
 	{
 		chr_entry_cmp cmp;
 		return find_or_insert(vec, chr_id, cmp);
 	}
-	
-	
+
+
 	void read_input_entry(std::size_t const lineno, std::string const &entry, std::string &chr_id, std::string &seq_id, std::string &path)
 	{
 		std::string_view const &entry_sv(entry);
 		std::size_t start(0);
-
+l
 		std::array dsts{&chr_id, &seq_id};
-		
+
 		for (auto *dst_ptr : dsts)
 		{
 			auto const tab_pos(entry_sv.find('\t', start));
@@ -92,35 +109,35 @@ namespace {
 				std::cerr << "ERROR: Parse error in input on line " << lineno << ".\n";
 				std::exit(EXIT_FAILURE);
 			}
-			
+
 			*dst_ptr = entry_sv.substr(start, tab_pos - start);
 			start = 1 + tab_pos;
 		}
-		
+
 		path = entry_sv.substr(start);
 	}
 }
 
 
 namespace panvc3::msa_indices {
-	
+
 	void sequence_list_input_processor::process(input_handler &handler)
 	{
 		panvc3::msa_index msa_index;
-			
+
 		lb::file_istream path_stream;
 		lb::file_ostream msa_index_stream;
 
 		if (!m_msa_index_input_path.empty())
 			load_msa_index(m_msa_index_input_path.c_str(), msa_index);
-		
+
 		lb::log_time(std::cerr) << "Loading the input sequences…\n";
 		lb::open_file_for_reading(m_input_path, path_stream);
 		lb::open_file_for_writing(m_msa_index_output_path, msa_index_stream, lb::make_writing_open_mode({lb::writing_open_mode::CREATE})); // FIXME: add overwriting conditionally.
 		cereal::PortableBinaryOutputArchive msa_archive(msa_index_stream);
-		
+
 		chr_entry_vector chr_entries;
-		
+
 		// Read the paths.
 		{
 			std::string entry_buffer;
@@ -128,7 +145,7 @@ namespace panvc3::msa_indices {
 			std::string seq_id;
 			std::string path;
 			std::size_t lineno(1);
-			
+
 			while (std::getline(path_stream, entry_buffer))
 			{
 				read_input_entry(lineno, entry_buffer, chr_id, seq_id, path);
@@ -137,24 +154,24 @@ namespace panvc3::msa_indices {
 				++lineno;
 			}
 		}
-		
+
 		// Prepare the MSA index.
 		msa_index.chr_entries.reserve(msa_index.chr_entries.size() + chr_entries.size());
-		
+
 		// Handle the inputs and compress and sort in background.
 		std::vector <char> seq_buffer;
 		auto &parallel_queue(dispatch::parallel_queue::shared_queue());
 		dispatch::group main_group;
-		
+
 		{
 			std::vector <dispatch::group> chr_groups(chr_entries.size());
 			for (auto const &&[chr_entry, chr_group] : rsv::zip(chr_entries, chr_groups))
 			{
 				lb::log_time(std::cerr) << "Handling sequences for chromosome " << chr_entry.chr_id << "…\n";
-				
+
 				auto &msa_chr_entry(find_msa_chr_entry(msa_index, chr_entry.chr_id));
 				msa_chr_entry.sequence_entries.reserve(chr_entry.sequence_entries.size());
-				
+
 				std::size_t input_size{};
 				for (auto const &seq_entry : chr_entry.sequence_entries)
 				{
@@ -173,7 +190,7 @@ namespace panvc3::msa_indices {
 							sdsl::bit_vector bv;
 							lb::log_time(std::cerr) << "Processing " << seq_entry.path << "…\n";
 							build_index_vector_one_sequence(m_index_vector_builder, chr_entry.chr_id, seq_entry.seq_id, seq_buffer, handle, input_size);
-						
+
 							auto &msa_seq_entry(msa_chr_entry.sequence_entries.emplace_back());
 							parallel_queue.group_async(chr_group, dispatch::task::from_lambda([
 								bv = m_index_vector_builder.destination_bit_vector(),
@@ -185,7 +202,7 @@ namespace panvc3::msa_indices {
 						}
 					);
 				}
-				
+
 				main_group.enter();
 				chr_group.notify(parallel_queue, dispatch::task::from_lambda([&main_group, &msa_chr_entry](){
 					std::sort(msa_chr_entry.sequence_entries.begin(), msa_chr_entry.sequence_entries.end());
@@ -193,7 +210,7 @@ namespace panvc3::msa_indices {
 				}));
 			}
 		}
-		
+
 		lb::log_time(std::cerr) << "Compressing the MSA index…\n";
 		main_group.wait();
 		lb::log_time(std::cerr) << "Sorting the remaining index entries…\n";
@@ -215,8 +232,8 @@ namespace panvc3::msa_indices {
 	{
 		lb::log_time(std::cerr) << "Processing " << chrom_id << '/' << seq_id << "…\n";
 	}
-	
-	
+
+
 	void a2m_input_processor::index_vector_builder_did_process_sequence(
 		index_vector_builder_a2m_input &input,
 		index_vector_builder &builder,
@@ -230,7 +247,7 @@ namespace panvc3::msa_indices {
 			m_main_group,
 			dispatch::task::from_lambda([this, bv = builder.destination_bit_vector(), chrom_id, seq_id](){ // Copy everything.
 				auto seq_entry(panvc3::msa_index::sequence_entry(seq_id, bv));
-				
+
 				{
 					std::lock_guard lock{m_msa_index_mutex};
 					auto &msa_chr_entry(find_msa_chr_entry(m_msa_index, chrom_id));
@@ -239,27 +256,27 @@ namespace panvc3::msa_indices {
 			})
 		);
 	}
-	
-	
+
+
 	void a2m_input_processor::process(input_handler &handler)
 	{
 		{
 			lb::file_ostream msa_index_stream;
 			if (!m_msa_index_input_path.empty())
 				load_msa_index(m_msa_index_input_path.c_str(), m_msa_index);
-		
+
 			lb::open_file_for_writing(m_msa_index_output_path, msa_index_stream, lb::make_writing_open_mode({lb::writing_open_mode::CREATE})); // FIXME: add overwriting conditionally.
 			cereal::PortableBinaryOutputArchive msa_archive(msa_index_stream);
-		
+
 			lb::log_time(std::cerr) << "Loading the input sequences…\n";
 			auto &parallel_queue(dispatch::parallel_queue::shared_queue());
 			index_vector_builder_a2m_input a2m_input;
-		
+
 			handler.process_input(m_input_path, [this, &a2m_input](lb::file_handle &handle){
 				a2m_input.build(m_index_vector_builder, handle, *this);
 			});
 			lb::log_time(std::cerr) << "Waiting for compressing the MSA index to finish…\n";
-			
+
 			m_main_group.wait();
 			lb::log_time(std::cerr) << "Sorting the index entries…\n";
 			std::sort(m_msa_index.chr_entries.begin(), m_msa_index.chr_entries.end());
@@ -273,13 +290,13 @@ namespace panvc3::msa_indices {
 					})
 				);
 			}
-		
+
 			m_main_group.wait();
 			lb::log_time(std::cerr) << "Serialising the MSA index…\n";
 			msa_archive(m_msa_index);
 			msa_index_stream << std::flush;
 		}
-		
+
 		lb::log_time(std::cerr) << "Done.\n";
 		std::exit(EXIT_SUCCESS);
 	}

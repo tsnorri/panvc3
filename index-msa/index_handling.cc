@@ -1,10 +1,13 @@
 /*
- * Copyright (c) 2023 Tuukka Norri
+ * Copyright (c) 2023-2024 Tuukka Norri
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
+#include <cereal/archives/portable_binary.hpp>
+#include <iostream>
 #include <libbio/file_handling.hh>
 #include <libbio/utility.hh>
+#include <panvc3/msa_index.hh>
 #include "index_handling.hh"
 
 namespace lb	= libbio;
