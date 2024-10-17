@@ -1,22 +1,16 @@
-# Copyright (c) 2022 Tuukka Norri
+# Copyright (c) 2022-2024 Tuukka Norri
 # This code is licensed under MIT license (see LICENSE for details).
 
 package		"split-alignments-by-reference"
 version		"0.1"
 purpose		"Split the given alignments by the given reference names or reference name prefixes."
-usage		"split_alignments_by_reference --alignments=alignments.bam --reference-names=names.txt"
+usage		"split_alignments_by_reference --alignments=alignments.bam [ --reference-names=names.txt ]"
 description	"The resulting alignments will be written to separate files in the current working directory. The output files may then be e.g. sorted by position and finally concatenated in order to match the order of a VCF file with multiple contigs."
 
-option			"alignments"				a	"Alignment file path"								string	typestr = "filename"									optional
-
-defmode			"Split alignment file"			modedesc = "Split input alignments"
-modeoption		"split-alignments"			S	"Split the given alignment file by reference"		mode = "Split alignment file"									required
-modeoption		"reference-names"			n	"Reference names, one per line"						mode = "Split alignment file"	string	typestr = "filename"	required
-modeoption		"prefixes"					p	"Treat reference names are prefixes"				mode = "Split alignment file"									optional
-modeoption		"rewrite-reference-names"	e	"Rewrite the reference names"						mode = "Split alignment file"									optional
-modeoption		"report-unmatched"			r	"Report reference names without matching prefix"	mode = "Split alignment file"									optional
-modeoption		"basename"					b	"Output file base name"								mode = "Split alignment file"	string							optional
-
-defmode			"Read reference names"			modedesc = "Output the reference names in the given alignment file"
-modeoption		"read-reference-names"		R	"Only output the reference names"				    mode = "Read reference names"									required
-modeoption		"only-used"					-	"Check the alignments for each ref. name (slow)"	mode = "Read reference names"
+option		"alignments"					a	"Alignment file path"															string	typestr = "filename"	optional
+option		"reference-names"				n	"Reference names to process, one per line"										string	typestr = "filename"	optional
+option		"prefixes"						p	"Treat reference names are prefixes"											flag	off
+option		"rewrite-reference-names"		e	"Rewrite the reference names"													flag	off
+option		"report-unmatched"				r	"Report reference names without matching prefix"								flag	off
+option		"output-basename"				b	"Output file base name"															string							optional
+option		"threads"						t	"Number of threads used by BAM reader (min. 3, 0 to determine automatically)"	long	default = "0"			optional

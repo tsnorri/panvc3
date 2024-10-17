@@ -23,6 +23,7 @@
 #include <libbio/file_handling.hh>
 #include <libbio/utility.hh>			// libbio::is_lt
 #include <panvc3/alignment_input.hh>
+#include <panvc3/utility.hh>
 #include <range/v3/all.hpp>
 #include <set>
 #include "cmdline.h"
@@ -145,8 +146,9 @@ namespace {
 		
 		void handle_header(sam::header &header) override; // Needs to be called by subclasses.
 		
+		void log_alignment_count();
 		bool log_alignment_count_and_check(sam::record const &aln_rec);
-		void run(panvc3::alignment_input &input) { prepare(); input.run(); }
+		virtual void run(panvc3::alignment_input &input) { prepare(); input.run(); }
 	};
 	
 	
@@ -180,11 +182,17 @@ namespace {
 	}
 	
 	
-	bool task_base::log_alignment_count_and_check(sam::record const &aln_rec)
+	void task_base::log_alignment_count()
 	{
 		++m_reads_processed;
-		if (0 == m_reads_processed % 10000000)
+		if (0 == m_reads_processed % 10'000'000)
 			lb::log_time(std::cerr) << "Processed " << m_reads_processed << " alignments…\n";
+	}
+	
+	
+	bool task_base::log_alignment_count_and_check(sam::record const &aln_rec)
+	{
+		log_alignment_count();
 	
 		// If POS is zero, skip the record.
 		auto const flags(aln_rec.flag);
@@ -534,6 +542,74 @@ namespace {
 		if (mapq < 255) // Ignore invalid values.
 			m_acc(mapq);
 	}
+	
+	
+	class read_reference_names_task final : public task_base
+	{
+	private:
+		typedef sam::header::reference_sequence_identifier_type	ref_id_type;
+		
+	private:
+		std::set <ref_id_type>	m_seen_ref_ids;
+		sam::header				*m_header{};
+		bool					m_should_check_alignments{};
+		
+	public:
+		read_reference_names_task(gengetopt_args_info const &args_info):
+			task_base(args_info),
+			m_should_check_alignments(args_info.only_used_given)
+		{
+		}
+		
+		void prepare() override {}
+		void run(panvc3::alignment_input &input) override;
+		void finish() override;
+		
+		void handle_header(sam::header &header) override;
+		void handle_alignment(sam::record &aln_rec) override;
+	};
+	
+	
+	void read_reference_names_task::handle_header(sam::header &header)
+	{
+		// Header owned by panvc3::alignment_input.
+		task_base::handle_header(header);
+		m_header = &header;
+		if (!m_should_check_alignments)
+		{
+			for (auto const &ref : header.reference_sequences)
+				std::cout << ref.name << '\n';
+		}
+	}
+	
+	
+	void read_reference_names_task::handle_alignment(sam::record &aln_rec)
+	{
+		log_alignment_count();
+		if (sam::INVALID_REFERENCE_ID != aln_rec.rname_id)
+			m_seen_ref_ids.emplace(aln_rec.rname_id);
+	}
+	
+	
+	void read_reference_names_task::finish()
+	{
+		if (m_should_check_alignments)
+		{
+			auto const &refs(m_header->reference_sequences);
+			for (auto const ref_id : m_seen_ref_ids)
+			{
+				auto const &ref(refs[ref_id]);
+				std::cout << ref.name << '\n';
+			}
+		}
+	}
+	
+	
+	void read_reference_names_task::run(panvc3::alignment_input &input)
+	{
+		input.set_parses_alignments(m_should_check_alignments);
+		task_base::run(input);
+	}
 }
 
 
@@ -562,7 +638,7 @@ int main(int argc, char **argv)
 	
 	dispatch::thread_pool thread_pool;
 	
-	prepare_thread_pool_with_args(thread_pool, args_info.threads_arg);
+	panvc3::prepare_thread_pool_with_args(thread_pool, args_info.threads_arg);
 	auto const task_count(thread_pool.max_workers() - 1); // Reader needs one thread while reading.
 	
 	dispatch::parallel_queue parallel_queue(thread_pool);
@@ -579,6 +655,8 @@ int main(int argc, char **argv)
 		task = std::make_unique <mapq_histogram_task>(args_info);
 	else if (args_info.mapq_box_plot_given)
 		task = std::make_unique <mapq_box_plot_task>(args_info);
+	else if (args_info.read_reference_names_given)
+		task = std::make_unique <read_reference_names_task>(args_info);
 	else
 	{
 		std::cerr << "ERROR: No mode given." << std::endl;
