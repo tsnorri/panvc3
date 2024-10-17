@@ -3,13 +3,22 @@
  * This code is licensed under MIT license (see LICENSE for details).
  */
 
-#include <condition_variable>
+#include <array>
+#include <algorithm>
+#include <assert>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <cctype>
+#include <chrono>
+#include <exception>
+#include <libbio/assert.hh>
 #include <libbio/file_handle.hh>
 #include <libbio/file_handling.hh>
 #include <libbio/sam.hh>
 #include <libbio/utility.hh> // lb::make_array
-#include <mutex>
+#include <limits>
+#include <optional>
 #include <panvc3/align.hh>
 #include <panvc3/alignment_input.hh>
 #include <panvc3/sam_tag.hh>
@@ -18,19 +27,22 @@
 #include <range/v3/algorithm/lower_bound.hpp>
 #include <range/v3/algorithm/sort.hpp>
 #include <range/v3/algorithm/upper_bound.hpp>
+#include <range/v3/functional/comparisons.hpp>
 #include <range/v3/range/operations.hpp>
 #include <range/v3/range/primitives.hpp>
 #include <range/v3/view/enumerate.hpp>
 #include <range/v3/view/iota.hpp>
 #include <range/v3/view/reverse.hpp>
-#include <syncstream>
 #include <thread>
+#include <type_traits>
+#include <unistd.h>
+#include <utility>
+#include <variant>
+#include <vector>
 #include "cmdline.h"
 
 namespace chrono	= std::chrono;
-namespace fs		= std::filesystem;
 namespace lb		= libbio;
-namespace ios		= boost::iostreams;
 namespace rsv		= ranges::views;
 namespace sam		= libbio::sam;
 
@@ -41,33 +53,33 @@ using sam::operator""_tag;
 namespace {
 	typedef std::uint32_t						chromosome_id_type;
 	typedef std::uint32_t						sequence_length_type;
-	
+
 	typedef sam::tag_value_t <"AS"_tag>			alignment_score_tag_value_type;
 	typedef double								alignment_score_type;
 	typedef std::vector <alignment_score_type>	alignment_score_vector;
 	typedef std::uint8_t						mapping_quality_type;
-	
+
 	typedef std::vector <char>					sequence_type; // FIXME: Add a typedef to libbio::sam::record.
-	
+
 	constexpr static inline auto const SEQUENCE_LENGTH_MAX{std::numeric_limits <sequence_length_type>::max()};
 	constexpr static inline auto const ALIGNMENT_SCORE_MIN{-std::numeric_limits <alignment_score_type>::max()};
 	constexpr static inline mapping_quality_type const MAPQ_NO_NEXT_RECORD{255};
-	
-	
+
+
 	template <typename>
 	struct is_optional : public std::false_type {};
-	
+
 	template <typename t_type>
 	struct is_optional <std::optional <t_type>> : public std::true_type {};
-	
+
 	template <typename t_type>
 	constexpr static inline const bool is_optional_v{is_optional <t_type>::value};
-	
-	
+
+
 	struct field_value_out_of_bounds {};
 	struct tag_type_mismatch { sam::tag_type	tag{}; };
 	struct tag_value_out_of_bounds { sam::tag_type tag{}; };
-	
+
 	struct input_error : public std::exception
 	{
 		typedef std::variant <
@@ -75,31 +87,31 @@ namespace {
 			tag_type_mismatch,
 			tag_value_out_of_bounds
 		> error_info_type;
-			
+
 		error_info_type	error_info{};
-		
+
 		template <typename t_type>
 		input_error(t_type &&error_info_):
 			error_info(std::forward <t_type>(error_info_))
 		{
 		}
 	};
-	
-	
+
+
 	template <typename t_type, typename ... t_args>
 	input_error make_input_error(t_args && ... args)
 	{
 		return input_error{t_type{std::forward <t_args>(args)...}};
 	}
-	
-	
+
+
 	struct alignment_statistics
 	{
 		std::uint64_t flags_not_matched{};
 		std::uint64_t seq_missing{};
 	};
-	
-	
+
+
 	struct sam_tag_specification
 	{
 		sam::tag_type ref_n_positions_tag{};
@@ -122,21 +134,21 @@ namespace {
 		score_type	gap_opening_penalty{};
 		score_type	gap_extension_penalty{};
 	};
-	
-	
+
+
 	struct alignment_scorer
 	{
 		virtual ~alignment_scorer() {}
 		virtual alignment_score_type operator()(sam::record &rec, sam_tag_specification const &tag_spec) const = 0;
 	};
-	
-	
+
+
 	struct as_tag_alignment_scorer final : public alignment_scorer
 	{
 		alignment_score_type operator()(sam::record &rec, sam_tag_specification const &tag_spec) const override;
 	};
-	
-	
+
+
 	class cigar_alignment_scorer final : public alignment_scorer
 	{
 	public:
@@ -146,13 +158,13 @@ namespace {
 		constexpr static inline std::size_t const		QUALITY_MAX{256};
 		typedef std::array <score_type, QUALITY_MAX>	quality_lookup_array;
 		typedef std::vector <std::uint8_t>				ref_n_position_vector;
-		
+
 	private:
 		quality_lookup_array	m_mismatch_penalties{};
 		quality_lookup_array	m_n_penalties{};
 		alignment_scoring		m_scoring{};
 		sam::tag_type			m_ref_n_positions_tag{};
-		
+
 	public:
 		cigar_alignment_scorer(alignment_scoring &&scoring, sam::tag_type const ref_n_positions_tag):
 			m_scoring(std::move(scoring)),
@@ -161,15 +173,15 @@ namespace {
 			fill_penalties(m_mismatch_penalties, m_scoring.min_mismatch_penalty, m_scoring.max_mismatch_penalty);
 			fill_penalties(m_n_penalties, m_scoring.n_penalty, m_scoring.n_penalty);
 		}
-		
+
 		alignment_score_type operator()(sam::record &rec, sam_tag_specification const &tag_spec) const override;
-		
+
 	private:
 		void fill_penalties(quality_lookup_array &penalties, score_type const min, score_type const max);
 		alignment_score_type calculate_score(sam::record const &rec, ref_n_position_vector const &ref_n_positions) const;
 	};
-	
-	
+
+
 	alignment_score_type as_tag_alignment_scorer::operator()(sam::record &aln_rec, sam_tag_specification const &) const
 	{
 		// Retrieve the alignment score from the AS tag.
@@ -186,8 +198,8 @@ namespace {
 		for (std::size_t i(0); i < QUALITY_MAX; ++i)
 			penalties[i] = std::min(i, std::size_t(40)) / double(40) * (max - min) + min; // Cut-off at 40 like in Bowtie 2.
 	}
-	
-	
+
+
 	alignment_score_type cigar_alignment_scorer::calculate_score(
 		sam::record const &aln_rec,
 		ref_n_position_vector const &ref_n_positions
@@ -206,37 +218,37 @@ namespace {
 			auto const count(cigar_run.count());
 			auto const op(cigar_run.operation());
 			auto const op_(sam::to_char(op));
-			
+
 			switch (op_)
 			{
 				case 'H':	// Hard clipping, consumes nothing.
 				case 'P':	// Padding (silent deletion from padded reference), consumes nothing.
 					// Do not set prev_op.
 					break;
-					
+
 				case 'N':	// Skipped region, consumes reference. (In SAMv1, this is only relevant in mRNA-to-genome alignments.)
 					// Do not set prev_op.
 					ref_pos += count;
 					break;
-					
+
 				case 'I':	// Insertion, consumes query.
 					if (! ('I' == prev_op || 'D' == prev_op))
 						retval -= m_scoring.gap_opening_penalty;
-					
+
 					retval -= count * m_scoring.gap_extension_penalty;
 					query_pos += count;
 					prev_op = op_;
 					break;
-				
+
 				case 'D':	// Deletion, consumes reference.
 					if (! ('I' == prev_op || 'D' == prev_op))
 						retval -= m_scoring.gap_opening_penalty;
-					
+
 					retval -= count * m_scoring.gap_extension_penalty;
 					ref_pos += count;
 					prev_op = op_;
 					break;
-				
+
 				case 'S':	// Soft clipping, consumes query.
 					query_pos += count;
 					prev_op = op_;
@@ -252,7 +264,7 @@ namespace {
 					ref_pos += count;
 					prev_op = op_;
 					break;
-				
+
 				case 'X':	// Mismatch, consumes both.
 					for (std::size_t i(0); i < count; ++i)
 					{
@@ -270,18 +282,18 @@ namespace {
 					ref_pos += count;
 					prev_op = op_;
 					break;
-				
+
 				case 'M':	// Match or mismatch, consumes both.
 				default:
 					libbio_fail("Unexpected CIGAR operation “", op_, "”");
 					break;
 			}
 		}
-		
+
 		return retval;
 	}
-	
-	
+
+
 	alignment_score_type cigar_alignment_scorer::operator()(sam::record &aln_rec, sam_tag_specification const &tag_spec) const
 	{
 		auto &tags(aln_rec.optional_fields);
@@ -292,7 +304,7 @@ namespace {
 				ref_n_positions ? *ref_n_positions : ref_n_position_vector{}
 			)
 		);
-		
+
 		// Retrieve the alignment score from the AS tag.
 		{
 			auto aln_score(tags.get <"AS"_tag>());
@@ -307,29 +319,29 @@ namespace {
 				tags.obtain <"AS"_tag>() = score_type(new_score);
 			}
 		}
-		
+
 		return new_score;
 	}
-	
-	
+
+
 	struct mapq_score_calculator
 	{
 		virtual ~mapq_score_calculator() {}
 		virtual mapping_quality_type calculate_mapq(		// of one segment, remember to sum for a pair.
 			sequence_length_type const read_length,
 			sequence_length_type const other_read_length,	// pass zero if not paired.
-			alignment_score_type const score,				// AS 
+			alignment_score_type const score,				// AS
 			alignment_score_type const next_score			// AS/XS, pass ALIGNMENT_SCORE_MIN if no other alignments.
 		) const = 0;
 	};
 
-	
+
 	// These need to be outside bowtie2_v2_score_calculator so that the definitions of operator() are complete before using in a static assertion.
 	struct score_entry
 	{
 		alignment_score_type	normalised_score_threshold{};
 		mapping_quality_type	mapping_quality{};
-		
+
 		struct project_key
 		{
 			constexpr alignment_score_type operator()(score_entry const &entry) const { return entry.normalised_score_threshold; }
@@ -342,7 +354,7 @@ namespace {
 		alignment_score_type	diff_next_threshold{};
 		alignment_score_type	normalised_score_threshold{};
 		mapping_quality_type	mapping_quality{};
-		
+
 		struct project_key
 		{
 			constexpr auto operator()(score_entry_2 const &entry) const
@@ -429,7 +441,7 @@ namespace {
 		mapping_quality_type calculate_mapq(				// of one segment, remember to sum for a pair.
 			sequence_length_type const read_length,
 			sequence_length_type const other_read_length,   // Pass zero if not paired.
-			alignment_score_type const score,  			    // AS 
+			alignment_score_type const score,  			    // AS
 			alignment_score_type const next_score			// AS/XS, pass ALIGNMENT_SCORE_MIN if no other alignments.
 		) const override;
 	};
@@ -450,7 +462,7 @@ namespace {
 		return -0.6 + (-0.6 * read_length);
 	}
 
-	 
+
 	// In end-to-end mode, the maximum score is always zero.
 	// To reaffirm, see Scoring::perfectScore(), Scoring::match() in scoring.h.
 	// Scoring passed to new_mapq() in bt2_search.cpp:3050 and 4171, is multiseed_sc in either case.
@@ -477,14 +489,14 @@ namespace {
 		auto const min_score(calculate_read_min_score(read_length) + calculate_read_min_score(other_read_length)); // Score of a barely valid match
 		auto const max_score(calculate_read_max_score(read_length) + calculate_read_max_score(other_read_length)); // Score of a perfect match.
 		auto const score_range(std::max(alignment_score_type(1), max_score - min_score));
-		
+
 		// Check if the score is too low.
 		if (score < min_score)
 			return 0;
 
 		// Try to cope with the situation that the next alignment is not good enough.
 		auto const next_score(min_score < next_score_ ? next_score_ : min_score);
-		
+
 		libbio_assert_lte(score, max_score);
 		auto const normalised_score(score - min_score);
 		auto const normalised_score_quotient(normalised_score / score_range);
@@ -515,7 +527,7 @@ namespace {
 			{
 				libbio_assert_lte(0, diff_next_quotient);
 				libbio_assert_lte(diff_next_quotient, 1.0);
-				
+
 				// The following approach is safer than assuming that the difference of the scores in terms of diff_next_threshold is always 0.1.
 				auto const begin(non_unique_alignment_scores.begin());
 				auto const it(ranges::upper_bound(
@@ -570,44 +582,44 @@ namespace {
 
 		return *lhs == *rhs;
 	}
-	
-	
+
+
 	struct position
 	{
 		struct mate_tag {};
-		
+
 		chromosome_id_type		chr{};
 		sequence_length_type	pos{};
-		
+
 		position() = default;
-		
+
 		constexpr position(chromosome_id_type const chr_, sequence_length_type const pos_):
 			chr(chr_),
 			pos(pos_)
 		{
 		}
-		
+
 		constexpr static inline position from_fields(
 			sam::reference_id_type const ref_id,
 			sam::position_type const pos
 		);
-		
+
 		constexpr static inline position from_record_with_tags(
 			sam::record const &rec,
 			sam::tag_type const reference_tag,
 			sam::tag_type const position_tag
 		);
-		
+
 		constexpr explicit position(sam::record const &rec):
 			position(from_fields(rec.rname_id, rec.pos))
 		{
 		}
-		
+
 		constexpr position(sam::record const &rec, mate_tag const):
 			position(from_fields(rec.rnext_id, rec.pnext))
 		{
 		}
-		
+
 		constexpr position(
 			sam::record const &rec,
 			sam::tag_type const reference_tag,
@@ -616,13 +628,13 @@ namespace {
 			position(from_record_with_tags(rec, reference_tag, position_tag))
 		{
 		}
-		
+
 		constexpr auto to_tuple() const { return std::make_tuple(chr, pos); }
 		constexpr bool operator<(position const &other) const { return to_tuple() < other.to_tuple(); }
 		constexpr bool operator==(position const &other) const { return to_tuple() == other.to_tuple(); }
 	};
-	
-	
+
+
 	constexpr static inline const position INVALID_POSITION{UINT32_MAX, SEQUENCE_LENGTH_MAX};
 
 
@@ -631,8 +643,8 @@ namespace {
 		os << pos.chr << ':' << pos.pos;
 		return os;
 	}
-	
-	
+
+
 	constexpr auto position::from_fields(
 		sam::reference_id_type const ref_id,
 		sam::position_type const pos
@@ -640,30 +652,30 @@ namespace {
 	{
 		if (sam::INVALID_REFERENCE_ID == ref_id)
 			return INVALID_POSITION;
-		
+
 		if (sam::INVALID_POSITION == pos)
 			return INVALID_POSITION;
-		
+
 		if (ref_id < 0) throw make_input_error <field_value_out_of_bounds>();
 		if (pos < 0) throw make_input_error <field_value_out_of_bounds>();
-		
+
 		return {chromosome_id_type(ref_id), sequence_length_type(pos)};
 	}
-	
-	
+
+
 	constexpr inline void throw_if_needed(sam::tag_type const tag, sam::optional_field::get_value_error const err)
 	{
 		switch (err)
 		{
 			case sam::optional_field::get_value_error::not_found:
 				break;
-			
+
 			case sam::optional_field::get_value_error::type_mismatch:
 				throw make_input_error <tag_type_mismatch>(tag);
 		}
 	}
-	
-	
+
+
 	constexpr auto position::from_record_with_tags(
 		sam::record const &aln_rec,
 		sam::tag_type const reference_tag,
@@ -673,48 +685,48 @@ namespace {
 		auto const &tags(aln_rec.optional_fields);
 		auto const ref_id(tags.get <std::int32_t>(reference_tag));
 		auto const pos(tags.get <std::int32_t>(reference_tag));
-		
+
 		if (!ref_id)
 		{
 			throw_if_needed(reference_tag, ref_id.error());
 			return INVALID_POSITION;
 		}
-		
+
 		if (!pos)
 		{
 			throw_if_needed(position_tag, pos.error());
 			return INVALID_POSITION;
 		}
-		
+
 		if (*ref_id < 0) throw make_input_error <tag_value_out_of_bounds>(reference_tag);
 		if (*pos < 0) throw make_input_error <tag_value_out_of_bounds>(position_tag);
-		
+
 		return {chromosome_id_type(*ref_id), sequence_length_type(*pos)};
 	}
-	
-	
+
+
 	struct position_pair
 	{
 		struct normalised_tag {};
-		
+
 		position lhs{};
 		position rhs{};
-		
+
 		// Again get the generated constructors.
 		position_pair() = default;
-		
+
 		constexpr position_pair(position const &lhs_, position const &rhs_):
 			lhs(lhs_),
 			rhs(rhs_)
 		{
 		}
-		
+
 		constexpr position_pair(position const &lhs_, position const &rhs_, normalised_tag const):
 			position_pair(lhs_, rhs_)
 		{
 			this->normalise();
 		}
-		
+
 		constexpr void normalise() { using std::swap; if (! (lhs < rhs)) swap(lhs, rhs); }
 		constexpr auto to_tuple() const { return std::make_tuple(lhs, rhs); }
 		constexpr bool operator<(position_pair const &other) const { return to_tuple() < other.to_tuple(); }
@@ -728,8 +740,8 @@ namespace {
 		os << "(lhs: " << pp.lhs << ", rhs: " << pp.rhs << ")";
 		return os;
 	}
-	
-	
+
+
 	struct scored_record
 	{
 		sam::record				*record{};
@@ -756,17 +768,17 @@ namespace {
 		alignment_score_type	score{};
 		alignment_score_type	other_score{};
 		bool					has_mate{};
-		
+
 		alignment_score_type total_score() const { return score + other_score; }
 		alignment_score_type max_score() const { return (has_mate ? std::max(score, other_score) : score); }
-		
+
 		struct project_positions
 		{
 			constexpr auto operator()(paired_segment_score const &desc) const { return desc.positions; }
 		};
 	};
-	
-	
+
+
 	class mapq_scorer
 	{
 	private:
@@ -780,27 +792,27 @@ namespace {
 			std::uint64_t	mate_not_found{};
 			std::uint64_t	reads_without_valid_position{};
 		};
-		
+
 		struct segment_description
 		{
 			struct position			position{};
 			alignment_score_type	score{};
 			sequence_length_type	length{};
-			
+
 			constexpr auto to_position_score_tuple() const { return std::make_tuple(position, score); }
 			constexpr bool operator<(segment_description const &other) const { return to_position_score_tuple() < other.to_position_score_tuple(); }
-			
+
 			struct project_position
 			{
 				constexpr auto operator()(segment_description const &desc) const { return desc.position; }
 			};
 		};
-		
+
 		typedef panvc3::cmp_proj <segment_description, typename segment_description::project_position> cmp_segment_description_position;
 		typedef scored_record							scored_record_type;
 		typedef paired_segment_score					paired_segment_score_type;
 		typedef panvc3::cmp_proj <paired_segment_score_type, typename paired_segment_score_type::project_positions> cmp_paired_segment_score_positions;
-		
+
 	private:
 		alignment_scorer						*m_aln_scorer{};
 		mapq_score_calculator					*m_scorer{};
@@ -809,10 +821,10 @@ namespace {
 		std::vector <scored_record_type>		m_scored_records;
 		sam_tag_specification					m_sam_tags{};
 		struct statistics						m_statistics{};
-		
+
 	private:
 		void add_paired_segment_score(paired_segment_score_type const &pss);
-		
+
 	public:
 		mapq_scorer(
 			alignment_scorer &aln_scorer,
@@ -824,14 +836,14 @@ namespace {
 			m_sam_tags(sam_tags)
 		{
 		}
-		
+
 		void process_alignment_group(
 			alignment_vector &alignments,
 			sam::header const &header,
 			std::ostream &os,
 			bool const verbose_output_enabled
 		);
-			
+
 		struct statistics const &statistics() const { return m_statistics; }
 	};
 
@@ -841,8 +853,8 @@ namespace {
 		os << "(positions: " << pss.positions << " sequence: " << pss.sequence << " score: " << pss.score << " other_score: " << pss.other_score << " has_mate: " << pss.has_mate << ")";
 		return os;
 	}
-	
-	
+
+
 	void mapq_scorer::add_paired_segment_score(paired_segment_score_type const &pss)
 	{
 		auto it(std::lower_bound(
@@ -867,8 +879,8 @@ namespace {
 
 		m_paired_segment_scores_by_projected_position.emplace(it, pss);
 	}
-	
-	
+
+
 	template <typename t_error_info>
 	void handle_input_error(sam::record const &aln_rec, t_error_info const &error_info)
 	{
@@ -879,7 +891,7 @@ namespace {
 			sam::from_tag(tag, buffer);
 			ranges::copy(buffer, std::ostream_iterator <char>(cerr));
 		});
-		
+
 		std::visit(lb::aggregate{
 			[&](tag_type_mismatch const &mm){
 				cerr << "ERROR: Record ‘" << aln_rec.qname << "’ had unexpected type for tag ‘";
@@ -901,8 +913,8 @@ namespace {
 		cerr << std::flush;
 		std::exit(EXIT_FAILURE);
 	}
-	
-	
+
+
 	void output_mate_not_found_warning(sam::header const &header, sam::record const &aln_rec, position const &mate_original_pos)
 	{
 		std::osyncstream cerr(std::cerr);
@@ -918,8 +930,8 @@ namespace {
 			aln_rec.pos;
 		cerr << "; mate original position: " << mate_original_pos << '\n' << std::flush;
 	}
-	
-	
+
+
 	// Precondition: alignments contains (all) the alignments with the same identifier but not necessarily the same sequence.
 	void mapq_scorer::process_alignment_group(
 		alignment_vector &alignments,
@@ -945,12 +957,12 @@ namespace {
 
 		// NOTE: The algorithm works with single-ended and paired-ended reads but not with three or more segments per template.
 		// (Not sure if such sequencing technology exists, though.)
-		
+
 		if (alignments.empty())
 			return;
-		
+
 		m_statistics.total_alignments += alignments.size();
-		
+
 		// Sort s.t. the records may be searched with the original values of RNEXT and PNEXT.
 		// First cache the (original) positions and scores s.t. sorting does not take O(n log^2 n) time.
 		m_segment_descriptions_by_original_position.clear();
@@ -965,7 +977,7 @@ namespace {
 				bool const has_mate(! (sam::INVALID_REFERENCE_ID == aln_rec.rnext_id || sam::INVALID_POSITION == aln_rec.pnext));
 				seen_record_types |= 0x1 << has_mate;
 				m_statistics.unpaired_alignments += (!has_mate);
-				
+
 				auto const score((*m_aln_scorer)(aln_rec, m_sam_tags));
 				position const pos{aln_rec, m_sam_tags.original_reference_tag, m_sam_tags.original_position_tag};
 
@@ -979,10 +991,10 @@ namespace {
 						std::cerr << "was mapped but had minimum alignment score. Please check that the AS tag has been set in aligned records.\n";
 					std::exit(EXIT_FAILURE);
 				}
-				
+
 				scored_rec.record = &aln_rec;
 				scored_rec.alignment_score = score;
-				
+
 				m_segment_descriptions_by_original_position.emplace_back(pos, score, aln_rec.seq.size());
 			}
 			catch (input_error const &exc)
@@ -990,7 +1002,7 @@ namespace {
 				handle_input_error(aln_rec, exc.error_info);
 			}
 		}
-		
+
 		// Check if there are both alignments with and without a mate (obscure?).
 		// We currently handle this differently than Bowtie 2. In other words, we could keep such runs but instead of comparing the scores
 		// of all records, we should partition by pairedness. Also the formula in calculate_mapq() should be updated s.t. the scores would
@@ -1001,10 +1013,10 @@ namespace {
 			std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().qname << "’ has both paired and unpaired alignment records; skipping.\n";
 			return;
 		}
-		
+
 		m_segment_descriptions_by_original_position.emplace_back(INVALID_POSITION, 0, 0); // Add a sentinel for extra safety.
 		std::sort(m_segment_descriptions_by_original_position.begin(), m_segment_descriptions_by_original_position.end());
-		
+
 		{
 			auto const begin(m_segment_descriptions_by_original_position.begin());
 			auto const it(std::lower_bound(begin, m_segment_descriptions_by_original_position.end(), INVALID_POSITION, cmp_segment_description_position{}));
@@ -1015,7 +1027,7 @@ namespace {
 				std::osyncstream(std::cerr) << "WARNING: Read ‘" << alignments.front().qname << "’ has no alignments with a valid position.\n";
 			}
 		}
-		
+
 		// Determine the sum of the scores for each pair.
 		// m_scored_records is needed so that we don’t need to re-calculate the score after partitioning the records.
 		m_paired_segment_scores_by_projected_position.clear();
@@ -1028,10 +1040,10 @@ namespace {
 				position_pair const projected_pos{position{aln_rec}, position{aln_rec, typename position::mate_tag{}}, typename position_pair::normalised_tag{}};
 				bool const has_mate(projected_pos.has_mate());
 				paired_segment_score_type pss{projected_pos, has_mate ? nullptr : &aln_rec.seq, sr.alignment_score, 0, false};
-				
+
 				// Min. score only allowed for invalid positions.
 				libbio_assert_msg((INVALID_POSITION != pss.positions.lhs) ^ (ALIGNMENT_SCORE_MIN == pss.score), "pss: ", pss, " sr: ", sr);
-				
+
 				// Determine the mate’s position only if the alignment has a valid position.
 				sequence_length_type mate_length{};
 				if (INVALID_POSITION != pss.positions.lhs && has_mate)
@@ -1046,7 +1058,7 @@ namespace {
 					if (it == m_segment_descriptions_by_original_position.begin())
 					{
 						++m_statistics.mate_not_found;
-						
+
 						if (verbose_output_enabled)
 							output_mate_not_found_warning(header, aln_rec, mate_original_pos);
 					}
@@ -1063,16 +1075,16 @@ namespace {
 						else
 						{
 							++m_statistics.mate_not_found;
-							
+
 							if (verbose_output_enabled)
 								output_mate_not_found_warning(header, aln_rec, mate_original_pos);
 						}
 					}
 				}
-				
+
 				sr.pairwise_score = pss.score + pss.other_score;
 				sr.mate_length = mate_length;
-				
+
 				// Insert if needed.
 				add_paired_segment_score(pss);
 			}
@@ -1084,13 +1096,13 @@ namespace {
 		// Sort by score.
 		libbio_assert(!m_paired_segment_scores_by_projected_position.empty());
 		ranges::sort(m_paired_segment_scores_by_projected_position, ranges::less{}, [](auto const &pss){ return pss.total_score(); });
-		
+
 		// Calculate the mapping qualities.
 		for (auto const &sr : m_scored_records)
 		{
 			libbio_assert(sr.record);
 			auto &aln_rec(*sr.record);
-			
+
 			try
 			{
 				auto const &seq(aln_rec.seq);
@@ -1116,15 +1128,15 @@ namespace {
 				for (auto const &other : rsv::reverse(ranges::subrange(begin, it)))
 				{
 					libbio_assert_neq(INVALID_POSITION, other.positions.lhs);
-					
+
 					// Check if there is a segment description that refers to the sequence of the current alignment.
 					if (!sequences_eq <true>(it->sequence, other.sequence)) [[unlikely]] // implies 0x1 & seen_record_types.
 						continue;
-					
+
 					// The sequences match.
 					if (other.positions == pos) // The pairs (positions, sequence) are unique, so this must be the entry for aln_rec.
 						continue;
-					
+
 					// At least one of the positions in the pair does not match (but the scores may match).
 					// Bowtie 2 distinguishes mate 1 and 2, which we are not able to do. Hence we choose the better score for the next alignment.
 					aln_rec.mapq = m_scorer->calculate_mapq(seq.size(), sr.mate_length, sr.pairwise_score, has_mate ? other.total_score() : other.max_score());
@@ -1158,7 +1170,7 @@ namespace {
 	)
 	{
 		typedef chrono::steady_clock				clock_type;
-		
+
 		std::vector <sam::record> rec_buffer;
 		std::uint64_t rec_idx{};
 
@@ -1203,26 +1215,26 @@ namespace {
 				verbose_output_enabled
 			](sam::record &aln_rec){
 				++rec_idx;
-				
+
 				// Ignore unmapped.
 				if (std::to_underlying(sam::flag::unmapped & aln_rec.flag))
 				{
 					++statistics.flags_not_matched;
 					return;
 				}
-				
+
 				if (aln_rec.seq.empty())
 				{
 					++statistics.seq_missing;
 					return;
 				}
-				
+
 				if (rec_buffer.empty())
 				{
 					rec_buffer.emplace_back(std::move(aln_rec));
 					return;
 				}
-				
+
 				auto const &id(aln_rec.qname);
 				auto const &eq_class_id(rec_buffer.front().qname);
 				if (id != eq_class_id)
@@ -1230,14 +1242,14 @@ namespace {
 					scorer.process_alignment_group(rec_buffer, aln_input.header, os, verbose_output_enabled);
 					rec_buffer.clear();
 				}
-				
+
 				rec_buffer.emplace_back(std::move(aln_rec));
 			}
 		);
-		
+
 		if (!rec_buffer.empty())
 			scorer.process_alignment_group(rec_buffer, aln_input.header, os, verbose_output_enabled);
-		
+
 		status_output_timer.stop();
 		if (status_output_thread.joinable())
 			status_output_thread.join();
@@ -1246,7 +1258,7 @@ namespace {
 			lb::log_time(std::cerr) << "Done.\n";
 			std::cerr << "\tFlags not matched:                 " << statistics.flags_not_matched << '\n';
 			std::cerr << "\tSequence missing:                  " << statistics.seq_missing << '\n';
-				
+
 			auto const &statistics_(scorer.statistics());
 			std::cerr << "\tAlignments considered for scoring: " << statistics_.total_alignments << '\n';
 			std::cerr << "\tUnpaired alignments:               " << statistics_.unpaired_alignments << '\n';
@@ -1269,8 +1281,8 @@ namespace {
 			header.programs
 		);
 	}
-	
-	
+
+
 	void process(gengetopt_args_info const &args_info, int const argc, char const * const * const argv)
 	{
 		// Status output interval
@@ -1290,35 +1302,35 @@ namespace {
 		// Open the SAM input and output.
 		auto aln_input(panvc3::alignment_input::open_path_or_stdin(args_info.alignments_arg));
 		aln_input.read_header();
-		
+
 		auto aln_output_fh{[&] -> lb::file_handle {
 			if (args_info.output_path_arg)
 				return lb::file_handle(lb::open_file_for_writing(args_info.output_path_arg, lb::writing_open_mode::CREATE));
 			else
 				return lb::file_handle(STDOUT_FILENO, false);
 		}()};
-		
+
 		lb::file_ostream os;
 		lb::open_stream_with_file_handle(os, aln_output_fh);
-		
+
 		auto &header(aln_input.header);
 		append_program_info(header, argc, argv); // Adding our program info does not affect parsing.
 		os << header;
-		
+
 		auto const make_sam_tag([](char const *tag) -> sam::tag_type {
 			if (!tag)
 				return 0;
-			
+
 			if (! (std::isalnum(tag[0]) && std::isalnum(tag[1]) && '\0' == tag[2]))
 			{
 				std::cerr << "ERROR: SAM tags must consist of two characters, got “" << tag << "”.\n";
 				std::exit(EXIT_FAILURE);
 			}
-			
+
 			std::array <char, 2> buffer{tag[0], tag[1]};
 			return sam::to_tag(buffer);
 		});
-		
+
 		sam_tag_specification const sam_tags{
 			.ref_n_positions_tag{make_sam_tag(args_info.ref_n_positions_tag_arg)},
 			.original_reference_tag{make_sam_tag(args_info.original_rname_tag_arg)},
@@ -1328,7 +1340,7 @@ namespace {
 			.original_alignment_score_tag{make_sam_tag(args_info.original_alignment_score_tag_arg)},
 			.new_alignment_score_tag{make_sam_tag(args_info.new_alignment_score_tag_arg)}
 		};
-		
+
 		if (args_info.print_reference_names_flag)
 		{
 			auto const &ref_entries(aln_input.header.reference_sequences);
@@ -1367,9 +1379,9 @@ int main(int argc, char **argv)
 	gengetopt_args_info args_info;
 	if (0 != cmdline_parser(argc, argv, &args_info))
 		std::exit(EXIT_FAILURE);
-	
+
 	//lb::setup_allocated_memory_logging();
-	
+
 	std::ios_base::sync_with_stdio(false);	// Don't use C style IO after calling cmdline_parser.
 
 	if (args_info.print_invocation_given)
@@ -1382,8 +1394,8 @@ int main(int argc, char **argv)
 
 	if (args_info.print_pid_given)
 		std::cerr << "PID: " << getpid() << '\n';
-	
+
 	process(args_info, argc, argv);
-	
+
 	return EXIT_SUCCESS;
 }
