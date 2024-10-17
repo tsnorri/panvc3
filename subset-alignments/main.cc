@@ -223,9 +223,9 @@ namespace {
 
 	void subset_task::handle_alignment(sam::record &aln_rec)
 	{
+		panvc3::increment_guard const guard(m_rec_idx);
 		if (m_rec_idx && 0 == m_rec_idx % 10'000'000)
 			lb::log_time(std::cerr) << "Processed " << m_rec_idx << " alignments…\n";
-		++m_rec_idx;
 
 		if (! (sam::INVALID_REFERENCE_ID == m_expected_ref_id || aln_rec.rname_id == m_expected_ref_id))
 		{
