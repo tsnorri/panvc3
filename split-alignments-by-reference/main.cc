@@ -319,7 +319,7 @@ namespace {
 
 	void split_alignments_task::handle_alignment(sam::record &aln_rec)
 	{
-		++m_rec_idx;
+		panvc3::increment_guard const guard(m_rec_idx);
 		if (m_rec_idx && 0 == m_rec_idx % 10'000'000)
 			lb::log_time(std::cerr) << "Processed " << m_rec_idx << " alignments…\n";
 
